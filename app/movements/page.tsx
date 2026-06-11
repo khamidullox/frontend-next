@@ -3,8 +3,17 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { listMovements, createSession, MovementListItem } from '@/lib/api';
+import AdminGate from '@/components/AdminGate';
 
 export default function MovementsPage() {
+  return (
+    <AdminGate>
+      <MovementsContent />
+    </AdminGate>
+  );
+}
+
+function MovementsContent() {
   const [movements, setMovements] = useState<MovementListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

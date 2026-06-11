@@ -1,10 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { isAdminUnlocked, setAdminUnlocked } from '@/lib/admin';
 
-const LINKS = [
-  { href: '/', label: '📦 Проверка' },
+const SCANNER_LINK = { href: '/', label: '📦 Проверка' };
+
+const ADMIN_LINKS = [
   { href: '/movements', label: '🗂️ Накладные' },
   { href: '/orders', label: '🧾 Заказы' },
   { href: '/history', label: '📋 История' },
@@ -12,15 +15,31 @@ const LINKS = [
 
 export default function Nav() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [unlocked, setUnlocked] = useState(false);
+
+  // Перечитываем флаг при каждой смене страницы (после /unlock).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setUnlocked(isAdminUnlocked());
+  }, [pathname]);
 
   function isActive(href: string) {
     if (href === '/') return pathname === '/' || pathname.startsWith('/session');
     return pathname.startsWith(href);
   }
 
+  function lock() {
+    setAdminUnlocked(false);
+    setUnlocked(false);
+    router.push('/');
+  }
+
+  const links = unlocked ? [SCANNER_LINK, ...ADMIN_LINKS] : [SCANNER_LINK];
+
   return (
-    <nav className="flex gap-1 px-4 pt-3 max-w-3xl mx-auto">
-      {LINKS.map((link) => (
+    <nav className="flex items-center gap-1 px-4 pt-3 max-w-3xl mx-auto">
+      {links.map((link) => (
         <Link
           key={link.href}
           href={link.href}
@@ -33,6 +52,15 @@ export default function Nav() {
           {link.label}
         </Link>
       ))}
+      {unlocked && (
+        <button
+          onClick={lock}
+          title="Закрыть разделы"
+          className="ml-auto px-3 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+        >
+          🔒
+        </button>
+      )}
     </nav>
   );
 }

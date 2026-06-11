@@ -50,7 +50,7 @@ export default function HomePage() {
         <div className="text-6xl mb-4">🗂️</div>
         <h2 className="text-2xl font-bold mb-2">Введите ID документа</h2>
         <p className="text-gray-500 text-sm mb-8">
-          Накладная или заказ — определим автоматически. ID указан вверху бланка
+          Накладная, заказ или номер ТТН — определим автоматически
         </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">

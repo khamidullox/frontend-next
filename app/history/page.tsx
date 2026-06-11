@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { listSessions, SessionListItem } from '@/lib/api';
+import AdminGate from '@/components/AdminGate';
 
 function fmt(iso?: string | null) {
   if (!iso) return '';
@@ -28,6 +29,14 @@ function resultBadge(s: SessionListItem) {
 }
 
 export default function HistoryPage() {
+  return (
+    <AdminGate>
+      <HistoryContent />
+    </AdminGate>
+  );
+}
+
+function HistoryContent() {
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

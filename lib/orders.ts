@@ -101,6 +101,33 @@ export async function getOrderDocument(dealId: string): Promise<CheckDocument | 
   };
 }
 
+// Поиск заказа по номеру ТТН (delivery_number) или счёта (invoice_number).
+// Smartup не фильтрует по этим полям, поэтому тянем заказы за период и ищем локально.
+export async function getOrderDocumentByTTN(ttn: string): Promise<CheckDocument | null> {
+  const needle = normalizeCode(ttn);
+  if (!needle) return null;
+
+  const end = new Date();
+  const begin = new Date(end);
+  begin.setDate(begin.getDate() - 6);
+
+  const orders = await exportOrders({
+    begin_order_date: formatSmartupDate(begin),
+    end_order_date: formatSmartupDate(end),
+  });
+
+  const match = orders.find(
+    (o) =>
+      normalizeCode(o.delivery_number) === needle ||
+      normalizeCode(o.invoice_number) === needle
+  );
+
+  if (!match) return null;
+
+  // Дотягиваем полный заказ по deal_id (с обогащением штрихкодов).
+  return getOrderDocument(String(match.deal_id));
+}
+
 export interface OrderListItem {
   deal_id: string;
   doc_number: string;

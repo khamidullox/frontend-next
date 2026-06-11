@@ -1,6 +1,6 @@
 import { CheckDocument } from './document';
 import { getMovementDocument } from './movement';
-import { getOrderDocument } from './orders';
+import { getOrderDocument, getOrderDocumentByTTN } from './orders';
 
 export interface ResolveInput {
   query?: string;
@@ -48,8 +48,12 @@ export async function resolveDocument(input: ResolveInput): Promise<CheckDocumen
   const n = Number(q);
   const orderFirst = Number.isFinite(n) && n >= ORDER_ID_THRESHOLD;
 
-  if (orderFirst) {
-    return (await tryOrder(q)) || (await tryMovement(q));
-  }
-  return (await tryMovement(q)) || (await tryOrder(q));
+  const primary = orderFirst
+    ? (await tryOrder(q)) || (await tryMovement(q))
+    : (await tryMovement(q)) || (await tryOrder(q));
+
+  if (primary) return primary;
+
+  // Последний шанс: это может быть номер ТТН заказа (delivery_number).
+  return getOrderDocumentByTTN(q);
 }

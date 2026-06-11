@@ -3,8 +3,17 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { listOrders, createSession, OrderListItem } from '@/lib/api';
+import AdminGate from '@/components/AdminGate';
 
 export default function OrdersPage() {
+  return (
+    <AdminGate>
+      <OrdersContent />
+    </AdminGate>
+  );
+}
+
+function OrdersContent() {
   const [orders, setOrders] = useState<OrderListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
