@@ -1,5 +1,8 @@
 import { NextRequest } from 'next/server';
 import { syncProducts } from '@/lib/products';
+import { purgeOldSessions } from '@/lib/sessions';
+
+const SESSION_RETENTION_DAYS = 60;
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,7 +28,9 @@ async function run(request: NextRequest) {
 
   try {
     const result = await syncProducts({ full });
-    return Response.json({ ok: true, ...result });
+    // Заодно чистим старые сессии (чтобы Firestore не рос бесконечно).
+    const purged = await purgeOldSessions(SESSION_RETENTION_DAYS);
+    return Response.json({ ok: true, ...result, purged_sessions: purged });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 500 });
   }

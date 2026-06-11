@@ -4,7 +4,7 @@ import { getCachedList } from '@/lib/listCache';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const LIST_TTL_MS = 3 * 60 * 1000;
+const LIST_TTL_MS = 10 * 60 * 1000;
 
 export async function GET() {
   try {

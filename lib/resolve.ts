@@ -44,18 +44,17 @@ export async function resolveDocument(input: ResolveInput): Promise<CheckDocumen
     return getMovementDocument({ movement_number: q });
   }
 
-  // Накладную и заказ пробуем ПАРАЛЛЕЛЬНО (оба запроса быстрые) — платим
-  // max(2с), а не сумму. При величине ID отдаём приоритет вероятному типу.
+  // Чтобы экономить лимит запросов Smartup (500/день), сначала пробуем
+  // ВЕРОЯТНЫЙ тип по величине ID — это 1 запрос. Второй тип запрашиваем
+  // только если по первому не нашли.
   const n = Number(q);
   const orderFirst = Number.isFinite(n) && n >= ORDER_ID_THRESHOLD;
 
-  const [mv, ord] = await Promise.all([
-    tryMovement(q).catch(() => null),
-    tryOrder(q).catch(() => null),
-  ]);
-
-  const primary = orderFirst ? ord || mv : mv || ord;
+  const primary = orderFirst ? await tryOrder(q) : await tryMovement(q);
   if (primary) return primary;
+
+  const secondary = orderFirst ? await tryMovement(q) : await tryOrder(q);
+  if (secondary) return secondary;
 
   // Последний шанс: это может быть номер ТТН заказа (delivery_number).
   return getOrderDocumentByTTN(q);

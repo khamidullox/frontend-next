@@ -183,6 +183,34 @@ export async function finishSession(sessionId: string) {
   });
 }
 
+// Удаляет сессии старше `days` дней — чтобы Firestore не рос бесконечно
+// (история проверок не нужна вечно, исходные документы есть в Smartup).
+export async function purgeOldSessions(days = 60): Promise<number> {
+  const db = getDb();
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+  let deleted = 0;
+  // created_at — ISO-строка, лексикографически сортируется по времени.
+  for (;;) {
+    const snap = await db
+      .collection(SESSIONS_COLLECTION)
+      .where('created_at', '<', cutoff)
+      .limit(400)
+      .get();
+
+    if (snap.empty) break;
+
+    const batch = db.batch();
+    snap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    deleted += snap.size;
+
+    if (snap.size < 400) break;
+  }
+
+  return deleted;
+}
+
 export async function listSessions(limit = 100): Promise<SessionListItem[]> {
   const snap = await getDb()
     .collection(SESSIONS_COLLECTION)
