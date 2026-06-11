@@ -56,8 +56,9 @@ async function exportToExcel(session: Session) {
   ];
   XLSX.utils.book_append_sheet(wb, ws, 'Проверка');
 
-  const num = session.movement.movement_number || session.movement.movement_id || 'nakladnaya';
-  XLSX.writeFile(wb, `nakladnaya_${num}.xlsx`);
+  const prefix = session.document.doc_type === 'order' ? 'zakaz' : 'nakladnaya';
+  const num = session.document.doc_number || session.document.doc_id || prefix;
+  XLSX.writeFile(wb, `${prefix}_${num}.xlsx`);
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -512,9 +513,11 @@ export default function SessionPage() {
 
   if (!session) return null;
 
-  const { movement, summary, items } = session;
+  const { document: doc, summary, items } = session;
   const allDone = summary.done_items === summary.total_items && summary.total_items > 0;
   const isFinished = session.status === 'finished';
+  const isOrder = doc.doc_type === 'order';
+  const docLabel = isOrder ? 'Заказ' : 'Накладная';
   const discrepancies = items.filter(i => i.scanned_quantity !== i.quantity);
 
   const sortedItems = [...items].sort(
@@ -531,13 +534,17 @@ export default function SessionPage() {
       <div className="bg-white rounded-xl shadow-sm p-4 mb-4 flex items-start gap-4 flex-wrap">
         <div className="flex-1">
           <h2 className="text-xl font-bold">
-            Накладная #{movement.movement_number || movement.movement_id || '—'}
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full mr-2 align-middle ${
+              isOrder ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+            }`}>{docLabel}</span>
+            #{doc.doc_number || doc.doc_id || '—'}
           </h2>
           <p className="text-sm text-gray-500 mt-1">
             {[
-              movement.from_warehouse_code && `Со склада: ${movement.from_warehouse_code}`,
-              movement.to_warehouse_code   && `На склад: ${movement.to_warehouse_code}`,
-              movement.from_movement_date  && `Дата: ${movement.from_movement_date}`,
+              doc.client_name          && `Клиент: ${doc.client_name}`,
+              doc.from_warehouse_code  && `Со склада: ${doc.from_warehouse_code}`,
+              doc.to_warehouse_code    && `${isOrder ? 'Зал: ' : 'На склад: '}${doc.to_warehouse_code}`,
+              doc.date                 && `Дата: ${doc.date}`,
             ].filter(Boolean).join(' · ')}
           </p>
           {(session.checker_name || isFinished) && (

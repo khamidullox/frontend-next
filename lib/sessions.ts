@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import { getDb } from './firebase';
-import { getEnrichedMovement, MovementFilters, Movement } from './movement';
 import { findProductCodeByBarcode } from './products';
+import { resolveDocument, ResolveInput } from './resolve';
+import { CheckDocument, DocType } from './document';
 
 const SESSIONS_COLLECTION = 'sessions';
 const MAX_SCANS = 300;
@@ -29,17 +30,15 @@ export interface ScanRecord {
   manual?: boolean;
 }
 
-export interface SessionMovement {
-  filial_code: string;
-  external_id: string | null;
-  movement_id: string;
-  movement_number: string;
-  from_movement_date: string;
-  to_movement_date: string;
-  status: string;
+// Универсальная «шапка» документа — и для накладной, и для заказа.
+export interface SessionDocument {
+  doc_type: DocType;
+  doc_id: string;
+  doc_number: string;
+  date: string;
   from_warehouse_code: string | null;
   to_warehouse_code: string | null;
-  barcode: string;
+  client_name: string | null;
   note: string | null;
 }
 
@@ -51,7 +50,7 @@ interface StoredSession {
   finished_at?: string | null;
   status: SessionStatus;
   checker_name: string;
-  movement: SessionMovement;
+  document: SessionDocument;
   items: SessionItem[];
   scans: ScanRecord[];
 }
@@ -62,21 +61,14 @@ export interface SessionListItem {
   finished_at?: string | null;
   status: SessionStatus;
   checker_name: string;
-  movement_id: string;
-  movement_number: string;
+  doc_type: DocType;
+  doc_id: string;
+  doc_number: string;
   summary: ReturnType<typeof summarize>;
 }
 
 function normalizeCode(value: unknown): string {
   return String(value ?? '').trim();
-}
-
-function buildItemKey(item: Record<string, unknown>, index: number): string {
-  return (
-    normalizeCode(item.movement_item_id) ||
-    normalizeCode(item.external_id) ||
-    `${normalizeCode(item.product_code)}-${index}`
-  );
 }
 
 function getStatus(item: SessionItem): ItemStatus {
@@ -97,40 +89,59 @@ function summarize(items: SessionItem[]) {
   );
 }
 
-function serialize(session: StoredSession) {
-  return { ...session, summary: summarize(session.items) };
+// Совместимость со старыми сессиями (до появления заказов поле называлось
+// `movement` и не имело doc_type/client_name).
+function ensureDocument(session: StoredSession): StoredSession {
+  if (session.document) return session;
+
+  const legacy = (session as unknown as { movement?: Record<string, unknown> }).movement;
+  return {
+    ...session,
+    document: {
+      doc_type: 'movement',
+      doc_id: String(legacy?.movement_id ?? ''),
+      doc_number: String(legacy?.movement_number ?? ''),
+      date: String(legacy?.from_movement_date ?? ''),
+      from_warehouse_code: (legacy?.from_warehouse_code as string) ?? null,
+      to_warehouse_code: (legacy?.to_warehouse_code as string) ?? null,
+      client_name: null,
+      note: (legacy?.note as string) ?? null,
+    },
+  };
 }
 
-function pickMovement(movement: Movement): SessionMovement {
+function serialize(session: StoredSession) {
+  const s = ensureDocument(session);
+  return { ...s, summary: summarize(s.items) };
+}
+
+function pickDocument(doc: CheckDocument): SessionDocument {
   return {
-    filial_code: movement.filial_code,
-    external_id: movement.external_id,
-    movement_id: movement.movement_id,
-    movement_number: movement.movement_number,
-    from_movement_date: movement.from_movement_date,
-    to_movement_date: movement.to_movement_date,
-    status: movement.status,
-    from_warehouse_code: movement.from_warehouse_code,
-    to_warehouse_code: movement.to_warehouse_code,
-    barcode: movement.barcode,
-    note: movement.note,
+    doc_type: doc.doc_type,
+    doc_id: doc.doc_id,
+    doc_number: doc.doc_number,
+    date: doc.date,
+    from_warehouse_code: doc.from_warehouse_code,
+    to_warehouse_code: doc.to_warehouse_code,
+    client_name: doc.client_name,
+    note: doc.note,
   };
 }
 
 // ─── Операции ────────────────────────────────────────────────────────────────
 
-export async function createSession(filters: MovementFilters & { checker_name?: string }) {
-  const movement = await getEnrichedMovement(filters);
-  if (!movement) return null;
+export async function createSession(input: ResolveInput & { checker_name?: string }) {
+  const doc = await resolveDocument(input);
+  if (!doc) return null;
 
-  const items: SessionItem[] = (movement.movement_items || []).map((item, index) => ({
-    id: buildItemKey(item, index),
+  const items: SessionItem[] = doc.items.map((item, index) => ({
+    id: item.line_id || `${item.product_code}-${index}`,
     product_code: normalizeCode(item.product_code),
     product_name: item.product_name || '',
     quantity: Number(item.quantity || 0),
     scanned_quantity: 0,
     status: 'pending',
-    barcodes: (item.barcodes as string[]) || [],
+    barcodes: item.barcodes || [],
   }));
 
   const session: StoredSession = {
@@ -138,8 +149,8 @@ export async function createSession(filters: MovementFilters & { checker_name?: 
     created_at: new Date().toISOString(),
     finished_at: null,
     status: 'active',
-    checker_name: String(filters.checker_name || '').trim(),
-    movement: pickMovement(movement),
+    checker_name: String(input.checker_name || '').trim(),
+    document: pickDocument(doc),
     items,
     scans: [],
   };
@@ -179,16 +190,17 @@ export async function listSessions(limit = 100): Promise<SessionListItem[]> {
     .limit(limit)
     .get();
 
-  return snap.docs.map((doc) => {
-    const s = doc.data() as StoredSession;
+  return snap.docs.map((raw) => {
+    const s = ensureDocument(raw.data() as StoredSession);
     return {
       id: s.id,
       created_at: s.created_at,
       finished_at: s.finished_at ?? null,
       status: s.status ?? 'active',
       checker_name: s.checker_name ?? '',
-      movement_id: s.movement?.movement_id ?? '',
-      movement_number: s.movement?.movement_number ?? '',
+      doc_type: s.document.doc_type,
+      doc_id: s.document.doc_id,
+      doc_number: s.document.doc_number,
       summary: summarize(s.items || []),
     };
   });

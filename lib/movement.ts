@@ -1,5 +1,6 @@
 import { smartupRequest } from './smartup';
 import { getProductInfos } from './products';
+import { CheckDocument, DocItem } from './document';
 
 const MOVEMENT_EXPORT_ENDPOINT = '/b/anor/mxsx/mkw/movement$export';
 
@@ -139,4 +140,35 @@ export async function getEnrichedMovement(
   });
 
   return { ...movement, movement_items: movementItems };
+}
+
+// Накладная в общем («нормализованном») виде документа проверки.
+export async function getMovementDocument(
+  filters: MovementFilters
+): Promise<CheckDocument | null> {
+  const movement = await getEnrichedMovement(filters);
+  if (!movement) return null;
+
+  const items: DocItem[] = (movement.movement_items || []).map((item, index) => ({
+    product_code: String(item.product_code ?? '').trim(),
+    product_name: item.product_name || '',
+    quantity: toNumber(item.quantity),
+    barcodes: (item.barcodes as string[]) || [],
+    line_id:
+      String(item.movement_item_id ?? '').trim() ||
+      String(item.external_id ?? '').trim() ||
+      `${item.product_code}-${index}`,
+  }));
+
+  return {
+    doc_type: 'movement',
+    doc_id: String(movement.movement_id),
+    doc_number: String(movement.movement_number),
+    date: movement.from_movement_date,
+    from_warehouse_code: movement.from_warehouse_code,
+    to_warehouse_code: movement.to_warehouse_code,
+    client_name: null,
+    note: movement.note,
+    items,
+  };
 }

@@ -39,7 +39,13 @@ export function getDb(): Firestore {
   }
 
   const db = getFirestore();
-  db.settings({ ignoreUndefinedProperties: true });
+  // settings() можно вызвать только один раз на инстанс Firestore.
+  // При hot-reload / повторной инициализации модуля он уже задан — игнорируем.
+  try {
+    db.settings({ ignoreUndefinedProperties: true });
+  } catch {
+    // already initialized — ок
+  }
   firestore = db;
 
   return db;

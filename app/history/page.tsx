@@ -72,7 +72,14 @@ export default function HistoryPage() {
                          hover:shadow-md hover:ring-2 hover:ring-blue-200 transition-all"
             >
               <div className="flex-1 min-w-0">
-                <div className="font-bold text-base">№ {s.movement_number || s.movement_id}</div>
+                <div className="font-bold text-base flex items-center gap-2">
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                    s.doc_type === 'order' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {s.doc_type === 'order' ? 'Заказ' : 'Накладная'}
+                  </span>
+                  № {s.doc_number || s.doc_id}
+                </div>
                 <div className="text-xs text-gray-400 mt-0.5">
                   {fmt(s.finished_at || s.created_at)}
                   {s.checker_name && ` · 👤 ${s.checker_name}`}

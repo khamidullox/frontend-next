@@ -16,17 +16,17 @@ export interface SessionItem {
   barcodes: string[];
 }
 
-export interface SessionMovement {
-  filial_code: string;
-  external_id: string;
-  movement_id: string;
-  movement_number: string;
-  from_movement_date: string;
-  to_movement_date: string;
-  status: string;
-  from_warehouse_code: string;
-  to_warehouse_code: string;
-  note: string;
+export type DocType = 'movement' | 'order';
+
+export interface SessionDocument {
+  doc_type: DocType;
+  doc_id: string;
+  doc_number: string;
+  date: string;
+  from_warehouse_code: string | null;
+  to_warehouse_code: string | null;
+  client_name: string | null;
+  note: string | null;
 }
 
 export interface SessionSummary {
@@ -44,7 +44,7 @@ export interface Session {
   finished_at?: string | null;
   status: SessionStatus;
   checker_name: string;
-  movement: SessionMovement;
+  document: SessionDocument;
   items: SessionItem[];
   summary: SessionSummary;
   scans: ScanRecord[];
@@ -56,8 +56,9 @@ export interface SessionListItem {
   finished_at?: string | null;
   status: SessionStatus;
   checker_name: string;
-  movement_id: string;
-  movement_number: string;
+  doc_type: DocType;
+  doc_id: string;
+  doc_number: string;
   summary: SessionSummary;
 }
 
@@ -68,6 +69,15 @@ export interface MovementListItem {
   filial_code: string;
   from_warehouse_code: string | null;
   to_warehouse_code: string | null;
+  items_count: number;
+  total_quantity: number;
+}
+
+export interface OrderListItem {
+  deal_id: string;
+  doc_number: string;
+  date: string;
+  client_name: string;
   items_count: number;
   total_quantity: number;
 }
@@ -168,6 +178,13 @@ export async function listSessions(): Promise<SessionListItem[]> {
 
 export async function listMovements(): Promise<MovementListItem[]> {
   const res = await fetch('/api/movements', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
+export async function listOrders(): Promise<OrderListItem[]> {
+  const res = await fetch('/api/orders', { cache: 'no-store' });
   if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
   const data = await res.json();
   return data.data || [];

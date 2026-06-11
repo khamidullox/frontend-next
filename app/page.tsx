@@ -28,18 +28,12 @@ export default function HomePage() {
     localStorage.setItem('checker_name', checker.trim());
 
     try {
-      // Форматированный номер с ведущим нулём (0000020042) — ищем по movement_number.
-      // Иначе это ID накладной (3951537 — печатается вверху бланка) — быстрый путь.
-      const filters: Record<string, string> = /^0\d+$/.test(num)
-        ? { movement_number: num }
-        : { movement_id: num };
-      filters.checker_name = checker.trim();
-
-      const session = await createSession(filters);
+      // Единый ввод: сервер сам определит — накладная это или заказ.
+      const session = await createSession({ query: num, checker_name: checker.trim() });
       router.push(`/session/${session.id}`);
     } catch (err) {
       if (err instanceof NotFoundError) {
-        setError(`Накладная "${num}" не найдена в Smartup`);
+        setError(`Документ "${num}" не найден в Smartup`);
       } else if (err instanceof TypeError) {
         setError('Не удалось подключиться к серверу.');
       } else {
@@ -54,9 +48,9 @@ export default function HomePage() {
     <div className="flex items-center justify-center min-h-[70vh]">
       <div className="bg-white rounded-2xl shadow-lg p-10 w-full max-w-md text-center">
         <div className="text-6xl mb-4">🗂️</div>
-        <h2 className="text-2xl font-bold mb-2">Введите ID накладной</h2>
+        <h2 className="text-2xl font-bold mb-2">Введите ID документа</h2>
         <p className="text-gray-500 text-sm mb-8">
-          ID указан вверху бланка. Получим товары из Smartup и начнём проверку
+          Накладная или заказ — определим автоматически. ID указан вверху бланка
         </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">

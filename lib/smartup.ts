@@ -7,7 +7,8 @@ const SMARTUP_FILIAL_ID = process.env.SMARTUP_FILIAL_ID || '';
 export async function smartupRequest<T = Record<string, unknown>>(
   endpoint: string,
   body: Record<string, unknown> = {},
-  retry = 2
+  retry = 2,
+  project: string = SMARTUP_PROJECT
 ): Promise<T> {
   if (!SMARTUP_USERNAME || !SMARTUP_PASSWORD) {
     throw new Error('Не заданы SMARTUP_USERNAME / SMARTUP_PASSWORD');
@@ -19,7 +20,7 @@ export async function smartupRequest<T = Record<string, unknown>>(
     Authorization:
       'Basic ' +
       Buffer.from(`${SMARTUP_USERNAME}:${SMARTUP_PASSWORD}`).toString('base64'),
-    project_code: SMARTUP_PROJECT,
+    project_code: project,
   };
 
   if (SMARTUP_FILIAL_ID) {
@@ -50,7 +51,7 @@ export async function smartupRequest<T = Record<string, unknown>>(
     }
   } catch (err) {
     if (retry > 0) {
-      return smartupRequest<T>(endpoint, body, retry - 1);
+      return smartupRequest<T>(endpoint, body, retry - 1, project);
     }
     throw err;
   }
