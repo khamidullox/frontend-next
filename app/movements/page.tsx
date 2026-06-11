@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { listMovements, createSession, MovementListItem } from '@/lib/api';
+import { listMovements, createSession } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
+import { useCachedList } from '@/lib/useCachedList';
 
 export default function MovementsPage() {
   return (
@@ -14,19 +15,14 @@ export default function MovementsPage() {
 }
 
 function MovementsContent() {
-  const [movements, setMovements] = useState<MovementListItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: movements, loading, error: loadError } = useCachedList(
+    'cache:movements',
+    listMovements
+  );
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [openingId, setOpeningId] = useState<string | null>(null);
   const router = useRouter();
-
-  useEffect(() => {
-    listMovements()
-      .then(setMovements)
-      .catch(e => setError((e as Error).message))
-      .finally(() => setLoading(false));
-  }, []);
 
   async function open(movementId: string) {
     setOpeningId(movementId);
@@ -75,7 +71,7 @@ function MovementsContent() {
                    outline-none focus:border-blue-400 transition-colors"
       />
 
-      {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+      {(error || loadError) && <p className="text-red-500 text-sm mb-3">{error || loadError}</p>}
 
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl p-8 text-center text-gray-400">

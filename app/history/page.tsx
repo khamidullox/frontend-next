@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { listSessions, SessionListItem } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
+import { useCachedList } from '@/lib/useCachedList';
 
 function fmt(iso?: string | null) {
   if (!iso) return '';
@@ -37,17 +37,12 @@ export default function HistoryPage() {
 }
 
 function HistoryContent() {
-  const [sessions, setSessions] = useState<SessionListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const { data: sessions, loading, error } = useCachedList(
+    'cache:history',
+    listSessions,
+    30_000 // история обновляется чаще — окно «свежести» меньше
+  );
   const router = useRouter();
-
-  useEffect(() => {
-    listSessions()
-      .then(setSessions)
-      .catch(e => setError((e as Error).message))
-      .finally(() => setLoading(false));
-  }, []);
 
   if (loading) {
     return (

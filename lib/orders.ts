@@ -1,9 +1,11 @@
 import { smartupRequest } from './smartup';
 import { getProductInfos } from './products';
 import { CheckDocument, DocItem } from './document';
+import { cached } from './cache';
 
 const ORDER_EXPORT_ENDPOINT = '/b/trade/txs/tdeal/order$export';
 const TRADE_PROJECT = 'trade';
+const LIST_TTL_MS = 90 * 1000;
 
 function normalizeCode(value: unknown): string {
   return String(value ?? '').trim();
@@ -103,18 +105,25 @@ export async function getOrderDocument(dealId: string): Promise<CheckDocument | 
 
 // Поиск заказа по номеру ТТН (delivery_number) или счёта (invoice_number).
 // Smartup не фильтрует по этим полям, поэтому тянем заказы за период и ищем локально.
+// Выгрузка всех заказов за период, кэшируется на 90с (тяжёлая, ~12 МБ).
+// Используется и списком, и поиском по ТТН — оба берут из одного кэша.
+async function getAllOrders(): Promise<RawOrder[]> {
+  return cached('orders:all', LIST_TTL_MS, () => {
+    const end = new Date();
+    const begin = new Date(end);
+    begin.setDate(begin.getDate() - 6);
+    return exportOrders({
+      begin_order_date: formatSmartupDate(begin),
+      end_order_date: formatSmartupDate(end),
+    });
+  });
+}
+
 export async function getOrderDocumentByTTN(ttn: string): Promise<CheckDocument | null> {
   const needle = normalizeCode(ttn);
   if (!needle) return null;
 
-  const end = new Date();
-  const begin = new Date(end);
-  begin.setDate(begin.getDate() - 6);
-
-  const orders = await exportOrders({
-    begin_order_date: formatSmartupDate(begin),
-    end_order_date: formatSmartupDate(end),
-  });
+  const orders = await getAllOrders();
 
   const match = orders.find(
     (o) =>
@@ -137,16 +146,9 @@ export interface OrderListItem {
   total_quantity: number;
 }
 
-// Лёгкий список заказов за период, который отдаёт Smartup (~7 дней).
+// Лёгкий список заказов за период (из кэша).
 export async function listOrders(): Promise<OrderListItem[]> {
-  const end = new Date();
-  const begin = new Date(end);
-  begin.setDate(begin.getDate() - 6);
-
-  const orders = await exportOrders({
-    begin_order_date: formatSmartupDate(begin),
-    end_order_date: formatSmartupDate(end),
-  });
+  const orders = await getAllOrders();
 
   return orders
     .map((o) => {

@@ -1,8 +1,16 @@
 import { smartupRequest } from './smartup';
 import { getProductInfos } from './products';
 import { CheckDocument, DocItem } from './document';
+import { cached } from './cache';
 
 const MOVEMENT_EXPORT_ENDPOINT = '/b/anor/mxsx/mkw/movement$export';
+const LIST_TTL_MS = 90 * 1000;
+
+// Полная выгрузка накладных, кэш на 90с. Используется списком и поиском
+// по movement_number (Smartup по номеру не фильтрует).
+function getAllMovements(): Promise<Movement[]> {
+  return cached('movements:all', LIST_TTL_MS, () => exportMovements({}));
+}
 
 export interface MovementItem {
   product_code: string;
@@ -76,7 +84,7 @@ async function getMovement(filters: MovementFilters): Promise<Movement | null> {
 
   // Медленный путь: по movement_number Smartup не фильтрует — тянем все и ищем.
   if (filters.movement_number) {
-    const all = await exportMovements({});
+    const all = await getAllMovements();
     return (
       all.find(
         (m) => String(m.movement_number) === String(filters.movement_number)
@@ -99,9 +107,9 @@ export interface MovementListItem {
   total_quantity: number;
 }
 
-// Лёгкий список доступных накладных (за период, который отдаёт Smartup ~7 дней).
+// Лёгкий список доступных накладных (из кэша).
 export async function listMovements(): Promise<MovementListItem[]> {
-  const movements = await exportMovements({});
+  const movements = await getAllMovements();
 
   return movements
     .map((m) => {
