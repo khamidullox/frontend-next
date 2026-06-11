@@ -87,6 +87,38 @@ async function getMovement(filters: MovementFilters): Promise<Movement | null> {
   return movements[0] || null;
 }
 
+export interface MovementListItem {
+  movement_id: string;
+  movement_number: string;
+  from_movement_date: string;
+  filial_code: string;
+  from_warehouse_code: string | null;
+  to_warehouse_code: string | null;
+  items_count: number;
+  total_quantity: number;
+}
+
+// Лёгкий список доступных накладных (за период, который отдаёт Smartup ~7 дней).
+export async function listMovements(): Promise<MovementListItem[]> {
+  const movements = await exportMovements({});
+
+  return movements
+    .map((m) => {
+      const items = m.movement_items || [];
+      return {
+        movement_id: String(m.movement_id),
+        movement_number: String(m.movement_number),
+        from_movement_date: m.from_movement_date,
+        filial_code: m.filial_code,
+        from_warehouse_code: m.from_warehouse_code,
+        to_warehouse_code: m.to_warehouse_code,
+        items_count: items.length,
+        total_quantity: items.reduce((sum, it) => sum + toNumber(it.quantity), 0),
+      };
+    })
+    .sort((a, b) => b.movement_id.localeCompare(a.movement_id, undefined, { numeric: true }));
+}
+
 export async function getEnrichedMovement(
   filters: MovementFilters
 ): Promise<Movement | null> {

@@ -1,15 +1,22 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSession, NotFoundError } from '@/lib/api';
 
 export default function HomePage() {
   const [value, setValue] = useState('');
+  const [checker, setChecker] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Имя проверяющего запоминаем между сессиями (localStorage доступен только на клиенте).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setChecker(localStorage.getItem('checker_name') || '');
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -18,6 +25,7 @@ export default function HomePage() {
 
     setError('');
     setLoading(true);
+    localStorage.setItem('checker_name', checker.trim());
 
     try {
       // Форматированный номер с ведущим нулём (0000020042) — ищем по movement_number.
@@ -25,6 +33,7 @@ export default function HomePage() {
       const filters: Record<string, string> = /^0\d+$/.test(num)
         ? { movement_number: num }
         : { movement_id: num };
+      filters.checker_name = checker.trim();
 
       const session = await createSession(filters);
       router.push(`/session/${session.id}`);
@@ -32,7 +41,7 @@ export default function HomePage() {
       if (err instanceof NotFoundError) {
         setError(`Накладная "${num}" не найдена в Smartup`);
       } else if (err instanceof TypeError) {
-        setError('Не удалось подключиться к серверу. Проверьте что бэкенд запущен.');
+        setError('Не удалось подключиться к серверу.');
       } else {
         setError((err as Error).message || 'Неизвестная ошибка');
       }
@@ -44,7 +53,6 @@ export default function HomePage() {
   return (
     <div className="flex items-center justify-center min-h-[70vh]">
       <div className="bg-white rounded-2xl shadow-lg p-10 w-full max-w-md text-center">
-        {/* Icon */}
         <div className="text-6xl mb-4">🗂️</div>
         <h2 className="text-2xl font-bold mb-2">Введите ID накладной</h2>
         <p className="text-gray-500 text-sm mb-8">
@@ -52,6 +60,17 @@ export default function HomePage() {
         </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <input
+            type="text"
+            value={checker}
+            onChange={e => setChecker(e.target.value)}
+            placeholder="Кто проверяет (необязательно)"
+            disabled={loading}
+            className="border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm
+                       outline-none focus:border-blue-400 transition-colors
+                       disabled:bg-gray-50 disabled:text-gray-400"
+          />
+
           <div className="flex gap-2">
             <input
               ref={inputRef}

@@ -6,12 +6,59 @@ import {
   getSession,
   scanBarcode,
   setItemQuantity,
+  finishSession,
   Session,
   SessionItem,
   ScanRecord,
   ItemStatus,
   ScanStatus,
 } from '@/lib/api';
+
+// SheetJS грузим по требованию из CDN (без npm-зависимости).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+declare global { interface Window { XLSX?: any } }
+
+function loadXLSX(): Promise<unknown> {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+    s.onload = () => resolve(window.XLSX);
+    s.onerror = () => reject(new Error('Не удалось загрузить библиотеку Excel'));
+    document.head.appendChild(s);
+  });
+}
+
+async function exportToExcel(session: Session) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const XLSX: any = await loadXLSX();
+
+  const statusLabel: Record<ItemStatus, string> = {
+    done: 'Собрано', partial: 'Частично', pending: 'Не собрано',
+  };
+
+  const rows = session.items.map((it, i) => ({
+    '№': i + 1,
+    'Код': it.product_code,
+    'Название': it.product_name,
+    'Штрихкоды': it.barcodes.join(', '),
+    'По накладной': it.quantity,
+    'Отсканировано': it.scanned_quantity,
+    'Расхождение': it.scanned_quantity - it.quantity,
+    'Статус': statusLabel[it.status],
+  }));
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 5 }, { wch: 10 }, { wch: 45 }, { wch: 28 },
+    { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 12 },
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, 'Проверка');
+
+  const num = session.movement.movement_number || session.movement.movement_id || 'nakladnaya';
+  XLSX.writeFile(wb, `nakladnaya_${num}.xlsx`);
+}
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -81,10 +128,12 @@ function ProductCard({
   item,
   highlighted,
   onManual,
+  readOnly,
 }: {
   item: SessionItem;
   highlighted: boolean;
   onManual: (item: SessionItem) => void;
+  readOnly?: boolean;
 }) {
   const borderColor: Record<ItemStatus, string> = {
     done:    'border-l-green-500',
@@ -126,15 +175,17 @@ function ProductCard({
       </div>
 
       {/* Ручной ввод количества */}
-      <button
-        onClick={() => onManual(item)}
-        title="Ввести количество вручную"
-        className="flex-shrink-0 w-9 h-9 rounded-lg bg-gray-100 hover:bg-blue-100
-                   text-gray-500 hover:text-blue-600 transition-colors flex items-center
-                   justify-center text-lg"
-      >
-        ✍️
-      </button>
+      {!readOnly && (
+        <button
+          onClick={() => onManual(item)}
+          title="Ввести количество вручную"
+          className="flex-shrink-0 w-9 h-9 rounded-lg bg-gray-100 hover:bg-blue-100
+                     text-gray-500 hover:text-blue-600 transition-colors flex items-center
+                     justify-center text-lg print:hidden"
+        >
+          ✍️
+        </button>
+      )}
     </div>
   );
 }
@@ -351,6 +402,8 @@ export default function SessionPage() {
   const [highlightedId, setHighlighted] = useState<string | null>(null);
   const [scanError, setScanError]       = useState('');
   const [manualItem, setManualItem]     = useState<SessionItem | null>(null);
+  const [finishing, setFinishing]       = useState(false);
+  const [exporting, setExporting]       = useState(false);
 
   const scanInputRef = useRef<HTMLInputElement>(null);
 
@@ -420,6 +473,32 @@ export default function SessionPage() {
     }
   }
 
+  async function handleFinish() {
+    if (!confirm('Завершить проверку? Сессия станет только для чтения.')) return;
+    setFinishing(true);
+    setScanError('');
+    try {
+      const s = await finishSession(id);
+      setSession(s);
+    } catch (err) {
+      setScanError((err as Error).message || 'Ошибка завершения');
+    } finally {
+      setFinishing(false);
+    }
+  }
+
+  async function handleExport() {
+    if (!session) return;
+    setExporting(true);
+    try {
+      await exportToExcel(session);
+    } catch (err) {
+      setScanError((err as Error).message || 'Ошибка экспорта');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   // ── render ──
 
   if (loading) {
@@ -435,6 +514,8 @@ export default function SessionPage() {
 
   const { movement, summary, items } = session;
   const allDone = summary.done_items === summary.total_items && summary.total_items > 0;
+  const isFinished = session.status === 'finished';
+  const discrepancies = items.filter(i => i.scanned_quantity !== i.quantity);
 
   const sortedItems = [...items].sort(
     (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
@@ -459,13 +540,34 @@ export default function SessionPage() {
               movement.from_movement_date  && `Дата: ${movement.from_movement_date}`,
             ].filter(Boolean).join(' · ')}
           </p>
+          {(session.checker_name || isFinished) && (
+            <p className="text-sm text-gray-500 mt-0.5">
+              {session.checker_name && `👤 ${session.checker_name}`}
+              {isFinished && (
+                <span className="ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
+                  Проверка завершена
+                </span>
+              )}
+            </p>
+          )}
         </div>
         <button
           onClick={() => router.push('/')}
-          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm text-gray-600 transition-colors"
+          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm text-gray-600 transition-colors print:hidden"
         >
           ← Назад
         </button>
+      </div>
+
+      {/* Акт — печатается, на экране скрыт */}
+      <div className="hidden print:block mb-4">
+        <p className="text-sm">
+          Дата проверки: {new Date(session.finished_at || session.created_at).toLocaleString('ru-RU')}
+          {session.checker_name && ` · Проверил: ${session.checker_name}`}
+        </p>
+        <p className="text-sm">
+          Позиций: {summary.total_items} · Собрано: {summary.done_items} · Расхождений: {discrepancies.length}
+        </p>
       </div>
 
       {/* Progress */}
@@ -478,32 +580,40 @@ export default function SessionPage() {
         </div>
       )}
 
-      {/* Scan input */}
-      <div className="bg-slate-900 rounded-xl px-4 py-3 mb-4 flex items-center gap-3">
-        <span className="text-gray-400 text-sm whitespace-nowrap">📷 Сканер:</span>
-        <input
-          ref={scanInputRef}
-          type="text"
-          placeholder="Поднесите сканер к штрихкоду..."
-          onKeyDown={handleScan}
-          onClick={refocusScan}
-          className="flex-1 bg-slate-800 text-white placeholder-slate-500 rounded-lg px-4 py-2.5
-                     border-2 border-blue-500 focus:border-green-400 outline-none transition-colors
-                     text-base"
-        />
-      </div>
+      {/* Scan input — только для активной сессии */}
+      {!isFinished && (
+        <div className="bg-slate-900 rounded-xl px-4 py-3 mb-4 flex items-center gap-3 print:hidden">
+          <span className="text-gray-400 text-sm whitespace-nowrap">📷 Сканер:</span>
+          <input
+            ref={scanInputRef}
+            type="text"
+            placeholder="Поднесите сканер к штрихкоду..."
+            onKeyDown={handleScan}
+            onClick={refocusScan}
+            className="flex-1 bg-slate-800 text-white placeholder-slate-500 rounded-lg px-4 py-2.5
+                       border-2 border-blue-500 focus:border-green-400 outline-none transition-colors
+                       text-base"
+          />
+        </div>
+      )}
 
       {scanError && (
-        <p className="text-red-500 text-sm mb-3">{scanError}</p>
+        <p className="text-red-500 text-sm mb-3 print:hidden">{scanError}</p>
       )}
 
       {/* Last scan result */}
-      {lastScan && (
-        <LastScanBanner scan={lastScan} itemName={lastScanItem?.product_name} />
+      {lastScan && !isFinished && (
+        <div className="print:hidden">
+          <LastScanBanner scan={lastScan} itemName={lastScanItem?.product_name} />
+        </div>
       )}
 
       {/* Журнал сканов: проблемные | принятые */}
-      <ScanLog scans={session.scans} items={items} />
+      {!isFinished && (
+        <div className="print:hidden">
+          <ScanLog scans={session.scans} items={items} />
+        </div>
+      )}
 
       {/* Product list */}
       <div className="flex flex-col gap-2.5">
@@ -513,9 +623,39 @@ export default function SessionPage() {
               item={item}
               highlighted={highlightedId === item.id}
               onManual={setManualItem}
+              readOnly={isFinished}
             />
           </div>
         ))}
+      </div>
+
+      {/* Действия */}
+      <div className="flex flex-wrap gap-2 mt-5 print:hidden">
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          className="flex-1 min-w-[140px] py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-300
+                     text-white font-semibold rounded-xl transition-colors"
+        >
+          {exporting ? '⏳ Выгрузка...' : '📥 Excel'}
+        </button>
+        <button
+          onClick={() => window.print()}
+          className="flex-1 min-w-[140px] py-3 bg-gray-100 hover:bg-gray-200
+                     text-gray-700 font-semibold rounded-xl transition-colors"
+        >
+          🖨️ Печать акта
+        </button>
+        {!isFinished && (
+          <button
+            onClick={handleFinish}
+            disabled={finishing}
+            className="flex-1 min-w-[140px] py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300
+                       text-white font-semibold rounded-xl transition-colors"
+          >
+            {finishing ? '⏳...' : '✅ Завершить проверку'}
+          </button>
+        )}
       </div>
 
       {/* Manual quantity dialog */}

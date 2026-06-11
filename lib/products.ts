@@ -48,12 +48,6 @@ function buildBarcodes(item: Record<string, unknown>): string[] {
 
 // ─── Чтение справочника ──────────────────────────────────────────────────────
 
-export async function getProductInfo(code: string): Promise<ProductDoc | null> {
-  const db = getDb();
-  const snap = await db.collection(PRODUCTS_COLLECTION).doc(normalizeCode(code)).get();
-  return snap.exists ? (snap.data() as ProductDoc) : null;
-}
-
 // Пакетное чтение нескольких товаров (для позиций накладной) — один запрос.
 export async function getProductInfos(
   codes: string[]

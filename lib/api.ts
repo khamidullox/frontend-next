@@ -36,13 +36,40 @@ export interface SessionSummary {
   total_items: number;
 }
 
+export type SessionStatus = 'active' | 'finished';
+
 export interface Session {
   id: string;
   created_at: string;
+  finished_at?: string | null;
+  status: SessionStatus;
+  checker_name: string;
   movement: SessionMovement;
   items: SessionItem[];
   summary: SessionSummary;
   scans: ScanRecord[];
+}
+
+export interface SessionListItem {
+  id: string;
+  created_at: string;
+  finished_at?: string | null;
+  status: SessionStatus;
+  checker_name: string;
+  movement_id: string;
+  movement_number: string;
+  summary: SessionSummary;
+}
+
+export interface MovementListItem {
+  movement_id: string;
+  movement_number: string;
+  from_movement_date: string;
+  filial_code: string;
+  from_warehouse_code: string | null;
+  to_warehouse_code: string | null;
+  items_count: number;
+  total_quantity: number;
 }
 
 export interface ScanRecord {
@@ -119,6 +146,31 @@ export async function setItemQuantity(
     throw new Error((data as { error?: string }).error || `Ошибка сервера: ${res.status}`);
   }
   return res.json();
+}
+
+export async function finishSession(sessionId: string): Promise<Session> {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/finish`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data as { error?: string }).error || `Ошибка сервера: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function listSessions(): Promise<SessionListItem[]> {
+  const res = await fetch(`${API_BASE}/sessions`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
+export async function listMovements(): Promise<MovementListItem[]> {
+  const res = await fetch('/api/movements', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
 }
 
 export class NotFoundError extends Error {

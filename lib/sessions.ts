@@ -43,12 +43,28 @@ export interface SessionMovement {
   note: string | null;
 }
 
+export type SessionStatus = 'active' | 'finished';
+
 interface StoredSession {
   id: string;
   created_at: string;
+  finished_at?: string | null;
+  status: SessionStatus;
+  checker_name: string;
   movement: SessionMovement;
   items: SessionItem[];
   scans: ScanRecord[];
+}
+
+export interface SessionListItem {
+  id: string;
+  created_at: string;
+  finished_at?: string | null;
+  status: SessionStatus;
+  checker_name: string;
+  movement_id: string;
+  movement_number: string;
+  summary: ReturnType<typeof summarize>;
 }
 
 function normalizeCode(value: unknown): string {
@@ -103,7 +119,7 @@ function pickMovement(movement: Movement): SessionMovement {
 
 // ─── Операции ────────────────────────────────────────────────────────────────
 
-export async function createSession(filters: MovementFilters) {
+export async function createSession(filters: MovementFilters & { checker_name?: string }) {
   const movement = await getEnrichedMovement(filters);
   if (!movement) return null;
 
@@ -120,6 +136,9 @@ export async function createSession(filters: MovementFilters) {
   const session: StoredSession = {
     id: crypto.randomUUID(),
     created_at: new Date().toISOString(),
+    finished_at: null,
+    status: 'active',
+    checker_name: String(filters.checker_name || '').trim(),
     movement: pickMovement(movement),
     items,
     scans: [],
@@ -134,6 +153,45 @@ export async function getSession(sessionId: string) {
   const snap = await getDb().collection(SESSIONS_COLLECTION).doc(sessionId).get();
   if (!snap.exists) return null;
   return serialize(snap.data() as StoredSession);
+}
+
+export async function finishSession(sessionId: string) {
+  const db = getDb();
+  const ref = db.collection(SESSIONS_COLLECTION).doc(sessionId);
+
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return null;
+
+    const session = snap.data() as StoredSession;
+    session.status = 'finished';
+    session.finished_at = new Date().toISOString();
+
+    tx.set(ref, session);
+    return serialize(session);
+  });
+}
+
+export async function listSessions(limit = 100): Promise<SessionListItem[]> {
+  const snap = await getDb()
+    .collection(SESSIONS_COLLECTION)
+    .orderBy('created_at', 'desc')
+    .limit(limit)
+    .get();
+
+  return snap.docs.map((doc) => {
+    const s = doc.data() as StoredSession;
+    return {
+      id: s.id,
+      created_at: s.created_at,
+      finished_at: s.finished_at ?? null,
+      status: s.status ?? 'active',
+      checker_name: s.checker_name ?? '',
+      movement_id: s.movement?.movement_id ?? '',
+      movement_number: s.movement?.movement_number ?? '',
+      summary: summarize(s.items || []),
+    };
+  });
 }
 
 export async function scanBarcode(sessionId: string, barcode: string) {
