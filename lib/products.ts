@@ -103,6 +103,7 @@ function formatSmartupDate(date: Date): string {
 interface SyncResult {
   fetched: number;
   written: number;
+  archived: number;
   mode: 'full' | 'incremental';
 }
 
@@ -142,14 +143,35 @@ export async function syncProducts({ full = false } = {}): Promise<SyncResult> {
 
   const inventory = data.inventory || [];
   let written = 0;
+  let archived = 0;
 
   // Firestore: батч до 500 операций.
   let batch = db.batch();
   let ops = 0;
 
+  const flush = async () => {
+    if (ops >= 450) {
+      await batch.commit();
+      batch = db.batch();
+      ops = 0;
+    }
+  };
+
   for (const item of inventory) {
     const code = normalizeCode(item.code);
     if (!code) continue;
+
+    const ref = db.collection(PRODUCTS_COLLECTION).doc(code);
+
+    // Архивные (state !== 'A') в справочник не берём. А если товар перевели
+    // в архив — удаляем его из Firestore, чтобы он перестал находиться.
+    if (normalizeCode(item.state) !== 'A') {
+      batch.delete(ref);
+      archived += 1;
+      ops += 1;
+      await flush();
+      continue;
+    }
 
     const doc: ProductDoc = {
       code,
@@ -158,15 +180,10 @@ export async function syncProducts({ full = false } = {}): Promise<SyncResult> {
       barcodes: buildBarcodes(item),
     };
 
-    batch.set(db.collection(PRODUCTS_COLLECTION).doc(code), doc, { merge: true });
+    batch.set(ref, doc, { merge: true });
     ops += 1;
     written += 1;
-
-    if (ops >= 450) {
-      await batch.commit();
-      batch = db.batch();
-      ops = 0;
-    }
+    await flush();
   }
 
   if (ops > 0) {
@@ -175,5 +192,5 @@ export async function syncProducts({ full = false } = {}): Promise<SyncResult> {
 
   await metaRef.set({ last_sync_ms: Date.now() }, { merge: true });
 
-  return { fetched: inventory.length, written, mode };
+  return { fetched: inventory.length, written, archived, mode };
 }
