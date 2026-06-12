@@ -3,8 +3,10 @@ import { getDb } from './firebase';
 const PRODUCTS_COLLECTION = 'products';
 const META_DOC = 'meta/products_sync';
 const INVENTORY_EXPORT_ENDPOINT = '/b/anor/mxsx/mr/inventory$export';
+const CATALOG_TTL_MS = 30 * 60 * 1000;
 
 import { smartupRequest } from './smartup';
+import { cached } from './cache';
 
 export interface ProductDoc {
   code: string;
@@ -44,6 +46,121 @@ function buildBarcodes(item: Record<string, unknown>): string[] {
     ...extractBarcodesFromText(item.short_name),
   ];
   return [...new Set(all)];
+}
+
+// ─── Справочник ТМЦ (для всех, открыто) ──────────────────────────────────────
+
+export interface CatalogItem {
+  code: string;
+  name: string;
+  producer: string;
+  barcodes: string[];
+}
+
+// Каталог товаров из Smartup (inventory$export), кэш на 30 мин.
+// Только активные (state=A). Для страницы «Справочник».
+export async function getProductCatalog(): Promise<CatalogItem[]> {
+  return cached('product:catalog', CATALOG_TTL_MS, async () => {
+    const data = await smartupRequest<{ inventory?: Record<string, unknown>[] }>(
+      INVENTORY_EXPORT_ENDPOINT,
+      {}
+    );
+    return (data.inventory || [])
+      .filter((i) => normalizeCode(i.state) === 'A')
+      .map((i) => ({
+        code: normalizeCode(i.code),
+        name: String(i.name ?? ''),
+        producer: String(i.producer_code ?? ''),
+        barcodes: buildBarcodes(i),
+      }))
+      .filter((i) => i.code)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  });
+}
+
+// ─── Остатки товара по складам ───────────────────────────────────────────────
+
+const BALANCE_EXPORT_ENDPOINT = '/b/anor/mxsx/mkw/balance$export';
+const WAREHOUSE_EXPORT_ENDPOINT = '/b/anor/mxsx/mkw/warehouse$export';
+
+function todaySmartup(): string {
+  const d = new Date();
+  return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+}
+
+// Карта склад_id → название (warehouse$export), кэш на 30 мин.
+function getWarehouseMap(): Promise<Map<string, string>> {
+  return cached('warehouse:map', CATALOG_TTL_MS, async () => {
+    const data = await smartupRequest<{ warehouse?: Record<string, unknown>[] }>(
+      WAREHOUSE_EXPORT_ENDPOINT,
+      {}
+    );
+    const map = new Map<string, string>();
+    for (const w of data.warehouse || []) {
+      map.set(normalizeCode(w.warehouse_id), String(w.name ?? ''));
+    }
+    return map;
+  });
+}
+
+interface RawBalance {
+  warehouse_id: string;
+  product_code: string;
+  quantity: string | number;
+  input_price?: string | number;
+}
+
+// Весь баланс из Smartup (тяжёлый), кэш на 15 мин.
+function getAllBalance(): Promise<RawBalance[]> {
+  return cached('balance:all', 15 * 60 * 1000, async () => {
+    const t = todaySmartup();
+    const data = await smartupRequest<{ balance?: RawBalance[] }>(BALANCE_EXPORT_ENDPOINT, {
+      begin_date: t,
+      end_date: t,
+    });
+    return data.balance || [];
+  });
+}
+
+export interface StockRow {
+  warehouse_name: string;
+  quantity: number;
+}
+
+export interface ProductStock {
+  rows: StockRow[];
+  total: number;
+  input_price: number;
+}
+
+// Остатки конкретного товара: на каких складах и сколько.
+export async function getProductStock(code: string): Promise<ProductStock> {
+  const needle = normalizeCode(code);
+  const [balance, whMap] = await Promise.all([getAllBalance(), getWarehouseMap()]);
+
+  const byWh = new Map<string, number>();
+  let inputPrice = 0;
+
+  for (const b of balance) {
+    if (normalizeCode(b.product_code) !== needle) continue;
+    const whId = normalizeCode(b.warehouse_id);
+    byWh.set(whId, (byWh.get(whId) || 0) + (Number(b.quantity) || 0));
+    if (!inputPrice && b.input_price) inputPrice = Number(b.input_price) || 0;
+  }
+
+  const rows: StockRow[] = [...byWh.entries()]
+    .filter(([, qty]) => qty !== 0)
+    .map(([whId, qty]) => ({
+      warehouse_name: whMap.get(whId) || `склад ${whId}`,
+      quantity: qty,
+    }))
+    .sort((a, b) => b.quantity - a.quantity);
+
+  return {
+    rows,
+    total: rows.reduce((s, r) => s + r.quantity, 0),
+    input_price: inputPrice,
+  };
 }
 
 // ─── Чтение справочника ──────────────────────────────────────────────────────

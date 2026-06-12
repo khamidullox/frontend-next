@@ -201,6 +201,37 @@ export async function listOrders(): Promise<OrderListItem[]> {
   return data.data || [];
 }
 
+export interface CatalogItem {
+  code: string;
+  name: string;
+  producer: string;
+  barcodes: string[];
+}
+
+export async function listProducts(): Promise<CatalogItem[]> {
+  const res = await fetch('/api/products', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
+export interface StockRow {
+  warehouse_name: string;
+  quantity: number;
+}
+
+export interface ProductStock {
+  rows: StockRow[];
+  total: number;
+  input_price: number;
+}
+
+export async function getProductStock(code: string): Promise<ProductStock> {
+  const res = await fetch(`/api/products/${encodeURIComponent(code)}/stock`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  return res.json();
+}
+
 export class NotFoundError extends Error {
   constructor(message: string) {
     super(message);

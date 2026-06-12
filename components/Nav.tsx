@@ -5,7 +5,11 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { isAdminUnlocked, setAdminUnlocked } from '@/lib/admin';
 
-const SCANNER_LINK = { href: '/', label: '📦 Проверка' };
+// Видны всем (без пароля)
+const PUBLIC_LINKS = [
+  { href: '/', label: '📦 Проверка' },
+  { href: '/products', label: '📚 Справочник' },
+];
 
 const ADMIN_LINKS = [
   { href: '/movements', label: '🗂️ Накладные' },
@@ -35,7 +39,7 @@ export default function Nav() {
     router.push('/');
   }
 
-  const links = unlocked ? [SCANNER_LINK, ...ADMIN_LINKS] : [SCANNER_LINK];
+  const links = unlocked ? [...PUBLIC_LINKS, ...ADMIN_LINKS] : PUBLIC_LINKS;
 
   return (
     <nav className="flex items-center gap-1 px-4 pt-3 max-w-3xl mx-auto">
