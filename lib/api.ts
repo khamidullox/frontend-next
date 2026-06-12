@@ -69,9 +69,20 @@ export interface MovementListItem {
   filial_code: string;
   from_warehouse_code: string | null;
   to_warehouse_code: string | null;
+  status: string;
   items_count: number;
   total_quantity: number;
 }
+
+// Статусы накладных Smartup: D-черновик N-новый S-ждёт отгрузку R-ждёт поступление T-в пути C-завершено
+export const MOVEMENT_STATUS_LABEL: Record<string, string> = {
+  D: 'Черновик',
+  N: 'Новый',
+  S: 'Ждёт отгрузку',
+  R: 'Ждёт поступление',
+  T: 'В пути',
+  C: 'Завершено',
+};
 
 export interface OrderListItem {
   deal_id: string;

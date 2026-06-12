@@ -103,15 +103,18 @@ export interface MovementListItem {
   filial_code: string;
   from_warehouse_code: string | null;
   to_warehouse_code: string | null;
+  status: string;
   items_count: number;
   total_quantity: number;
 }
 
 // Лёгкий список доступных накладных (из кэша).
+// Завершённые (status "C") не показываем — их уже отгрузили, проверять нечего.
 export async function listMovements(): Promise<MovementListItem[]> {
   const movements = await getAllMovements();
 
   return movements
+    .filter((m) => m.status !== 'C')
     .map((m) => {
       const items = m.movement_items || [];
       return {
@@ -121,6 +124,7 @@ export async function listMovements(): Promise<MovementListItem[]> {
         filial_code: m.filial_code,
         from_warehouse_code: m.from_warehouse_code,
         to_warehouse_code: m.to_warehouse_code,
+        status: m.status,
         items_count: items.length,
         total_quantity: items.reduce((sum, it) => sum + toNumber(it.quantity), 0),
       };

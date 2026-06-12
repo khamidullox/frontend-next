@@ -2,9 +2,17 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { listMovements, createSession } from '@/lib/api';
+import { listMovements, createSession, MOVEMENT_STATUS_LABEL } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
 import { useCachedList } from '@/lib/useCachedList';
+
+const STATUS_STYLE: Record<string, string> = {
+  N: 'bg-green-100 text-green-700',
+  S: 'bg-amber-100 text-amber-700',
+  R: 'bg-blue-100 text-blue-700',
+  T: 'bg-purple-100 text-purple-700',
+  D: 'bg-gray-100 text-gray-600',
+};
 
 export default function MovementsPage() {
   return (
@@ -89,7 +97,14 @@ function MovementsContent() {
                          disabled:opacity-60"
             >
               <div className="flex-1 min-w-0">
-                <div className="font-bold text-base">№ {m.movement_number}</div>
+                <div className="font-bold text-base flex items-center gap-2">
+                  № {m.movement_number}
+                  {m.status && m.status !== 'C' && (
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${STATUS_STYLE[m.status] || 'bg-gray-100 text-gray-600'}`}>
+                      {MOVEMENT_STATUS_LABEL[m.status] || m.status}
+                    </span>
+                  )}
+                </div>
                 <div className="text-xs text-gray-400 mt-0.5">
                   ID: {m.movement_id}
                   {m.from_movement_date && ` · ${m.from_movement_date}`}
