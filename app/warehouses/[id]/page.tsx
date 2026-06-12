@@ -57,6 +57,33 @@ export default function WarehouseDetailPage() {
   const safePage = Math.min(page, totalPages);
   const pageRows = rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
+  function goToPage(p: number) {
+    setPage(Math.min(totalPages, Math.max(1, p)));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  const pagination = totalPages > 1 && (
+    <div className="flex items-center justify-center gap-3 my-3">
+      <button
+        onClick={() => goToPage(safePage - 1)}
+        disabled={safePage <= 1}
+        className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm
+                   disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        ← Назад
+      </button>
+      <span className="text-sm text-gray-500">Стр. {safePage} из {totalPages}</span>
+      <button
+        onClick={() => goToPage(safePage + 1)}
+        disabled={safePage >= totalPages}
+        className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm
+                   disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        Вперёд →
+      </button>
+    </div>
+  );
+
   return (
     <div>
       <button
@@ -116,6 +143,9 @@ export default function WarehouseDetailPage() {
               <div className="text-center text-gray-400 py-6 text-sm">Товар не найден</div>
             ) : (
               <>
+                {/* Пагинация сверху */}
+                {pagination}
+
                 {/* Шапка таблицы */}
                 <div className="grid grid-cols-[1fr_64px_52px_68px] gap-2 px-2 pb-1.5 mb-1
                                 text-[11px] font-semibold text-gray-400 border-b border-gray-200">
@@ -127,12 +157,10 @@ export default function WarehouseDetailPage() {
 
                 <div className="flex flex-col">
                   {pageRows.map(r => (
-                    <button
+                    <div
                       key={r.product_code}
-                      onClick={() => router.push(`/products/${encodeURIComponent(r.product_code)}`)}
-                      className="grid grid-cols-[1fr_64px_52px_68px] gap-2 items-center text-left
-                                 px-2 py-2 rounded-lg hover:bg-gray-50 transition-colors text-sm
-                                 border-b border-gray-100 last:border-0"
+                      className="grid grid-cols-[1fr_64px_52px_68px] gap-2 items-center
+                                 px-2 py-2 text-sm border-b border-gray-100 last:border-0"
                     >
                       <span className="min-w-0">
                         <span className="block truncate">{r.product_name || '—'}</span>
@@ -141,34 +169,12 @@ export default function WarehouseDetailPage() {
                       <span className="text-center text-xs text-gray-500 truncate">{r.producer || '—'}</span>
                       <span className="text-center text-xs text-gray-500 truncate">{r.group || '—'}</span>
                       <span className="text-right font-bold whitespace-nowrap">{r.quantity}</span>
-                    </button>
+                    </div>
                   ))}
                 </div>
 
-                {/* Пагинация */}
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-center gap-3 mt-3">
-                    <button
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                      disabled={safePage <= 1}
-                      className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm
-                                 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      ← Назад
-                    </button>
-                    <span className="text-sm text-gray-500">
-                      Стр. {safePage} из {totalPages}
-                    </span>
-                    <button
-                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                      disabled={safePage >= totalPages}
-                      className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm
-                                 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Вперёд →
-                    </button>
-                  </div>
-                )}
+                {/* Пагинация снизу */}
+                {pagination}
               </>
             )}
           </>
