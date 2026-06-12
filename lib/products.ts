@@ -102,13 +102,18 @@ const WAREHOUSE_EXPORT_ENDPOINT = '/b/anor/mxsx/mkw/warehouse$export';
 // Только основные склады. Код склада — это префикс в его названии («001 Основной склад»).
 const MAIN_WAREHOUSE_CODES = new Set(['001', '002', '003', '005', '006', '008', '7776']);
 
+// Исключаем склады брака и сервиса (тот же код-префикс, но это не основные).
+const EXCLUDE_WAREHOUSE_KEYWORDS = /брак|сервис/i;
+
 // Код склада из названия (первый токен).
 function warehouseCodeFromName(name: string): string {
   return String(name || '').trim().split(/\s+/)[0] || '';
 }
 
 function isMainWarehouse(name: string): boolean {
-  return MAIN_WAREHOUSE_CODES.has(warehouseCodeFromName(name));
+  if (!MAIN_WAREHOUSE_CODES.has(warehouseCodeFromName(name))) return false;
+  if (EXCLUDE_WAREHOUSE_KEYWORDS.test(name)) return false;
+  return true;
 }
 
 function todaySmartup(): string {
