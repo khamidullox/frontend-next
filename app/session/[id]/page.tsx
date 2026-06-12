@@ -89,49 +89,15 @@ const STATUS_ORDER: Record<ItemStatus, number> = { pending: 0, partial: 1, done:
 
 // ─── sub-components ─────────────────────────────────────────────────────────
 
-function ProgressBar({ session }: { session: Session }) {
-  const { summary, items } = session;
-  const partial = items.filter(i => i.status === 'partial').length;
-  const pending  = items.filter(i => i.status === 'pending').length;
-  const pct = summary.total_items > 0
-    ? Math.round((summary.done_items / summary.total_items) * 100)
-    : 0;
-
-  return (
-    <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
-      <div className="flex gap-6 mb-3 flex-wrap">
-        <Stat label="Всего позиций" value={summary.total_items} color="text-blue-500" />
-        <Stat label="Проверено"     value={summary.done_items}  color="text-green-600" />
-        <Stat label="Частично"      value={partial}             color="text-yellow-600" />
-        <Stat label="Ожидают"       value={pending}             color="text-gray-400" />
-      </div>
-      <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded-full transition-all duration-500"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <div className="text-right text-xs text-gray-400 mt-1">{pct}%</div>
-    </div>
-  );
-}
-
-function Stat({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div className="text-center">
-      <div className={`text-2xl font-bold ${color}`}>{value}</div>
-      <div className="text-xs text-gray-500">{label}</div>
-    </div>
-  );
-}
-
 function ProductCard({
   item,
+  index,
   highlighted,
   onManual,
   readOnly,
 }: {
   item: SessionItem;
+  index: number;
   highlighted: boolean;
   onManual: (item: SessionItem) => void;
   readOnly?: boolean;
@@ -150,29 +116,26 @@ function ProductCard({
   return (
     <div
       className={`
-        bg-white rounded-xl shadow-sm p-4 flex items-center gap-4 border-l-4
+        bg-white rounded-lg shadow-sm px-2.5 py-2 flex items-center gap-2 border-l-4
         ${borderColor[item.status]}
         transition-all duration-300
         ${highlighted ? 'ring-2 ring-blue-400 shadow-blue-200 shadow-md' : ''}
       `}
     >
-      <span className="text-2xl flex-shrink-0">{STATUS_ICON[item.status]}</span>
+      <span className="text-[11px] text-gray-300 font-mono w-5 text-right flex-shrink-0">{index}</span>
+      <span className="text-base flex-shrink-0">{STATUS_ICON[item.status]}</span>
 
       <div className="flex-1 min-w-0">
-        <div className="font-semibold text-sm truncate">{item.product_name || '—'}</div>
-        <div className="text-xs text-gray-400 mt-0.5">Код: {item.product_code}</div>
-        {item.barcodes.length > 0 && (
-          <div className="text-xs text-gray-300 mt-0.5 truncate">
-            ШК: {item.barcodes.join(', ')}
-          </div>
-        )}
+        <div className="font-medium text-[13px] leading-tight truncate">{item.product_name || '—'}</div>
+        <div className="text-[11px] text-gray-400 truncate">
+          Код {item.product_code}
+          {item.barcodes.length > 0 && ` · ШК ${item.barcodes.join(', ')}`}
+        </div>
       </div>
 
-      <div className="text-right flex-shrink-0">
-        <div className={`text-2xl font-bold ${qtyColor[item.status]}`}>
-          {item.scanned_quantity}
-        </div>
-        <div className="text-xs text-gray-400">из {item.quantity}</div>
+      <div className="text-right flex-shrink-0 leading-none">
+        <span className={`text-lg font-bold ${qtyColor[item.status]}`}>{item.scanned_quantity}</span>
+        <span className="text-[11px] text-gray-400">/{item.quantity}</span>
       </div>
 
       {/* Ручной ввод количества */}
@@ -180,9 +143,9 @@ function ProductCard({
         <button
           onClick={() => onManual(item)}
           title="Ввести количество вручную"
-          className="flex-shrink-0 w-9 h-9 rounded-lg bg-gray-100 hover:bg-blue-100
+          className="flex-shrink-0 w-7 h-7 rounded-md bg-gray-100 hover:bg-blue-100
                      text-gray-500 hover:text-blue-600 transition-colors flex items-center
-                     justify-center text-lg print:hidden"
+                     justify-center text-sm print:hidden"
         >
           ✍️
         </button>
@@ -271,23 +234,6 @@ function ManualQuantityDialog({
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function LastScanBanner({ scan, itemName }: { scan: ScanRecord; itemName?: string }) {
-  return (
-    <div
-      className={`
-        flex items-center gap-2 px-4 py-3 rounded-xl font-semibold text-sm mb-4
-        animate-in fade-in slide-in-from-top-2 duration-300
-        ${SCAN_STYLE[scan.status]}
-      `}
-    >
-      <span>{SCAN_ICON[scan.status]}</span>
-      <span>{scan.message}</span>
-      {itemName && <span className="font-normal opacity-70">— {itemName}</span>}
-      <span className="ml-auto font-mono text-xs opacity-50">{scan.barcode}</span>
     </div>
   );
 }
@@ -528,141 +474,170 @@ export default function SessionPage() {
     ? items.find(i => i.id === lastScan.item_id)
     : undefined;
 
+  const partial = items.filter(i => i.status === 'partial').length;
+  const pct = summary.total_items > 0
+    ? Math.round((summary.done_items / summary.total_items) * 100)
+    : 0;
+  const posById = new Map(items.map((it, i) => [it.id, i + 1]));
+
   return (
     <div>
-      {/* Invoice header */}
-      <div className="bg-white rounded-xl shadow-sm p-4 mb-4 flex items-start gap-4 flex-wrap">
-        <div className="flex-1">
-          <h2 className="text-xl font-bold">
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full mr-2 align-middle ${
+      {/* ─── ПЕЧАТЬ: компактный акт-таблица (как в Excel) ─── */}
+      <div className="hidden print:block text-black">
+        <div className="flex justify-between items-baseline mb-1">
+          <h2 className="text-base font-bold">{docLabel} #{doc.doc_number || doc.doc_id || '—'}</h2>
+          <span className="text-xs">Дата: {doc.date}</span>
+        </div>
+        <p className="text-[11px] mb-2">
+          Проверка: {new Date(session.finished_at || session.created_at).toLocaleString('ru-RU')}
+          {session.checker_name && ` · Проверил: ${session.checker_name}`}
+          {doc.client_name && ` · Клиент: ${doc.client_name}`}
+          {' · '}Позиций: {summary.total_items} · Собрано: {summary.done_items} · Расхождений: {discrepancies.length}
+        </p>
+        <table className="w-full border-collapse text-[10px] leading-tight">
+          <thead>
+            <tr className="bg-gray-200">
+              <th className="border border-gray-400 px-1 py-0.5 text-right">№</th>
+              <th className="border border-gray-400 px-1 py-0.5 text-left">Код</th>
+              <th className="border border-gray-400 px-1 py-0.5 text-left">Название</th>
+              <th className="border border-gray-400 px-1 py-0.5 text-left">ШК</th>
+              <th className="border border-gray-400 px-1 py-0.5 text-right">Кол-во</th>
+              <th className="border border-gray-400 px-1 py-0.5 text-right">Скан</th>
+              <th className="border border-gray-400 px-1 py-0.5 text-center">✓</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((it, i) => (
+              <tr key={it.id}>
+                <td className="border border-gray-400 px-1 py-0.5 text-right">{i + 1}</td>
+                <td className="border border-gray-400 px-1 py-0.5">{it.product_code}</td>
+                <td className="border border-gray-400 px-1 py-0.5">{it.product_name}</td>
+                <td className="border border-gray-400 px-1 py-0.5">{it.barcodes.join(', ')}</td>
+                <td className="border border-gray-400 px-1 py-0.5 text-right">{it.quantity}</td>
+                <td className="border border-gray-400 px-1 py-0.5 text-right">{it.scanned_quantity}</td>
+                <td className="border border-gray-400 px-1 py-0.5 text-center">
+                  {it.status === 'done' ? '✓' : it.status === 'partial' ? '±' : ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ─── ЭКРАН ─── */}
+      <div className="print:hidden">
+        {/* Закреплённый верх: номер + прогресс + сканер */}
+        <div className="sticky top-0 z-20 -mx-4 px-3 pt-2 pb-2 bg-gray-100/95 backdrop-blur border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
               isOrder ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
             }`}>{docLabel}</span>
-            #{doc.doc_number || doc.doc_id || '—'}
-          </h2>
-          <p className="text-sm text-gray-500 mt-1">
-            {[
-              doc.client_name          && `Клиент: ${doc.client_name}`,
-              doc.from_warehouse_code  && `Со склада: ${doc.from_warehouse_code}`,
-              doc.to_warehouse_code    && `${isOrder ? 'Зал: ' : 'На склад: '}${doc.to_warehouse_code}`,
-              doc.date                 && `Дата: ${doc.date}`,
-            ].filter(Boolean).join(' · ')}
-          </p>
-          {(session.checker_name || isFinished) && (
-            <p className="text-sm text-gray-500 mt-0.5">
-              {session.checker_name && `👤 ${session.checker_name}`}
-              {isFinished && (
-                <span className="ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
-                  Проверка завершена
-                </span>
-              )}
-            </p>
-          )}
-        </div>
-        <button
-          onClick={() => router.push('/')}
-          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm text-gray-600 transition-colors print:hidden"
-        >
-          ← Назад
-        </button>
-      </div>
+            <span className="font-bold text-sm truncate">#{doc.doc_number || doc.doc_id || '—'}</span>
+            <span className="ml-auto text-xs font-semibold whitespace-nowrap">
+              <span className="text-green-600">{summary.done_items}</span>
+              <span className="text-gray-400">/{summary.total_items}</span>
+              {partial > 0 && <span className="text-yellow-600"> · {partial}🟡</span>}
+              <span className="text-gray-400"> · {pct}%</span>
+            </span>
+            <button
+              onClick={() => router.push('/')}
+              className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded text-xs text-gray-600"
+            >
+              ←
+            </button>
+          </div>
 
-      {/* Акт — печатается, на экране скрыт */}
-      <div className="hidden print:block mb-4">
-        <p className="text-sm">
-          Дата проверки: {new Date(session.finished_at || session.created_at).toLocaleString('ru-RU')}
-          {session.checker_name && ` · Проверил: ${session.checker_name}`}
-        </p>
-        <p className="text-sm">
-          Позиций: {summary.total_items} · Собрано: {summary.done_items} · Расхождений: {discrepancies.length}
-        </p>
-      </div>
-
-      {/* Progress */}
-      <ProgressBar session={session} />
-
-      {/* Done banner */}
-      {allDone && (
-        <div className="bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl p-5 text-center font-bold text-lg mb-4 shadow-green-200 shadow-md">
-          ✅ Все товары проверены! Накладная готова к отправке.
-        </div>
-      )}
-
-      {/* Scan input — только для активной сессии */}
-      {!isFinished && (
-        <div className="bg-slate-900 rounded-xl px-4 py-3 mb-4 flex items-center gap-3 print:hidden">
-          <span className="text-gray-400 text-sm whitespace-nowrap">📷 Сканер:</span>
-          <input
-            ref={scanInputRef}
-            type="text"
-            placeholder="Поднесите сканер к штрихкоду..."
-            onKeyDown={handleScan}
-            onClick={refocusScan}
-            className="flex-1 bg-slate-800 text-white placeholder-slate-500 rounded-lg px-4 py-2.5
-                       border-2 border-blue-500 focus:border-green-400 outline-none transition-colors
-                       text-base"
-          />
-        </div>
-      )}
-
-      {scanError && (
-        <p className="text-red-500 text-sm mb-3 print:hidden">{scanError}</p>
-      )}
-
-      {/* Last scan result */}
-      {lastScan && !isFinished && (
-        <div className="print:hidden">
-          <LastScanBanner scan={lastScan} itemName={lastScanItem?.product_name} />
-        </div>
-      )}
-
-      {/* Журнал сканов: проблемные | принятые */}
-      {!isFinished && (
-        <div className="print:hidden">
-          <ScanLog scans={session.scans} items={items} />
-        </div>
-      )}
-
-      {/* Product list */}
-      <div className="flex flex-col gap-2.5">
-        {sortedItems.map(item => (
-          <div key={item.id} id={`card-${item.id}`}>
-            <ProductCard
-              item={item}
-              highlighted={highlightedId === item.id}
-              onManual={setManualItem}
-              readOnly={isFinished}
+          {/* Тонкий прогресс */}
+          <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden mt-1.5">
+            <div
+              className="h-full bg-gradient-to-r from-green-500 to-green-400 transition-all duration-500"
+              style={{ width: `${pct}%` }}
             />
           </div>
-        ))}
-      </div>
 
-      {/* Действия */}
-      <div className="flex flex-wrap gap-2 mt-5 print:hidden">
-        <button
-          onClick={handleExport}
-          disabled={exporting}
-          className="flex-1 min-w-[140px] py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-300
-                     text-white font-semibold rounded-xl transition-colors"
-        >
-          {exporting ? '⏳ Выгрузка...' : '📥 Excel'}
-        </button>
-        <button
-          onClick={() => window.print()}
-          className="flex-1 min-w-[140px] py-3 bg-gray-100 hover:bg-gray-200
-                     text-gray-700 font-semibold rounded-xl transition-colors"
-        >
-          🖨️ Печать акта
-        </button>
-        {!isFinished && (
-          <button
-            onClick={handleFinish}
-            disabled={finishing}
-            className="flex-1 min-w-[140px] py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300
-                       text-white font-semibold rounded-xl transition-colors"
-          >
-            {finishing ? '⏳...' : '✅ Завершить проверку'}
-          </button>
+          {/* Сканер */}
+          {!isFinished && (
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className="text-base">📷</span>
+              <input
+                ref={scanInputRef}
+                type="text"
+                placeholder="Сканер: поднесите к штрихкоду..."
+                onKeyDown={handleScan}
+                onClick={refocusScan}
+                className="flex-1 bg-slate-900 text-white placeholder-slate-500 rounded-lg px-3 py-2
+                           border-2 border-blue-500 focus:border-green-400 outline-none text-base"
+              />
+            </div>
+          )}
+
+          {/* Последний скан — компактно */}
+          {lastScan && !isFinished && (
+            <div className={`mt-1.5 px-2 py-1 rounded text-xs font-medium truncate ${SCAN_STYLE[lastScan.status]}`}>
+              {SCAN_ICON[lastScan.status]} {lastScan.message}
+              {lastScanItem && ` — ${lastScanItem.product_name}`}
+            </div>
+          )}
+        </div>
+
+        {scanError && <p className="text-red-500 text-sm my-2">{scanError}</p>}
+
+        {allDone && (
+          <div className="bg-green-100 text-green-800 rounded-lg px-3 py-2 text-center font-semibold text-sm my-2">
+            ✅ Все товары проверены — готово к отправке
+          </div>
         )}
+
+        {/* Список товаров — компактный */}
+        <div className="flex flex-col gap-1.5 mt-2">
+          {sortedItems.map(item => (
+            <div key={item.id} id={`card-${item.id}`}>
+              <ProductCard
+                item={item}
+                index={posById.get(item.id) ?? 0}
+                highlighted={highlightedId === item.id}
+                onManual={setManualItem}
+                readOnly={isFinished}
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* Журнал сканов */}
+        {!isFinished && (
+          <div className="mt-3">
+            <ScanLog scans={session.scans} items={items} />
+          </div>
+        )}
+
+        {/* Действия */}
+        <div className="flex flex-wrap gap-2 mt-4 mb-8">
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="flex-1 min-w-[120px] py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-green-300
+                       text-white font-semibold rounded-lg transition-colors text-sm"
+          >
+            {exporting ? '⏳ Выгрузка...' : '📥 Excel'}
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="flex-1 min-w-[120px] py-2.5 bg-gray-200 hover:bg-gray-300
+                       text-gray-700 font-semibold rounded-lg transition-colors text-sm"
+          >
+            🖨️ Печать
+          </button>
+          {!isFinished && (
+            <button
+              onClick={handleFinish}
+              disabled={finishing}
+              className="flex-1 min-w-[120px] py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300
+                         text-white font-semibold rounded-lg transition-colors text-sm"
+            >
+              {finishing ? '⏳...' : '✅ Завершить'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Manual quantity dialog */}

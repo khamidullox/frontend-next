@@ -24,3 +24,19 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Печать: узкие поля и компактная таблица — чтобы влезало на один лист */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+  body {
+    background: #fff;
+  }
+  /* убираем ограничение ширины контейнера на печати */
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+}
