@@ -9,6 +9,7 @@ import { isAdminUnlocked, setAdminUnlocked } from '@/lib/admin';
 const PUBLIC_LINKS = [
   { href: '/', label: '📦 Проверка' },
   { href: '/products', label: '📚 Справочник' },
+  { href: '/warehouses', label: '🏬 Склады' },
 ];
 
 const ADMIN_LINKS = [

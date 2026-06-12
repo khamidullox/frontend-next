@@ -163,6 +163,88 @@ export async function getProductStock(code: string): Promise<ProductStock> {
   };
 }
 
+// ─── Остатки в разрезе складов (склад → товары) ──────────────────────────────
+
+export interface WarehouseSummary {
+  warehouse_id: string;
+  warehouse_name: string;
+  products_count: number;   // сколько разных товаров
+  total_quantity: number;   // суммарно штук
+}
+
+// Список складов с агрегатами (для страницы выбора склада).
+export async function listWarehouseStock(): Promise<WarehouseSummary[]> {
+  const [balance, whMap] = await Promise.all([getAllBalance(), getWarehouseMap()]);
+
+  const agg = new Map<string, { products: Set<string>; qty: number }>();
+  for (const b of balance) {
+    const whId = normalizeCode(b.warehouse_id);
+    const qty = Number(b.quantity) || 0;
+    if (!agg.has(whId)) agg.set(whId, { products: new Set(), qty: 0 });
+    const a = agg.get(whId)!;
+    a.products.add(normalizeCode(b.product_code));
+    a.qty += qty;
+  }
+
+  return [...agg.entries()]
+    .map(([whId, a]) => ({
+      warehouse_id: whId,
+      warehouse_name: whMap.get(whId) || `склад ${whId}`,
+      products_count: a.products.size,
+      total_quantity: a.qty,
+    }))
+    .filter((w) => w.total_quantity !== 0)
+    .sort((a, b) => a.warehouse_name.localeCompare(b.warehouse_name, 'ru'));
+}
+
+export interface WarehouseProduct {
+  product_code: string;
+  product_name: string;
+  quantity: number;
+}
+
+export interface WarehouseStock {
+  warehouse_id: string;
+  warehouse_name: string;
+  rows: WarehouseProduct[];
+  total: number;
+}
+
+// Все товары конкретного склада с количеством.
+export async function getWarehouseStock(warehouseId: string): Promise<WarehouseStock> {
+  const needle = normalizeCode(warehouseId);
+  const [balance, whMap, catalog] = await Promise.all([
+    getAllBalance(),
+    getWarehouseMap(),
+    getProductCatalog(),
+  ]);
+
+  const nameByCode = new Map(catalog.map((c) => [normalizeCode(c.code), c.name]));
+
+  const byCode = new Map<string, number>();
+  for (const b of balance) {
+    if (normalizeCode(b.warehouse_id) !== needle) continue;
+    const code = normalizeCode(b.product_code);
+    byCode.set(code, (byCode.get(code) || 0) + (Number(b.quantity) || 0));
+  }
+
+  const rows: WarehouseProduct[] = [...byCode.entries()]
+    .filter(([, qty]) => qty !== 0)
+    .map(([code, qty]) => ({
+      product_code: code,
+      product_name: nameByCode.get(code) || '',
+      quantity: qty,
+    }))
+    .sort((a, b) => b.quantity - a.quantity);
+
+  return {
+    warehouse_id: needle,
+    warehouse_name: whMap.get(needle) || `склад ${needle}`,
+    rows,
+    total: rows.reduce((s, r) => s + r.quantity, 0),
+  };
+}
+
 // ─── Чтение справочника ──────────────────────────────────────────────────────
 
 // Пакетное чтение нескольких товаров (для позиций накладной) — один запрос.

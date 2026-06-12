@@ -256,6 +256,39 @@ export async function getProductStock(code: string): Promise<ProductStock> {
   return res.json();
 }
 
+export interface WarehouseSummary {
+  warehouse_id: string;
+  warehouse_name: string;
+  products_count: number;
+  total_quantity: number;
+}
+
+export async function listWarehouses(): Promise<WarehouseSummary[]> {
+  const res = await fetch('/api/warehouses', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
+export interface WarehouseProduct {
+  product_code: string;
+  product_name: string;
+  quantity: number;
+}
+
+export interface WarehouseStock {
+  warehouse_id: string;
+  warehouse_name: string;
+  rows: WarehouseProduct[];
+  total: number;
+}
+
+export async function getWarehouseStock(id: string): Promise<WarehouseStock> {
+  const res = await fetch(`/api/warehouses/${encodeURIComponent(id)}/stock`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  return res.json();
+}
+
 export interface SmartupLimit {
   endpoint: string;
   left: number | null;
