@@ -52,6 +52,16 @@ async function readListCache<T>(type: string): Promise<{ items: T[]; updated_ms:
   return { items, updated_ms };
 }
 
+// Принудительно обновить кэш сейчас (для прогрева по расписанию/cron).
+export async function refreshCachedList<T>(
+  type: string,
+  fetcher: () => Promise<T[]>
+): Promise<number> {
+  const fresh = await fetcher();
+  await writeListCache(type, fresh);
+  return fresh.length;
+}
+
 export async function getCachedList<T>(
   type: string,
   fetcher: () => Promise<T[]>,

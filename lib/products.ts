@@ -7,6 +7,12 @@ const CATALOG_TTL_MS = 30 * 60 * 1000;
 
 import { smartupRequest } from './smartup';
 import { cached } from './cache';
+import { getCachedList, refreshCachedList } from './listCache';
+
+// Остатки/склады обновляются не чаще раза в 4 часа: снимок лежит в Firestore,
+// читается мгновенно, а при устаревании обновляется фоном (1 запрос в Smartup
+// на всех пользователей, а не на каждого).
+const STOCK_TTL_MS = 4 * 60 * 60 * 1000;
 
 export interface ProductDoc {
   code: string;
@@ -110,38 +116,73 @@ function todaySmartup(): string {
   return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
 }
 
-// Карта склад_id → название (warehouse$export), кэш на 30 мин.
-function getWarehouseMap(): Promise<Map<string, string>> {
-  return cached('warehouse:map', CATALOG_TTL_MS, async () => {
-    const data = await smartupRequest<{ warehouse?: Record<string, unknown>[] }>(
-      WAREHOUSE_EXPORT_ENDPOINT,
-      {}
-    );
-    const map = new Map<string, string>();
-    for (const w of data.warehouse || []) {
-      map.set(normalizeCode(w.warehouse_id), String(w.name ?? ''));
-    }
-    return map;
-  });
-}
-
 interface RawBalance {
   warehouse_id: string;
   product_code: string;
   quantity: string | number;
-  input_price?: string | number;
 }
 
-// Весь баланс из Smartup (тяжёлый), кэш на 15 мин.
-function getAllBalance(): Promise<RawBalance[]> {
-  return cached('balance:all', 15 * 60 * 1000, async () => {
-    const t = todaySmartup();
-    const data = await smartupRequest<{ balance?: RawBalance[] }>(BALANCE_EXPORT_ENDPOINT, {
-      begin_date: t,
-      end_date: t,
-    });
-    return data.balance || [];
+// Облегчённая строка остатка — только нужное, чтобы влезть в Firestore-чанки.
+interface SlimBalance {
+  w: string; // warehouse_id
+  p: string; // product_code
+  q: number; // quantity
+}
+
+async function fetchSlimBalance(): Promise<SlimBalance[]> {
+  const t = todaySmartup();
+  const data = await smartupRequest<{ balance?: RawBalance[] }>(BALANCE_EXPORT_ENDPOINT, {
+    begin_date: t,
+    end_date: t,
   });
+  return (data.balance || []).map((b) => ({
+    w: normalizeCode(b.warehouse_id),
+    p: normalizeCode(b.product_code),
+    q: Number(b.quantity) || 0,
+  }));
+}
+
+// Снимок остатков в Firestore (chunked), обновляется раз в 4 часа.
+function getCachedBalance(): Promise<SlimBalance[]> {
+  return getCachedList('balance', fetchSlimBalance, STOCK_TTL_MS);
+}
+
+interface WhRef {
+  id: string;
+  name: string;
+}
+
+async function fetchWarehouseRef(): Promise<WhRef[]> {
+  const data = await smartupRequest<{ warehouse?: Record<string, unknown>[] }>(
+    WAREHOUSE_EXPORT_ENDPOINT,
+    {}
+  );
+  return (data.warehouse || []).map((w) => ({
+    id: normalizeCode(w.warehouse_id),
+    name: String(w.name ?? ''),
+  }));
+}
+
+// Справочник складов id→название, тоже в Firestore-кэше на 4 часа.
+async function getWarehouseMap(): Promise<Map<string, string>> {
+  const refs = await getCachedList('warehouse_ref', fetchWarehouseRef, STOCK_TTL_MS);
+  return new Map(refs.map((r) => [r.id, r.name]));
+}
+
+// Каталог из Firestore-кэша (тот же, что у /api/products), без живого Smartup.
+function getCachedCatalog(): Promise<CatalogItem[]> {
+  return getCachedList('products', getProductCatalog, 6 * 60 * 60 * 1000);
+}
+
+// Принудительно обновить снимки остатков/складов/каталога в Firestore.
+// Вызывается из cron — чтобы первый пользователь после интервала не ждал Smartup.
+export async function refreshStockCache(): Promise<{ balance: number; warehouses: number }> {
+  const [balance, warehouses] = await Promise.all([
+    refreshCachedList('balance', fetchSlimBalance),
+    refreshCachedList('warehouse_ref', fetchWarehouseRef),
+    refreshCachedList('products', getProductCatalog),
+  ]);
+  return { balance, warehouses };
 }
 
 export interface StockRow {
@@ -158,16 +199,12 @@ export interface ProductStock {
 // Остатки конкретного товара: на каких складах и сколько.
 export async function getProductStock(code: string): Promise<ProductStock> {
   const needle = normalizeCode(code);
-  const [balance, whMap] = await Promise.all([getAllBalance(), getWarehouseMap()]);
+  const [balance, whMap] = await Promise.all([getCachedBalance(), getWarehouseMap()]);
 
   const byWh = new Map<string, number>();
-  let inputPrice = 0;
-
   for (const b of balance) {
-    if (normalizeCode(b.product_code) !== needle) continue;
-    const whId = normalizeCode(b.warehouse_id);
-    byWh.set(whId, (byWh.get(whId) || 0) + (Number(b.quantity) || 0));
-    if (!inputPrice && b.input_price) inputPrice = Number(b.input_price) || 0;
+    if (b.p !== needle) continue;
+    byWh.set(b.w, (byWh.get(b.w) || 0) + b.q);
   }
 
   const rows: StockRow[] = [...byWh.entries()]
@@ -182,7 +219,7 @@ export async function getProductStock(code: string): Promise<ProductStock> {
   return {
     rows,
     total: rows.reduce((s, r) => s + r.quantity, 0),
-    input_price: inputPrice,
+    input_price: 0,
   };
 }
 
@@ -197,16 +234,14 @@ export interface WarehouseSummary {
 
 // Список складов с агрегатами (для страницы выбора склада).
 export async function listWarehouseStock(): Promise<WarehouseSummary[]> {
-  const [balance, whMap] = await Promise.all([getAllBalance(), getWarehouseMap()]);
+  const [balance, whMap] = await Promise.all([getCachedBalance(), getWarehouseMap()]);
 
   const agg = new Map<string, { products: Set<string>; qty: number }>();
   for (const b of balance) {
-    const whId = normalizeCode(b.warehouse_id);
-    const qty = Number(b.quantity) || 0;
-    if (!agg.has(whId)) agg.set(whId, { products: new Set(), qty: 0 });
-    const a = agg.get(whId)!;
-    a.products.add(normalizeCode(b.product_code));
-    a.qty += qty;
+    if (!agg.has(b.w)) agg.set(b.w, { products: new Set(), qty: 0 });
+    const a = agg.get(b.w)!;
+    a.products.add(b.p);
+    a.qty += b.q;
   }
 
   return [...agg.entries()]
@@ -240,18 +275,17 @@ export interface WarehouseStock {
 export async function getWarehouseStock(warehouseId: string): Promise<WarehouseStock> {
   const needle = normalizeCode(warehouseId);
   const [balance, whMap, catalog] = await Promise.all([
-    getAllBalance(),
+    getCachedBalance(),
     getWarehouseMap(),
-    getProductCatalog(),
+    getCachedCatalog(),
   ]);
 
   const infoByCode = new Map(catalog.map((c) => [normalizeCode(c.code), c]));
 
   const byCode = new Map<string, number>();
   for (const b of balance) {
-    if (normalizeCode(b.warehouse_id) !== needle) continue;
-    const code = normalizeCode(b.product_code);
-    byCode.set(code, (byCode.get(code) || 0) + (Number(b.quantity) || 0));
+    if (b.w !== needle) continue;
+    byCode.set(b.p, (byCode.get(b.p) || 0) + b.q);
   }
 
   const rows: WarehouseProduct[] = [...byCode.entries()]
