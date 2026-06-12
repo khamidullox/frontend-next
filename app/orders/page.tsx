@@ -21,6 +21,7 @@ function OrdersContent() {
   );
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const [newestFirst, setNewestFirst] = useState(true);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const router = useRouter();
 
@@ -37,15 +38,20 @@ function OrdersContent() {
     }
   }
 
-  const filtered = orders.filter(o => {
-    if (!query.trim()) return true;
-    const q = query.toLowerCase();
-    return (
-      o.deal_id.toLowerCase().includes(q) ||
-      o.doc_number.toLowerCase().includes(q) ||
-      o.client_name.toLowerCase().includes(q)
-    );
-  });
+  const filtered = orders
+    .filter(o => {
+      if (!query.trim()) return true;
+      const q = query.toLowerCase();
+      return (
+        o.deal_id.toLowerCase().includes(q) ||
+        o.doc_number.toLowerCase().includes(q) ||
+        o.client_name.toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => {
+      const cmp = (a.date || '').localeCompare(b.date || '');
+      return newestFirst ? -cmp : cmp;
+    });
 
   if (loading) {
     return (
@@ -68,9 +74,28 @@ function OrdersContent() {
         value={query}
         onChange={e => setQuery(e.target.value)}
         placeholder="🔍 Поиск по ID, номеру или клиенту..."
-        className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4
+        className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-3
                    outline-none focus:border-blue-400 transition-colors"
       />
+
+      <div className="flex gap-1.5 mb-4">
+        <button
+          onClick={() => setNewestFirst(true)}
+          className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${
+            newestFirst ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          Сначала новые
+        </button>
+        <button
+          onClick={() => setNewestFirst(false)}
+          className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${
+            !newestFirst ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          Сначала старые
+        </button>
+      </div>
 
       {(error || loadError) && <p className="text-red-500 text-sm mb-3">{error || loadError}</p>}
 

@@ -12,7 +12,10 @@ import {
   ScanRecord,
   ItemStatus,
   ScanStatus,
+  DOC_TYPE_LABEL,
 } from '@/lib/api';
+import { feedbackForScan } from '@/lib/feedback';
+import CameraScanner, { isCameraScanSupported } from '@/components/CameraScanner';
 
 // SheetJS грузим по требованию из CDN (без npm-зависимости).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -56,7 +59,10 @@ async function exportToExcel(session: Session) {
   ];
   XLSX.utils.book_append_sheet(wb, ws, 'Проверка');
 
-  const prefix = session.document.doc_type === 'order' ? 'zakaz' : 'nakladnaya';
+  const prefixMap: Record<string, string> = {
+    order: 'zakaz', movement: 'nakladnaya', transfer: 'peremeshenie', return: 'vozvrat',
+  };
+  const prefix = prefixMap[session.document.doc_type] || 'dokument';
   const num = session.document.doc_number || session.document.doc_id || prefix;
   XLSX.writeFile(wb, `${prefix}_${num}.xlsx`);
 }
@@ -351,6 +357,7 @@ export default function SessionPage() {
   const [manualItem, setManualItem]     = useState<SessionItem | null>(null);
   const [finishing, setFinishing]       = useState(false);
   const [exporting, setExporting]       = useState(false);
+  const [camera, setCamera]             = useState(false);
 
   const scanInputRef = useRef<HTMLInputElement>(null);
 
@@ -371,19 +378,16 @@ export default function SessionPage() {
     if (session) refocusScan();
   }, [session, refocusScan]);
 
-  async function handleScan(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== 'Enter') return;
-
-    const barcode = (e.target as HTMLInputElement).value.trim();
-    if (!barcode) return;
-
-    (e.target as HTMLInputElement).value = '';
+  const processBarcode = useCallback(async (barcode: string) => {
+    const code = barcode.trim();
+    if (!code) return;
     setScanError('');
 
     try {
-      const result = await scanBarcode(id, barcode);
+      const result = await scanBarcode(id, code);
       setSession(result.session);
       setLastScan(result.scan);
+      feedbackForScan(result.scan.status);
 
       if (result.scan.item_id) {
         setHighlighted(result.scan.item_id);
@@ -397,9 +401,21 @@ export default function SessionPage() {
       }
     } catch {
       setScanError('Ошибка при обработке скана');
-    } finally {
-      refocusScan();
     }
+  }, [id]);
+
+  async function handleScan(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== 'Enter') return;
+    const barcode = (e.target as HTMLInputElement).value.trim();
+    if (!barcode) return;
+    (e.target as HTMLInputElement).value = '';
+    await processBarcode(barcode);
+    refocusScan();
+  }
+
+  function handleCameraDetected(code: string) {
+    // не закрываем камеру — позволяем сканировать подряд несколько позиций
+    processBarcode(code);
   }
 
   async function handleManualConfirm(qty: number) {
@@ -462,8 +478,7 @@ export default function SessionPage() {
   const { document: doc, summary, items } = session;
   const allDone = summary.done_items === summary.total_items && summary.total_items > 0;
   const isFinished = session.status === 'finished';
-  const isOrder = doc.doc_type === 'order';
-  const docLabel = isOrder ? 'Заказ' : 'Накладная';
+  const docLabel = DOC_TYPE_LABEL[doc.doc_type] || 'Документ';
   const discrepancies = items.filter(i => i.scanned_quantity !== i.quantity);
 
   const sortedItems = [...items].sort(
@@ -530,9 +545,15 @@ export default function SessionPage() {
         <div className="sticky top-0 z-20 -mx-4 px-3 pt-2 pb-2 bg-gray-100/95 backdrop-blur border-b border-gray-200">
           <div className="flex items-center gap-2">
             <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-              isOrder ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+              doc.doc_type === 'order' ? 'bg-purple-100 text-purple-700'
+              : doc.doc_type === 'transfer' ? 'bg-teal-100 text-teal-700'
+              : doc.doc_type === 'return' ? 'bg-orange-100 text-orange-700'
+              : 'bg-blue-100 text-blue-700'
             }`}>{docLabel}</span>
             <span className="font-bold text-sm truncate">#{doc.doc_number || doc.doc_id || '—'}</span>
+            {doc.client_name && (
+              <span className="text-[11px] text-gray-500 truncate hidden sm:inline">· {doc.client_name}</span>
+            )}
             <span className="ml-auto text-xs font-semibold whitespace-nowrap">
               <span className="text-green-600">{summary.done_items}</span>
               <span className="text-gray-400">/{summary.total_items}</span>
@@ -558,7 +579,7 @@ export default function SessionPage() {
           {/* Сканер */}
           {!isFinished && (
             <div className="flex items-center gap-2 mt-1.5">
-              <span className="text-base">📷</span>
+              <span className="text-base">⌨️</span>
               <input
                 ref={scanInputRef}
                 type="text"
@@ -568,6 +589,15 @@ export default function SessionPage() {
                 className="flex-1 bg-slate-900 text-white placeholder-slate-500 rounded-lg px-3 py-2
                            border-2 border-blue-500 focus:border-green-400 outline-none text-base"
               />
+              {isCameraScanSupported() && (
+                <button
+                  onClick={() => setCamera(true)}
+                  title="Сканировать камерой"
+                  className="px-3 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-base"
+                >
+                  📷
+                </button>
+              )}
             </div>
           )}
 
@@ -646,6 +676,15 @@ export default function SessionPage() {
           item={manualItem}
           onConfirm={handleManualConfirm}
           onCancel={() => { setManualItem(null); refocusScan(); }}
+        />
+      )}
+
+      {/* Сканер камерой — непрерывный режим */}
+      {camera && (
+        <CameraScanner
+          continuous
+          onDetected={handleCameraDetected}
+          onClose={() => { setCamera(false); refocusScan(); }}
         />
       )}
     </div>

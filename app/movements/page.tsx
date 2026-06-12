@@ -29,6 +29,7 @@ function MovementsContent() {
   );
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [openingId, setOpeningId] = useState<string | null>(null);
   const router = useRouter();
 
@@ -45,7 +46,11 @@ function MovementsContent() {
     }
   }
 
+  // Статусы, которые реально встречаются в списке
+  const statuses = Array.from(new Set(movements.map(m => m.status).filter(Boolean)));
+
   const filtered = movements.filter(m => {
+    if (statusFilter && m.status !== statusFilter) return false;
     if (!query.trim()) return true;
     const q = query.toLowerCase();
     return (
@@ -75,9 +80,33 @@ function MovementsContent() {
         value={query}
         onChange={e => setQuery(e.target.value)}
         placeholder="🔍 Поиск по ID или номеру..."
-        className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4
+        className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-3
                    outline-none focus:border-blue-400 transition-colors"
       />
+
+      {statuses.length > 1 && (
+        <div className="flex flex-wrap gap-1.5 mb-4">
+          <button
+            onClick={() => setStatusFilter('')}
+            className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${
+              statusFilter === '' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Все
+          </button>
+          {statuses.map(s => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${
+                statusFilter === s ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {MOVEMENT_STATUS_LABEL[s] || s}
+            </button>
+          ))}
+        </div>
+      )}
 
       {(error || loadError) && <p className="text-red-500 text-sm mb-3">{error || loadError}</p>}
 

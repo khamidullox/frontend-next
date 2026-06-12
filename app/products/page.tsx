@@ -2,28 +2,72 @@
 
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { listProducts } from '@/lib/api';
 import { useCachedList } from '@/lib/useCachedList';
+import CameraScanner, { isCameraScanSupported } from '@/components/CameraScanner';
 
 const MAX_SHOWN = 100;
 
 export default function ProductsPage() {
+  const router = useRouter();
   const { data: products, loading, error } = useCachedList(
     'cache:products',
     listProducts,
     30 * 60 * 1000
   );
   const [query, setQuery] = useState('');
+  const [producer, setProducer] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const [scanMsg, setScanMsg] = useState('');
+
+  // Поиск товара по штрихкоду (для сканера USB/камеры)
+  function gotoByBarcode(raw: string): boolean {
+    const code = raw.trim();
+    if (!code) return false;
+    const hit = products.find(p => p.barcodes.some(b => b === code))
+      || products.find(p => p.code === code);
+    if (hit) {
+      router.push(`/products/${encodeURIComponent(hit.code)}`);
+      return true;
+    }
+    return false;
+  }
+
+  function onCameraDetected(code: string) {
+    setScanning(false);
+    if (!gotoByBarcode(code)) {
+      setQuery(code);
+      setScanMsg(`Штрихкод ${code} не найден в справочнике`);
+    }
+  }
+
+  function onSearchKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') {
+      // USB-сканер вводит ШК и жмёт Enter
+      if (gotoByBarcode(query)) return;
+    }
+  }
+
+  // Список производителей для фильтра
+  const producers = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of products) if (p.producer) set.add(p.producer);
+    return Array.from(set).sort();
+  }, [products]);
 
   const q = query.trim().toLowerCase();
   const filtered = useMemo(() => {
-    if (!q) return products;
-    return products.filter(p =>
-      p.code.toLowerCase().includes(q) ||
-      p.name.toLowerCase().includes(q) ||
-      p.barcodes.some(b => b.includes(q))
-    );
-  }, [products, q]);
+    return products.filter(p => {
+      if (producer && p.producer !== producer) return false;
+      if (!q) return true;
+      return (
+        p.code.toLowerCase().includes(q) ||
+        p.name.toLowerCase().includes(q) ||
+        p.barcodes.some(b => b.includes(q))
+      );
+    });
+  }, [products, q, producer]);
 
   const shown = filtered.slice(0, MAX_SHOWN);
 
@@ -34,15 +78,43 @@ export default function ProductsPage() {
         <span className="text-sm text-gray-400">{loading ? '…' : `${products.length} шт.`}</span>
       </div>
 
-      <input
-        type="text"
-        value={query}
-        onChange={e => setQuery(e.target.value)}
-        placeholder="🔍 Поиск по названию, коду или штрихкоду..."
-        autoFocus
-        className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4
-                   outline-none focus:border-blue-400 transition-colors"
-      />
+      <div className="flex gap-2 mb-3">
+        <input
+          type="text"
+          value={query}
+          onChange={e => { setQuery(e.target.value); setScanMsg(''); }}
+          onKeyDown={onSearchKey}
+          placeholder="🔍 Поиск или сканируйте штрихкод..."
+          autoFocus
+          className="flex-1 border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm
+                     outline-none focus:border-blue-400 transition-colors"
+        />
+        {isCameraScanSupported() && (
+          <button
+            onClick={() => { setScanMsg(''); setScanning(true); }}
+            title="Сканировать камерой"
+            className="px-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-lg"
+          >
+            📷
+          </button>
+        )}
+      </div>
+
+      {scanMsg && <p className="text-amber-600 text-xs mb-3">{scanMsg}</p>}
+
+      {producers.length > 1 && (
+        <select
+          value={producer}
+          onChange={e => setProducer(e.target.value)}
+          className="w-full border-2 border-gray-200 rounded-xl px-3 py-2.5 text-sm mb-4
+                     outline-none focus:border-blue-400 transition-colors bg-white"
+        >
+          <option value="">🏭 Все производители</option>
+          {producers.map(pr => (
+            <option key={pr} value={pr}>{pr}</option>
+          ))}
+        </select>
+      )}
 
       {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
 
@@ -89,6 +161,10 @@ export default function ProductsPage() {
             </p>
           )}
         </>
+      )}
+
+      {scanning && (
+        <CameraScanner onDetected={onCameraDetected} onClose={() => setScanning(false)} />
       )}
     </div>
   );

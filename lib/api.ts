@@ -16,7 +16,14 @@ export interface SessionItem {
   barcodes: string[];
 }
 
-export type DocType = 'movement' | 'order';
+export type DocType = 'movement' | 'order' | 'transfer' | 'return';
+
+export const DOC_TYPE_LABEL: Record<DocType, string> = {
+  movement: 'Накладная',
+  order: 'Заказ',
+  transfer: 'Перемещение',
+  return: 'Возврат',
+};
 
 export interface SessionDocument {
   doc_type: DocType;
@@ -201,6 +208,41 @@ export async function listOrders(): Promise<OrderListItem[]> {
   return data.data || [];
 }
 
+export interface TransferListItem {
+  transfer_id: string;
+  number: string;
+  date: string;
+  from_filial: string | null;
+  to_filial: string | null;
+  status: string;
+  items_count: number;
+  total_quantity: number;
+}
+
+export async function listTransfers(): Promise<TransferListItem[]> {
+  const res = await fetch('/api/transfers', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
+export interface ReturnListItem {
+  return_id: string;
+  number: string;
+  date: string;
+  supplier_code: string | null;
+  status: string;
+  items_count: number;
+  total_quantity: number;
+}
+
+export async function listReturns(): Promise<ReturnListItem[]> {
+  const res = await fetch('/api/returns', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
 export interface CatalogItem {
   code: string;
   name: string;
@@ -230,6 +272,20 @@ export async function getProductStock(code: string): Promise<ProductStock> {
   const res = await fetch(`/api/products/${encodeURIComponent(code)}/stock`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
   return res.json();
+}
+
+export interface SmartupLimit {
+  endpoint: string;
+  left: number | null;
+  total: number | null;
+  seen_at: string;
+}
+
+export async function getSmartupLimits(): Promise<SmartupLimit[]> {
+  const res = await fetch('/api/smartup-limits', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
 }
 
 export class NotFoundError extends Error {

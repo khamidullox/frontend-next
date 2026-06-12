@@ -4,6 +4,35 @@ const SMARTUP_PASSWORD = process.env.SMARTUP_PASSWORD || '';
 const SMARTUP_PROJECT = process.env.SMARTUP_PROJECT || 'anor';
 const SMARTUP_FILIAL_ID = process.env.SMARTUP_FILIAL_ID || '';
 
+// ─── Учёт лимитов Smartup ────────────────────────────────────────────────
+// Каждый ответ Smartup содержит объект limits со счётчиком по типу документа.
+// Запоминаем последнее виденное значение по endpoint — без лишних запросов.
+export interface SmartupLimit {
+  endpoint: string;
+  left: number | null;       // left_limit_quant — сколько осталось
+  total: number | null;      // limit_quant — суточный лимит
+  seen_at: string;           // когда последний раз видели
+}
+
+const limitStore = new Map<string, SmartupLimit>();
+
+export function getSmartupLimits(): SmartupLimit[] {
+  return Array.from(limitStore.values()).sort((a, b) => a.endpoint.localeCompare(b.endpoint));
+}
+
+function recordLimit(endpoint: string, parsed: unknown) {
+  if (!parsed || typeof parsed !== 'object') return;
+  const limits = (parsed as Record<string, unknown>).limits as Record<string, unknown> | undefined;
+  if (!limits || typeof limits !== 'object') return;
+  const num = (v: unknown) => (typeof v === 'number' ? v : null);
+  limitStore.set(endpoint, {
+    endpoint,
+    left: num(limits.left_limit_quant),
+    total: num(limits.limit_quant),
+    seen_at: new Date().toISOString(),
+  });
+}
+
 export async function smartupRequest<T = Record<string, unknown>>(
   endpoint: string,
   body: Record<string, unknown> = {},
@@ -45,9 +74,14 @@ export async function smartupRequest<T = Record<string, unknown>>(
     }
 
     try {
-      return JSON.parse(text) as T;
-    } catch {
-      throw new Error(`Smartup returned non-JSON response: ${text}`);
+      const parsed = JSON.parse(text);
+      recordLimit(endpoint, parsed);
+      return parsed as T;
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        throw new Error(`Smartup returned non-JSON response: ${text}`);
+      }
+      throw e;
     }
   } catch (err) {
     if (retry > 0) {

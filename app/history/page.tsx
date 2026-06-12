@@ -1,9 +1,110 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { listSessions, SessionListItem } from '@/lib/api';
+import { listSessions, SessionListItem, getSmartupLimits, SmartupLimit, DOC_TYPE_LABEL } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
 import { useCachedList } from '@/lib/useCachedList';
+
+function isToday(iso?: string | null): boolean {
+  if (!iso) return false;
+  const d = new Date(iso);
+  const n = new Date();
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+}
+
+// Понятное имя для endpoint лимита
+function limitLabel(endpoint: string): string {
+  if (endpoint.includes('movement')) return 'Накладные';
+  if (endpoint.includes('order')) return 'Заказы';
+  if (endpoint.includes('inventory') || endpoint.includes('product')) return 'Справочник';
+  if (endpoint.includes('balance')) return 'Остатки';
+  if (endpoint.includes('warehouse')) return 'Склады';
+  return endpoint.split('/').pop() || endpoint;
+}
+
+function Dashboard({ sessions }: { sessions: SessionListItem[] }) {
+  const [limits, setLimits] = useState<SmartupLimit[]>([]);
+
+  useEffect(() => {
+    getSmartupLimits().then(setLimits).catch(() => {});
+  }, []);
+
+  const stats = useMemo(() => {
+    const today = sessions.filter(s => isToday(s.finished_at || s.created_at));
+    const finished = today.filter(s => s.status === 'finished');
+    const clean = finished.filter(s => s.summary.done_items === s.summary.total_items && s.summary.total_items > 0);
+    const withDiff = finished.length - clean.length;
+    const active = today.filter(s => s.status === 'active').length;
+
+    const byChecker = new Map<string, number>();
+    for (const s of today) {
+      const name = s.checker_name || '—';
+      byChecker.set(name, (byChecker.get(name) || 0) + 1);
+    }
+    const checkers = Array.from(byChecker.entries()).sort((a, b) => b[1] - a[1]);
+
+    return { total: today.length, finished: finished.length, clean: clean.length, withDiff, active, checkers };
+  }, [sessions]);
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="font-semibold">📊 Сегодня</span>
+        <span className="text-xs text-gray-400">{new Date().toLocaleDateString('ru-RU')}</span>
+      </div>
+
+      <div className="grid grid-cols-4 gap-2 text-center mb-3">
+        <div className="bg-gray-50 rounded-lg py-2">
+          <div className="text-xl font-bold">{stats.total}</div>
+          <div className="text-[11px] text-gray-400">всего</div>
+        </div>
+        <div className="bg-green-50 rounded-lg py-2">
+          <div className="text-xl font-bold text-green-600">{stats.clean}</div>
+          <div className="text-[11px] text-gray-400">без ошибок</div>
+        </div>
+        <div className="bg-amber-50 rounded-lg py-2">
+          <div className="text-xl font-bold text-amber-600">{stats.withDiff}</div>
+          <div className="text-[11px] text-gray-400">расхожд.</div>
+        </div>
+        <div className="bg-blue-50 rounded-lg py-2">
+          <div className="text-xl font-bold text-blue-600">{stats.active}</div>
+          <div className="text-[11px] text-gray-400">в работе</div>
+        </div>
+      </div>
+
+      {stats.checkers.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {stats.checkers.map(([name, n]) => (
+            <span key={name} className="text-xs bg-gray-100 rounded-full px-2.5 py-1">
+              👤 {name}: <strong>{n}</strong>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {limits.length > 0 && (
+        <div className="border-t border-gray-100 pt-2">
+          <div className="text-[11px] text-gray-400 mb-1.5">Лимиты Smartup (осталось сегодня):</div>
+          <div className="flex flex-wrap gap-1.5">
+            {limits.map(l => {
+              const low = l.left !== null && l.left <= 20;
+              return (
+                <span
+                  key={l.endpoint}
+                  className={`text-xs rounded-full px-2.5 py-1 ${low ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}
+                  title={l.endpoint}
+                >
+                  {limitLabel(l.endpoint)}: <strong>{l.left ?? '?'}{l.total ? `/${l.total}` : ''}</strong>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function fmt(iso?: string | null) {
   if (!iso) return '';
@@ -60,6 +161,8 @@ function HistoryContent() {
         <span className="text-sm text-gray-400">{sessions.length} шт.</span>
       </div>
 
+      <Dashboard sessions={sessions} />
+
       {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
 
       {sessions.length === 0 ? (
@@ -78,9 +181,12 @@ function HistoryContent() {
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-base flex items-center gap-2">
                   <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                    s.doc_type === 'order' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                    s.doc_type === 'order' ? 'bg-purple-100 text-purple-700'
+                    : s.doc_type === 'transfer' ? 'bg-teal-100 text-teal-700'
+                    : s.doc_type === 'return' ? 'bg-orange-100 text-orange-700'
+                    : 'bg-blue-100 text-blue-700'
                   }`}>
-                    {s.doc_type === 'order' ? 'Заказ' : 'Накладная'}
+                    {DOC_TYPE_LABEL[s.doc_type] || 'Документ'}
                   </span>
                   № {s.doc_number || s.doc_id}
                 </div>
