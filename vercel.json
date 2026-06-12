@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/sync/stock",
-      "schedule": "0 */4 * * *"
+      "schedule": "0 8 * * *"
     }
   ]
 }

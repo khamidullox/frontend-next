@@ -14,7 +14,8 @@ function isAuthorized(request: NextRequest): boolean {
 }
 
 // Прогрев снимка остатков/складов/каталога в Firestore.
-// Cron вызывает каждые 4 часа — пользователи всегда читают из Firestore.
+// Cron на Hobby — раз в сутки (большее запрещено). Внутри дня снимок
+// обновляется лениво по TTL 4ч при первом обращении. Можно дёрнуть руками.
 async function run(request: NextRequest) {
   if (!isAuthorized(request)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
