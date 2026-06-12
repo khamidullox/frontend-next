@@ -1,12 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { getWarehouseStock, WarehouseStock } from '@/lib/api';
 import StockUpdated from '@/components/StockUpdated';
 
-const MAX_SHOWN = 200;
+const PAGE_SIZE = 50;
 type SortMode = 'qty_desc' | 'qty_asc' | 'name' | 'group';
 
 export default function WarehouseDetailPage() {
@@ -18,6 +17,7 @@ export default function WarehouseDetailPage() {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('qty_desc');
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     let alive = true;
@@ -50,7 +50,12 @@ export default function WarehouseDetailPage() {
     });
   }, [stock, q, sortMode]);
 
-  const shown = rows.slice(0, MAX_SHOWN);
+  // Пагинация: при смене поиска/сортировки возвращаемся на первую страницу.
+  useEffect(() => { setPage(1); }, [q, sortMode]);
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
     <div>
@@ -103,43 +108,68 @@ export default function WarehouseDetailPage() {
               </select>
             </div>
 
-            {q && (
-              <p className="text-xs text-gray-400 mb-2">
-                Найдено: {rows.length}
-                {rows.length > MAX_SHOWN && ` (показано ${MAX_SHOWN})`}
-              </p>
-            )}
+            <p className="text-xs text-gray-400 mb-2">
+              {q ? `Найдено: ${rows.length}` : `Всего позиций: ${rows.length}`}
+            </p>
 
-            {shown.length === 0 ? (
+            {pageRows.length === 0 ? (
               <div className="text-center text-gray-400 py-6 text-sm">Товар не найден</div>
             ) : (
-              <div className="flex flex-col gap-1.5">
-                {shown.map(r => (
-                  <Link
-                    key={r.product_code}
-                    href={`/products/${encodeURIComponent(r.product_code)}`}
-                    className="flex items-center justify-between bg-gray-50 hover:bg-gray-100 rounded-lg px-3 py-2 text-sm transition-colors"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate">{r.product_name || '—'}</span>
-                      <span className="text-[11px] text-gray-400 flex flex-wrap gap-x-2">
-                        <span>Код {r.product_code}</span>
-                        {r.producer && <span>· Бренд {r.producer}</span>}
-                        {r.group && <span>· Группа {r.group}</span>}
+              <>
+                {/* Шапка таблицы */}
+                <div className="grid grid-cols-[1fr_64px_52px_68px] gap-2 px-2 pb-1.5 mb-1
+                                text-[11px] font-semibold text-gray-400 border-b border-gray-200">
+                  <span>Название</span>
+                  <span className="text-center">Бренд</span>
+                  <span className="text-center">Вид</span>
+                  <span className="text-right">Остаток</span>
+                </div>
+
+                <div className="flex flex-col">
+                  {pageRows.map(r => (
+                    <button
+                      key={r.product_code}
+                      onClick={() => router.push(`/products/${encodeURIComponent(r.product_code)}`)}
+                      className="grid grid-cols-[1fr_64px_52px_68px] gap-2 items-center text-left
+                                 px-2 py-2 rounded-lg hover:bg-gray-50 transition-colors text-sm
+                                 border-b border-gray-100 last:border-0"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate">{r.product_name || '—'}</span>
+                        <span className="block text-[11px] text-gray-400">Код {r.product_code}</span>
                       </span>
+                      <span className="text-center text-xs text-gray-500 truncate">{r.producer || '—'}</span>
+                      <span className="text-center text-xs text-gray-500 truncate">{r.group || '—'}</span>
+                      <span className="text-right font-bold whitespace-nowrap">{r.quantity}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Пагинация */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-3 mt-3">
+                    <button
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={safePage <= 1}
+                      className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm
+                                 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      ← Назад
+                    </button>
+                    <span className="text-sm text-gray-500">
+                      Стр. {safePage} из {totalPages}
                     </span>
-                    <span className="text-right whitespace-nowrap ml-2 leading-tight">
-                      <span className="block font-bold">{r.quantity} шт.</span>
-                      <span className="block text-[10px] text-gray-400">остаток</span>
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            )}
-            {!q && rows.length > MAX_SHOWN && (
-              <p className="text-xs text-gray-400 mt-3 text-center">
-                Показаны первые {MAX_SHOWN}. Введите запрос для поиска по всем {rows.length}.
-              </p>
+                    <button
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      disabled={safePage >= totalPages}
+                      className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm
+                                 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Вперёд →
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </>
         ) : (
