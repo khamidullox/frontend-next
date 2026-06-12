@@ -52,6 +52,14 @@ async function readListCache<T>(type: string): Promise<{ items: T[]; updated_ms:
   return { items, updated_ms };
 }
 
+// Когда снимок последний раз обновлялся (мс). null — если кэша ещё нет.
+export async function getCachedListUpdatedMs(type: string): Promise<number | null> {
+  const db = getDb();
+  const snap = await db.collection(COLLECTION).doc(type).get();
+  if (!snap.exists) return null;
+  return (snap.data() as Meta).updated_ms ?? null;
+}
+
 // Принудительно обновить кэш сейчас (для прогрева по расписанию/cron).
 export async function refreshCachedList<T>(
   type: string,

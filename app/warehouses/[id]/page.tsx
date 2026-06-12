@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { getWarehouseStock, WarehouseStock } from '@/lib/api';
+import StockUpdated from '@/components/StockUpdated';
 
 const MAX_SHOWN = 200;
 type SortMode = 'qty_desc' | 'qty_asc' | 'name' | 'group';
@@ -67,6 +68,7 @@ export default function WarehouseDetailPage() {
             Товаров: {stock.rows.length} · Всего: <strong className="text-green-600">{stock.total}</strong> шт.
           </p>
         )}
+        <div className="mt-1"><StockUpdated /></div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-4">

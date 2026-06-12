@@ -292,6 +292,13 @@ export async function getWarehouseStock(id: string): Promise<WarehouseStock> {
   return res.json();
 }
 
+export async function getStockUpdated(): Promise<number | null> {
+  const res = await fetch('/api/stock-updated', { cache: 'no-store' });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.updated_ms ?? null;
+}
+
 export interface SmartupLimit {
   endpoint: string;
   left: number | null;

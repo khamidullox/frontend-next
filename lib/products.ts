@@ -7,7 +7,7 @@ const CATALOG_TTL_MS = 30 * 60 * 1000;
 
 import { smartupRequest } from './smartup';
 import { cached } from './cache';
-import { getCachedList, refreshCachedList } from './listCache';
+import { getCachedList, refreshCachedList, getCachedListUpdatedMs } from './listCache';
 
 // Остатки/склады обновляются не чаще раза в 4 часа: снимок лежит в Firestore,
 // читается мгновенно, а при устаревании обновляется фоном (1 запрос в Smartup
@@ -172,6 +172,11 @@ async function getWarehouseMap(): Promise<Map<string, string>> {
 // Каталог из Firestore-кэша (тот же, что у /api/products), без живого Smartup.
 function getCachedCatalog(): Promise<CatalogItem[]> {
   return getCachedList('products', getProductCatalog, 6 * 60 * 60 * 1000);
+}
+
+// Когда снимок остатков последний раз обновлялся (для подписи «обновлено …»).
+export function getStockUpdatedMs(): Promise<number | null> {
+  return getCachedListUpdatedMs('balance');
 }
 
 // Принудительно обновить снимки остатков/складов/каталога в Firestore.

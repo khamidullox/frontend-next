@@ -3,6 +3,7 @@ import { getCachedList } from '@/lib/listCache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 // Список складов с агрегатами. Кэшируем в Firestore (как каталог) — быстро.
 const TTL_MS = 30 * 60 * 1000; // 30 мин

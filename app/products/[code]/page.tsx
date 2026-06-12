@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { listProducts, getProductStock, CatalogItem, ProductStock } from '@/lib/api';
 import { useCachedList } from '@/lib/useCachedList';
+import StockUpdated from '@/components/StockUpdated';
 
 export default function ProductDetailPage() {
   const { code } = useParams<{ code: string }>();
@@ -76,6 +77,7 @@ export default function ProductDetailPage() {
             </span>
           )}
         </div>
+        <div className="-mt-2 mb-3"><StockUpdated /></div>
 
         {loading ? (
           <div className="flex items-center justify-center py-8 gap-2 text-gray-500 text-sm">

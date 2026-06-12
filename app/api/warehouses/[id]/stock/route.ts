@@ -3,6 +3,7 @@ import { getWarehouseStock } from '@/lib/products';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // первый «холодный» прогон тянет баланс+каталог из Smartup
 
 export async function GET(
   _request: NextRequest,
