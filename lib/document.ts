@@ -1,7 +1,7 @@
 // Единый («нормализованный») вид проверяемого документа — и для накладной,
 // и для заказа. Дальше движок проверки/сканирования работает только с ним.
 
-export type DocType = 'movement' | 'order' | 'transfer' | 'return';
+export type DocType = 'movement' | 'order' | 'transfer';
 
 export interface DocItem {
   product_code: string;

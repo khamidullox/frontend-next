@@ -6,12 +6,14 @@ import { listMovements, createSession, MOVEMENT_STATUS_LABEL } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
 import { useCachedList } from '@/lib/useCachedList';
 
+// Палитра как в Smartup: ожидание — лавандовый, завершено — бирюзовый.
 const STATUS_STYLE: Record<string, string> = {
-  N: 'bg-green-100 text-green-700',
-  S: 'bg-amber-100 text-amber-700',
-  R: 'bg-blue-100 text-blue-700',
+  N: 'bg-indigo-100 text-indigo-700',
+  S: 'bg-indigo-100 text-indigo-700',
+  R: 'bg-violet-100 text-violet-700',
   T: 'bg-purple-100 text-purple-700',
-  D: 'bg-gray-100 text-gray-600',
+  D: 'bg-slate-100 text-slate-600',
+  C: 'bg-teal-100 text-teal-700',
 };
 
 export default function MovementsPage() {
@@ -89,7 +91,7 @@ function MovementsContent() {
           <button
             onClick={() => setStatusFilter('')}
             className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${
-              statusFilter === '' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              statusFilter === '' ? 'bg-indigo-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
             Все
@@ -99,7 +101,7 @@ function MovementsContent() {
               key={s}
               onClick={() => setStatusFilter(s)}
               className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${
-                statusFilter === s ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                statusFilter === s ? 'bg-indigo-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
               {MOVEMENT_STATUS_LABEL[s] || s}
@@ -122,7 +124,7 @@ function MovementsContent() {
               onClick={() => open(m.movement_id)}
               disabled={openingId !== null}
               className="bg-white rounded-xl shadow-sm p-4 flex items-center gap-4 text-left
-                         hover:shadow-md hover:ring-2 hover:ring-blue-200 transition-all
+                         hover:shadow-md hover:ring-2 hover:ring-indigo-200 transition-all
                          disabled:opacity-60"
             >
               <div className="flex-1 min-w-0">
@@ -145,7 +147,7 @@ function MovementsContent() {
               {openingId === m.movement_id ? (
                 <span className="w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
               ) : (
-                <span className="text-blue-500 text-xl">→</span>
+                <span className="text-indigo-500 text-xl">→</span>
               )}
             </button>
           ))}

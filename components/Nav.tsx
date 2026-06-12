@@ -15,7 +15,6 @@ const ADMIN_LINKS = [
   { href: '/movements', label: '🗂️ Накладные' },
   { href: '/orders', label: '🧾 Заказы' },
   { href: '/transfers', label: '🔄 Перемещения' },
-  { href: '/returns', label: '↩️ Возвраты' },
   { href: '/history', label: '📋 История' },
 ];
 

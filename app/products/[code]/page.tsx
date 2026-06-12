@@ -20,6 +20,8 @@ export default function ProductDetailPage() {
   // Фильтр по складам внутри карточки
   const [whQuery, setWhQuery] = useState('');
   const [onlyPositive, setOnlyPositive] = useState(true);
+  type SortMode = 'qty_desc' | 'qty_asc' | 'name';
+  const [sortMode, setSortMode] = useState<SortMode>('qty_desc');
 
   useEffect(() => {
     let alive = true;
@@ -33,11 +35,15 @@ export default function ProductDetailPage() {
   const wq = whQuery.trim().toLowerCase();
   const rows = useMemo(() => {
     if (!stock) return [];
-    return stock.rows
+    const filtered = stock.rows
       .filter(r => (onlyPositive ? r.quantity > 0 : true))
-      .filter(r => (wq ? r.warehouse_name.toLowerCase().includes(wq) : true))
-      .sort((a, b) => b.quantity - a.quantity);
-  }, [stock, wq, onlyPositive]);
+      .filter(r => (wq ? r.warehouse_name.toLowerCase().includes(wq) : true));
+    return filtered.sort((a, b) => {
+      if (sortMode === 'qty_asc') return a.quantity - b.quantity;
+      if (sortMode === 'name') return a.warehouse_name.localeCompare(b.warehouse_name, 'ru');
+      return b.quantity - a.quantity; // qty_desc
+    });
+  }, [stock, wq, onlyPositive, sortMode]);
 
   return (
     <div>
@@ -101,6 +107,21 @@ export default function ProductDetailPage() {
               >
                 {onlyPositive ? 'Только с остатком' : 'Все склады'}
               </button>
+            </div>
+
+            {/* Сортировка */}
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs text-gray-400">Сортировка:</span>
+              <select
+                value={sortMode}
+                onChange={e => setSortMode(e.target.value as SortMode)}
+                className="border-2 border-gray-200 rounded-lg px-2 py-1 text-xs bg-white
+                           outline-none focus:border-blue-400 transition-colors"
+              >
+                <option value="qty_desc">Количество ↓</option>
+                <option value="qty_asc">Количество ↑</option>
+                <option value="name">Название А–Я</option>
+              </select>
             </div>
 
             {rows.length > 0 ? (

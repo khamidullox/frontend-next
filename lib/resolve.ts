@@ -2,7 +2,6 @@ import { CheckDocument } from './document';
 import { getMovementDocument } from './movement';
 import { getOrderDocument, getOrderDocumentByTTN } from './orders';
 import { getTransferDocument } from './transfers';
-import { getReturnDocument } from './returns';
 
 export interface ResolveInput {
   query?: string;
@@ -10,7 +9,6 @@ export interface ResolveInput {
   movement_number?: string;
   deal_id?: string;
   transfer_id?: string;
-  return_id?: string;
 }
 
 // deal_id заказов — крупные (сотни миллионов, ~9 цифр),
@@ -38,7 +36,6 @@ export async function resolveDocument(input: ResolveInput): Promise<CheckDocumen
   // Явные типы (из соответствующих разделов) — без авто-определения.
   if (input.deal_id) return getOrderDocument(input.deal_id);
   if (input.transfer_id) return getTransferDocument(input.transfer_id);
-  if (input.return_id) return getReturnDocument(input.return_id);
   if (input.movement_id) return getMovementDocument({ movement_id: input.movement_id });
   if (input.movement_number)
     return getMovementDocument({ movement_number: input.movement_number });
@@ -63,13 +60,10 @@ export async function resolveDocument(input: ResolveInput): Promise<CheckDocumen
   const secondary = orderFirst ? await tryMovement(q) : await tryOrder(q);
   if (secondary) return secondary;
 
-  // Межфилиальные перемещения и возвраты ищем по id/номеру в кэшированной
-  // выгрузке (дёшево — общий кэш со списками, без новых запросов при попадании).
+  // Межфилиальные перемещения ищем по id/номеру в кэшированной выгрузке
+  // (дёшево — общий кэш со списком, без новых запросов при попадании).
   const transfer = await getTransferDocument(q);
   if (transfer) return transfer;
-
-  const ret = await getReturnDocument(q);
-  if (ret) return ret;
 
   // Последний шанс: это может быть номер ТТН заказа (delivery_number).
   return getOrderDocumentByTTN(q);

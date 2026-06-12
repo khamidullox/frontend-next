@@ -13,7 +13,7 @@ export default function AppHeader() {
     <header className="bg-slate-900 text-white shadow-lg print:hidden">
       <div className="max-w-3xl mx-auto px-6 pt-4 flex items-center gap-3">
         <span className="text-2xl">📦</span>
-        <h1 className="text-lg font-semibold tracking-wide">Проверка накладной</h1>
+        <h1 className="text-lg font-semibold tracking-wide">ТаминотВеб</h1>
       </div>
       <Nav />
     </header>

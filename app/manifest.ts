@@ -2,8 +2,8 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Проверка накладной',
-    short_name: 'Накладная',
+    name: 'ТаминотВеб',
+    short_name: 'ТаминотВеб',
     description: 'Проверка товаров по накладной через сканер',
     start_url: '/',
     display: 'standalone',

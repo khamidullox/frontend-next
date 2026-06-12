@@ -547,7 +547,6 @@ export default function SessionPage() {
             <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
               doc.doc_type === 'order' ? 'bg-purple-100 text-purple-700'
               : doc.doc_type === 'transfer' ? 'bg-teal-100 text-teal-700'
-              : doc.doc_type === 'return' ? 'bg-orange-100 text-orange-700'
               : 'bg-blue-100 text-blue-700'
             }`}>{docLabel}</span>
             <span className="font-bold text-sm truncate">#{doc.doc_number || doc.doc_id || '—'}</span>

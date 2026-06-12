@@ -3,11 +3,11 @@ import "./globals.css";
 import AppHeader from "@/components/AppHeader";
 
 export const metadata: Metadata = {
-  title: "Проверка накладной",
+  title: "ТаминотВеб",
   description: "Система проверки товаров по накладной",
   appleWebApp: {
     capable: true,
-    title: "Накладная",
+    title: "ТаминотВеб",
     statusBarStyle: "default",
   },
 };
