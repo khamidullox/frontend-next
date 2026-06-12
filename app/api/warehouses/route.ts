@@ -10,7 +10,8 @@ const TTL_MS = 30 * 60 * 1000; // 30 мин
 
 export async function GET() {
   try {
-    const data = await getCachedList('warehouses', listWarehouseStock, TTL_MS);
+    // ключ v2 — чтобы отбросить старый кэш без фильтра брака/сервиса
+    const data = await getCachedList('warehouses_v2', listWarehouseStock, TTL_MS);
     return Response.json({ data });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 500 });
