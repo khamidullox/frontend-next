@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { getWarehouseStock, WarehouseStock } from '@/lib/api';
 
 const MAX_SHOWN = 200;
-type SortMode = 'qty_desc' | 'qty_asc' | 'name';
+type SortMode = 'qty_desc' | 'qty_asc' | 'name' | 'group';
 
 export default function WarehouseDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -34,11 +34,17 @@ export default function WarehouseDetailPage() {
     const filtered = stock.rows.filter(r =>
       !q ||
       r.product_code.toLowerCase().includes(q) ||
-      r.product_name.toLowerCase().includes(q)
+      r.product_name.toLowerCase().includes(q) ||
+      r.producer.toLowerCase().includes(q) ||
+      r.group.toLowerCase().includes(q)
     );
     return filtered.sort((a, b) => {
       if (sortMode === 'qty_asc') return a.quantity - b.quantity;
       if (sortMode === 'name') return a.product_name.localeCompare(b.product_name, 'ru');
+      if (sortMode === 'group') {
+        // по группе, внутри группы — по убыванию остатка
+        return a.group.localeCompare(b.group, 'ru', { numeric: true }) || b.quantity - a.quantity;
+      }
       return b.quantity - a.quantity;
     });
   }, [stock, q, sortMode]);
@@ -88,9 +94,10 @@ export default function WarehouseDetailPage() {
                 className="border-2 border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white
                            outline-none focus:border-blue-400 transition-colors"
               >
-                <option value="qty_desc">Кол-во ↓</option>
-                <option value="qty_asc">Кол-во ↑</option>
+                <option value="qty_desc">Остаток ↓</option>
+                <option value="qty_asc">Остаток ↑</option>
                 <option value="name">Название</option>
+                <option value="group">Группа</option>
               </select>
             </div>
 
@@ -113,9 +120,16 @@ export default function WarehouseDetailPage() {
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{r.product_name || '—'}</span>
-                      <span className="text-[11px] text-gray-400">Код {r.product_code}</span>
+                      <span className="text-[11px] text-gray-400 flex flex-wrap gap-x-2">
+                        <span>Код {r.product_code}</span>
+                        {r.producer && <span>· Бренд {r.producer}</span>}
+                        {r.group && <span>· Группа {r.group}</span>}
+                      </span>
                     </span>
-                    <span className="font-bold whitespace-nowrap ml-2">{r.quantity} шт.</span>
+                    <span className="text-right whitespace-nowrap ml-2 leading-tight">
+                      <span className="block font-bold">{r.quantity} шт.</span>
+                      <span className="block text-[10px] text-gray-400">остаток</span>
+                    </span>
                   </Link>
                 ))}
               </div>

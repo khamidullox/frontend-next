@@ -53,8 +53,17 @@ function buildBarcodes(item: Record<string, unknown>): string[] {
 export interface CatalogItem {
   code: string;
   name: string;
-  producer: string;
+  producer: string;   // бренд (producer_code; названия за стеной прав Smartup)
+  group: string;      // продуктовая группа (первый group_code, без префикса PRDGR:)
   barcodes: string[];
+}
+
+// Первый код группы товара из inventory.groups (без префикса "PRDGR:").
+function extractGroup(inv: Record<string, unknown>): string {
+  const groups = inv.groups;
+  if (!Array.isArray(groups) || groups.length === 0) return '';
+  const code = String((groups[0] as Record<string, unknown>)?.group_code ?? '');
+  return code.replace(/^PRDGR:/i, '');
 }
 
 // Каталог товаров из Smartup (inventory$export), кэш на 30 мин.
@@ -71,6 +80,7 @@ export async function getProductCatalog(): Promise<CatalogItem[]> {
         code: normalizeCode(i.code),
         name: String(i.name ?? ''),
         producer: String(i.producer_code ?? ''),
+        group: extractGroup(i),
         barcodes: buildBarcodes(i),
       }))
       .filter((i) => i.code)
@@ -82,6 +92,18 @@ export async function getProductCatalog(): Promise<CatalogItem[]> {
 
 const BALANCE_EXPORT_ENDPOINT = '/b/anor/mxsx/mkw/balance$export';
 const WAREHOUSE_EXPORT_ENDPOINT = '/b/anor/mxsx/mkw/warehouse$export';
+
+// Только основные склады. Код склада — это префикс в его названии («001 Основной склад»).
+const MAIN_WAREHOUSE_CODES = new Set(['001', '002', '003', '005', '006', '008', '7776']);
+
+// Код склада из названия (первый токен).
+function warehouseCodeFromName(name: string): string {
+  return String(name || '').trim().split(/\s+/)[0] || '';
+}
+
+function isMainWarehouse(name: string): boolean {
+  return MAIN_WAREHOUSE_CODES.has(warehouseCodeFromName(name));
+}
 
 function todaySmartup(): string {
   const d = new Date();
@@ -154,6 +176,7 @@ export async function getProductStock(code: string): Promise<ProductStock> {
       warehouse_name: whMap.get(whId) || `склад ${whId}`,
       quantity: qty,
     }))
+    .filter((r) => isMainWarehouse(r.warehouse_name)) // только основные склады
     .sort((a, b) => b.quantity - a.quantity);
 
   return {
@@ -194,12 +217,15 @@ export async function listWarehouseStock(): Promise<WarehouseSummary[]> {
       total_quantity: a.qty,
     }))
     .filter((w) => w.total_quantity !== 0)
+    .filter((w) => isMainWarehouse(w.warehouse_name)) // только основные склады
     .sort((a, b) => a.warehouse_name.localeCompare(b.warehouse_name, 'ru'));
 }
 
 export interface WarehouseProduct {
   product_code: string;
   product_name: string;
+  producer: string;   // бренд
+  group: string;      // группа
   quantity: number;
 }
 
@@ -219,7 +245,7 @@ export async function getWarehouseStock(warehouseId: string): Promise<WarehouseS
     getProductCatalog(),
   ]);
 
-  const nameByCode = new Map(catalog.map((c) => [normalizeCode(c.code), c.name]));
+  const infoByCode = new Map(catalog.map((c) => [normalizeCode(c.code), c]));
 
   const byCode = new Map<string, number>();
   for (const b of balance) {
@@ -230,11 +256,16 @@ export async function getWarehouseStock(warehouseId: string): Promise<WarehouseS
 
   const rows: WarehouseProduct[] = [...byCode.entries()]
     .filter(([, qty]) => qty !== 0)
-    .map(([code, qty]) => ({
-      product_code: code,
-      product_name: nameByCode.get(code) || '',
-      quantity: qty,
-    }))
+    .map(([code, qty]) => {
+      const info = infoByCode.get(code);
+      return {
+        product_code: code,
+        product_name: info?.name || '',
+        producer: info?.producer || '',
+        group: info?.group || '',
+        quantity: qty,
+      };
+    })
     .sort((a, b) => b.quantity - a.quantity);
 
   return {

@@ -229,6 +229,7 @@ export interface CatalogItem {
   code: string;
   name: string;
   producer: string;
+  group: string;
   barcodes: string[];
 }
 
@@ -273,6 +274,8 @@ export async function listWarehouses(): Promise<WarehouseSummary[]> {
 export interface WarehouseProduct {
   product_code: string;
   product_name: string;
+  producer: string;
+  group: string;
   quantity: number;
 }
 
