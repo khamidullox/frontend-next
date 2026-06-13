@@ -9,9 +9,9 @@ import { smartupRequest } from './smartup';
 import { cached } from './cache';
 import { getCachedList, getCachedSnapshot, refreshCachedList, getCachedListUpdatedMs } from './listCache';
 
-// Остатки: снимок в Firestore обновляется фоном, если старше 2 часов
+// Остатки: снимок в Firestore обновляется фоном, если старше 10 минут
 // (1 тяжёлый запрос на всех 25 магазинов, а не на каждого).
-const STOCK_FRESH_MS = 2 * 60 * 60 * 1000;
+const STOCK_FRESH_MS = 10 * 60 * 1000;
 // Баланс ~24k строк {w,p,q} — пишем крупными кусками, чтобы экономить записи Firestore.
 const BALANCE_CHUNK = 8000;
 // Справочники (склады, каталог) меняются редко — держим дольше.
