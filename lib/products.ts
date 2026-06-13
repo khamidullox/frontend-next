@@ -151,22 +151,9 @@ async function getWholesalePriceMap(): Promise<Map<string, number>> {
   return new Map(arr.map((x) => [x.code, x.price]));
 }
 
-// Только основные склады. Код склада — это префикс в его названии («001 Основной склад»).
+// Основные склады (по настоящему коду склада). Брак/осн.средства имеют другие
+// коды (003B, 5505-2…), поэтому сюда не попадают.
 const MAIN_WAREHOUSE_CODES = new Set(['001', '002', '003', '005', '006', '008', '7776']);
-
-// Исключаем склады брака и сервиса (тот же код-префикс, но это не основные).
-const EXCLUDE_WAREHOUSE_KEYWORDS = /брак|сервис/i;
-
-// Код склада из названия (первый токен).
-function warehouseCodeFromName(name: string): string {
-  return String(name || '').trim().split(/\s+/)[0] || '';
-}
-
-function isMainWarehouse(name: string): boolean {
-  if (!MAIN_WAREHOUSE_CODES.has(warehouseCodeFromName(name))) return false;
-  if (EXCLUDE_WAREHOUSE_KEYWORDS.test(name)) return false;
-  return true;
-}
 
 function todaySmartup(): string {
   const d = new Date();
@@ -236,6 +223,14 @@ export async function getWarehouseCodeMap(): Promise<Map<string, string>> {
   const refs = await getCachedList('warehouse_ref_v2', fetchWarehouseRef, REF_TTL_MS);
   const map = new Map<string, string>();
   for (const r of refs) if (r.code) map.set(r.code, r.name);
+  return map;
+}
+
+// Карта склад_id → настоящий код склада (различает брак/осн.средства: 003 vs 003B).
+async function getWarehouseIdCodeMap(): Promise<Map<string, string>> {
+  const refs = await getCachedList('warehouse_ref_v2', fetchWarehouseRef, REF_TTL_MS);
+  const map = new Map<string, string>();
+  for (const r of refs) map.set(r.id, r.code);
   return map;
 }
 
@@ -318,7 +313,11 @@ export interface WarehouseSummary {
 // allowed — коды складов пользователя; если задан, показываем именно их
 // (7 основных + свой). Если пусто — по умолчанию основные склады.
 export async function listWarehouseStock(allowed?: string[]): Promise<WarehouseSummary[]> {
-  const [balance, whMap] = await Promise.all([getCachedBalance(), getWarehouseMap()]);
+  const [balance, whMap, idCode] = await Promise.all([
+    getCachedBalance(),
+    getWarehouseMap(),
+    getWarehouseIdCodeMap(),
+  ]);
 
   const agg = new Map<string, { products: Set<string>; qty: number }>();
   for (const b of balance) {
@@ -328,7 +327,11 @@ export async function listWarehouseStock(allowed?: string[]): Promise<WarehouseS
     a.qty += b.q;
   }
 
-  const allow = allowed && allowed.length ? new Set(allowed.map((c) => String(c).trim())) : null;
+  // Фильтр по НАСТОЯЩЕМУ коду склада (различает брак/осн.средства).
+  // У пользователя свои склады — показываем их; иначе только основные.
+  const allow = allowed && allowed.length
+    ? new Set(allowed.map((c) => String(c).trim()))
+    : new Set(MAIN_WAREHOUSE_CODES);
 
   return [...agg.entries()]
     .map(([whId, a]) => ({
@@ -338,9 +341,7 @@ export async function listWarehouseStock(allowed?: string[]): Promise<WarehouseS
       total_quantity: a.qty,
     }))
     .filter((w) => w.total_quantity !== 0)
-    .filter((w) =>
-      allow ? allow.has(warehouseCodeFromName(w.warehouse_name)) : isMainWarehouse(w.warehouse_name)
-    )
+    .filter((w) => allow.has(idCode.get(w.warehouse_id) || ''))
     .sort((a, b) => a.warehouse_name.localeCompare(b.warehouse_name, 'ru'));
 }
 

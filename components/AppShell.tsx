@@ -63,7 +63,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <aside
         className={`bg-slate-900 text-white w-64 flex-shrink-0 flex flex-col z-50 print:hidden
                     fixed inset-y-0 left-0 transition-transform duration-200
-                    md:static md:translate-x-0
+                    md:sticky md:top-0 md:h-screen md:translate-x-0
                     ${open ? 'translate-x-0' : '-translate-x-full'}`}
       >
         <div className="px-5 py-4 flex items-center gap-2 border-b border-slate-700/70">

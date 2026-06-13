@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { listProducts } from '@/lib/api';
 import { useCachedList } from '@/lib/useCachedList';
 import CameraScanner, { isCameraScanSupported } from '@/components/CameraScanner';
 
-const MAX_SHOWN = 100;
+const PAGE_SIZE = 50;
 
 export default function ProductsPage() {
   const router = useRouter();
@@ -20,6 +20,7 @@ export default function ProductsPage() {
   const [producer, setProducer] = useState('');
   const [scanning, setScanning] = useState(false);
   const [scanMsg, setScanMsg] = useState('');
+  const [page, setPage] = useState(1);
 
   // Поиск товара по штрихкоду (для сканера USB/камеры)
   function gotoByBarcode(raw: string): boolean {
@@ -69,7 +70,30 @@ export default function ProductsPage() {
     });
   }, [products, q, producer]);
 
-  const shown = filtered.slice(0, MAX_SHOWN);
+  useEffect(() => { setPage(1); }, [q, producer]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const shown = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  function goToPage(p: number) {
+    setPage(Math.min(totalPages, Math.max(1, p)));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  const pagination = totalPages > 1 && (
+    <div className="flex items-center justify-center gap-3 my-3">
+      <button onClick={() => goToPage(safePage - 1)} disabled={safePage <= 1}
+        className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm disabled:opacity-40 disabled:cursor-not-allowed">
+        ← Назад
+      </button>
+      <span className="text-sm text-gray-500">Стр. {safePage} из {totalPages}</span>
+      <button onClick={() => goToPage(safePage + 1)} disabled={safePage >= totalPages}
+        className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm disabled:opacity-40 disabled:cursor-not-allowed">
+        Вперёд →
+      </button>
+    </div>
+  );
 
   return (
     <div>
@@ -125,12 +149,10 @@ export default function ProductsPage() {
         </div>
       ) : (
         <>
-          {q && (
-            <p className="text-xs text-gray-400 mb-2">
-              Найдено: {filtered.length}
-              {filtered.length > MAX_SHOWN && ` (показано первых ${MAX_SHOWN})`}
-            </p>
-          )}
+          <p className="text-xs text-gray-400 mb-2">
+            {q || producer ? `Найдено: ${filtered.length}` : `Всего: ${filtered.length}`}
+          </p>
+          {pagination}
           {shown.length === 0 ? (
             <div className="bg-white rounded-xl p-8 text-center text-gray-400">Ничего не найдено</div>
           ) : (
@@ -155,11 +177,7 @@ export default function ProductsPage() {
               ))}
             </div>
           )}
-          {!q && products.length > MAX_SHOWN && (
-            <p className="text-xs text-gray-400 mt-3 text-center">
-              Показаны первые {MAX_SHOWN}. Введите запрос для поиска по всем {products.length}.
-            </p>
-          )}
+          {pagination}
         </>
       )}
 

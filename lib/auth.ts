@@ -5,7 +5,7 @@ import crypto from 'crypto';
 export type Role = 'worker' | 'manager' | 'admin';
 export const ROLE_RANK: Record<Role, number> = { worker: 1, manager: 2, admin: 3 };
 export const ROLE_LABEL: Record<Role, string> = {
-  worker: 'Кладовщик',
+  worker: 'Магазин',
   manager: 'Менеджер',
   admin: 'Админ',
 };

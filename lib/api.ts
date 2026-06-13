@@ -5,7 +5,7 @@ const API_BASE = '/api/invoice-check';
 export type Role = 'worker' | 'manager' | 'admin';
 export const ROLE_RANK: Record<Role, number> = { worker: 1, manager: 2, admin: 3 };
 export const ROLE_LABEL: Record<Role, string> = {
-  worker: 'Кладовщик', manager: 'Менеджер', admin: 'Админ',
+  worker: 'Магазин', manager: 'Менеджер', admin: 'Админ',
 };
 
 export interface UserSession {

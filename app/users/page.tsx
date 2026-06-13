@@ -229,7 +229,7 @@ function UsersContent() {
             className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
           <select value={role} onChange={(e) => setRole(e.target.value as Role)}
             className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
-            <option value="worker">Кладовщик</option>
+            <option value="worker">Магазин</option>
             <option value="manager">Менеджер</option>
             <option value="admin">Админ</option>
           </select>
