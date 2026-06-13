@@ -298,6 +298,7 @@ export interface WarehouseProduct {
   producer: string;
   group: string;
   quantity: number;
+  price: number;
 }
 
 export interface WarehouseStock {

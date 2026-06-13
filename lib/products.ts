@@ -342,6 +342,7 @@ export interface WarehouseProduct {
   producer: string;   // бренд
   group: string;      // группа
   quantity: number;
+  price: number;      // оптовая цена
 }
 
 export interface WarehouseStock {
@@ -354,10 +355,11 @@ export interface WarehouseStock {
 // Все товары конкретного склада с количеством.
 export async function getWarehouseStock(warehouseId: string): Promise<WarehouseStock> {
   const needle = normalizeCode(warehouseId);
-  const [balance, whMap, catalog] = await Promise.all([
+  const [balance, whMap, catalog, priceMap] = await Promise.all([
     getCachedBalance(),
     getWarehouseMap(),
     getCachedCatalog(),
+    getWholesalePriceMap(),
   ]);
 
   const infoByCode = new Map(catalog.map((c) => [normalizeCode(c.code), c]));
@@ -378,6 +380,7 @@ export async function getWarehouseStock(warehouseId: string): Promise<WarehouseS
         producer: info?.producer || '',
         group: info?.group || '',
         quantity: qty,
+        price: priceMap.get(code) ?? 0,
       };
     })
     .sort((a, b) => b.quantity - a.quantity);

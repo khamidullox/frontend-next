@@ -147,11 +147,12 @@ export default function WarehouseDetailPage() {
                 {pagination}
 
                 {/* Шапка таблицы */}
-                <div className="grid grid-cols-[minmax(0,1fr)_72px_104px_56px] gap-2 px-2 pb-1.5 mb-1
+                <div className="grid grid-cols-[minmax(0,1fr)_58px_84px_72px_48px] gap-2 px-2 pb-1.5 mb-1
                                 text-[11px] font-semibold text-gray-400 border-b border-gray-200">
                   <span>Название</span>
                   <span className="text-center">Бренд</span>
                   <span className="text-center">Вид</span>
+                  <span className="text-right">Цена</span>
                   <span className="text-right">Остаток</span>
                 </div>
 
@@ -159,7 +160,7 @@ export default function WarehouseDetailPage() {
                   {pageRows.map(r => (
                     <div
                       key={r.product_code}
-                      className="grid grid-cols-[minmax(0,1fr)_72px_104px_56px] gap-2 items-center
+                      className="grid grid-cols-[minmax(0,1fr)_58px_84px_72px_48px] gap-2 items-center
                                  px-2 py-2 text-sm border-b border-gray-100 last:border-0"
                     >
                       <span className="min-w-0">
@@ -168,6 +169,9 @@ export default function WarehouseDetailPage() {
                       </span>
                       <span className="text-center text-xs text-gray-500 truncate">{r.producer || '—'}</span>
                       <span className="text-center text-xs text-gray-500 truncate">{r.group || '—'}</span>
+                      <span className="text-right text-xs text-emerald-700 whitespace-nowrap">
+                        {r.price > 0 ? r.price.toLocaleString('ru-RU') : '—'}
+                      </span>
                       <span className="text-right font-bold whitespace-nowrap">{r.quantity}</span>
                     </div>
                   ))}
