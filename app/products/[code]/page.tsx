@@ -11,7 +11,7 @@ export default function ProductDetailPage() {
   const router = useRouter();
 
   // Название/ШК берём из каталога (кэш браузера — мгновенно)
-  const { data: products } = useCachedList('cache:products', listProducts, 30 * 60 * 1000);
+  const { data: products } = useCachedList('cache:products_v2', listProducts, 30 * 60 * 1000);
   const item: CatalogItem | undefined = products.find(p => p.code === code);
 
   const [stock, setStock] = useState<ProductStock | null>(null);

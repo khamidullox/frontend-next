@@ -12,7 +12,7 @@ const MAX_SHOWN = 100;
 export default function ProductsPage() {
   const router = useRouter();
   const { data: products, loading, error } = useCachedList(
-    'cache:products',
+    'cache:products_v2',
     listProducts,
     30 * 60 * 1000
   );

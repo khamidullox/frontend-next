@@ -147,7 +147,7 @@ export default function WarehouseDetailPage() {
                 {pagination}
 
                 {/* Шапка таблицы */}
-                <div className="grid grid-cols-[1fr_64px_52px_68px] gap-2 px-2 pb-1.5 mb-1
+                <div className="grid grid-cols-[minmax(0,1fr)_72px_104px_56px] gap-2 px-2 pb-1.5 mb-1
                                 text-[11px] font-semibold text-gray-400 border-b border-gray-200">
                   <span>Название</span>
                   <span className="text-center">Бренд</span>
@@ -159,7 +159,7 @@ export default function WarehouseDetailPage() {
                   {pageRows.map(r => (
                     <div
                       key={r.product_code}
-                      className="grid grid-cols-[1fr_64px_52px_68px] gap-2 items-center
+                      className="grid grid-cols-[minmax(0,1fr)_72px_104px_56px] gap-2 items-center
                                  px-2 py-2 text-sm border-b border-gray-100 last:border-0"
                     >
                       <span className="min-w-0">

@@ -64,29 +64,53 @@ export interface CatalogItem {
   barcodes: string[];
 }
 
-// Первый код группы товара из inventory.groups (без префикса "PRDGR:").
-function extractGroup(inv: Record<string, unknown>): string {
-  const groups = inv.groups;
-  if (!Array.isArray(groups) || groups.length === 0) return '';
-  const code = String((groups[0] as Record<string, unknown>)?.group_code ?? '');
-  return code.replace(/^PRDGR:/i, '');
+const PRODUCT_GROUP_EXPORT_ENDPOINT = '/b/anor/mxsx/mr/product_group$export';
+
+// Справочник групп: product_type_id → название.
+// Бренд товара — тип группы PRDGR:5 (торговая марка), вид — PRDGR:3.
+async function fetchTypeNameMap(): Promise<Map<string, string>> {
+  const data = await smartupRequest<{
+    product_group?: { code?: string; product_group_types?: { product_type_id?: string; name?: string }[] }[];
+  }>(PRODUCT_GROUP_EXPORT_ENDPOINT, {});
+  const map = new Map<string, string>();
+  for (const g of data.product_group || []) {
+    for (const t of g.product_group_types || []) {
+      if (t.product_type_id) map.set(String(t.product_type_id), String(t.name ?? ''));
+    }
+  }
+  return map;
 }
 
-// Каталог товаров из Smartup (inventory$export), кэш на 30 мин.
-// Только активные (state=A). Для страницы «Справочник».
+// Название по коду группы (PRDGR:5 — бренд, PRDGR:3 — вид) для конкретного товара.
+function groupTypeName(
+  inv: Record<string, unknown>,
+  groupCode: string,
+  typeName: Map<string, string>
+): string {
+  const groups = inv.groups;
+  if (!Array.isArray(groups)) return '';
+  const entry = groups.find(
+    (x) => (x as Record<string, unknown>).group_code === groupCode
+  ) as Record<string, unknown> | undefined;
+  if (!entry) return '';
+  return typeName.get(String(entry.type_id ?? '')) || '';
+}
+
+// Каталог товаров из Smartup (inventory$export + product_group$export), кэш 30 мин.
+// Только активные (state=A). Бренд и вид — настоящими названиями.
 export async function getProductCatalog(): Promise<CatalogItem[]> {
   return cached('product:catalog', CATALOG_TTL_MS, async () => {
-    const data = await smartupRequest<{ inventory?: Record<string, unknown>[] }>(
-      INVENTORY_EXPORT_ENDPOINT,
-      {}
-    );
+    const [data, typeName] = await Promise.all([
+      smartupRequest<{ inventory?: Record<string, unknown>[] }>(INVENTORY_EXPORT_ENDPOINT, {}),
+      fetchTypeNameMap(),
+    ]);
     return (data.inventory || [])
       .filter((i) => normalizeCode(i.state) === 'A')
       .map((i) => ({
         code: normalizeCode(i.code),
         name: String(i.name ?? ''),
-        producer: String(i.producer_code ?? ''),
-        group: extractGroup(i),
+        producer: groupTypeName(i, 'PRDGR:5', typeName), // бренд / торговая марка
+        group: groupTypeName(i, 'PRDGR:3', typeName),    // вид
         barcodes: buildBarcodes(i),
       }))
       .filter((i) => i.code)
@@ -175,8 +199,9 @@ async function getWarehouseMap(): Promise<Map<string, string>> {
 }
 
 // Каталог из Firestore-кэша (тот же, что у /api/products), без живого Smartup.
+// Ключ v2 — после добавления названий бренда/вида (старый кэш был с кодами).
 function getCachedCatalog(): Promise<CatalogItem[]> {
-  return getCachedList('products', getProductCatalog, 6 * 60 * 60 * 1000);
+  return getCachedList('catalog_v2', getProductCatalog, 6 * 60 * 60 * 1000);
 }
 
 // Когда снимок остатков последний раз обновлялся (для подписи «обновлено …»).
