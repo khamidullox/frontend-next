@@ -269,6 +269,7 @@ export interface ProductStock {
   rows: StockRow[];
   total: number;
   input_price: number;
+  wholesale_price: number;
 }
 
 export async function getProductStock(code: string): Promise<ProductStock> {

@@ -9,9 +9,9 @@ import { smartupRequest } from './smartup';
 import { cached } from './cache';
 import { getCachedList, getCachedSnapshot, refreshCachedList, getCachedListUpdatedMs } from './listCache';
 
-// Остатки — почти «живые»: снимок в Firestore обновляется фоном, если старше
-// 5 минут (1 тяжёлый запрос на всех 25 магазинов, а не на каждого).
-const STOCK_FRESH_MS = 5 * 60 * 1000;
+// Остатки: снимок в Firestore обновляется фоном, если старше 2 часов
+// (1 тяжёлый запрос на всех 25 магазинов, а не на каждого).
+const STOCK_FRESH_MS = 2 * 60 * 60 * 1000;
 // Баланс ~24k строк {w,p,q} — пишем крупными кусками, чтобы экономить записи Firestore.
 const BALANCE_CHUNK = 8000;
 // Справочники (склады, каталог) меняются редко — держим дольше.
@@ -125,6 +125,31 @@ export async function getProductCatalog(): Promise<CatalogItem[]> {
 
 const BALANCE_EXPORT_ENDPOINT = '/b/anor/mxsx/mkw/balance$export';
 const WAREHOUSE_EXPORT_ENDPOINT = '/b/anor/mxsx/mkw/warehouse$export';
+const PRICE_EXPORT_ENDPOINT = '/b/anor/api/v2/mkf/product_price$export';
+// Код типа цены «Оптовая цена Arzonchi (UZS)» (проставлен админом = id).
+const WHOLESALE_PRICE_TYPE = '117893';
+
+interface PriceRow { code: string; price: number }
+
+async function fetchWholesalePrices(): Promise<PriceRow[]> {
+  const data = await smartupRequest<{
+    inventory?: { inventory_code?: string; price_type?: { price_type_code?: string; price?: string | number }[] }[];
+  }>(PRICE_EXPORT_ENDPOINT, {});
+  const out: PriceRow[] = [];
+  for (const it of data.inventory || []) {
+    const code = normalizeCode(it.inventory_code);
+    if (!code) continue;
+    const p = (it.price_type || []).find((x) => String(x.price_type_code) === WHOLESALE_PRICE_TYPE);
+    if (p && p.price != null && p.price !== '') out.push({ code, price: Number(p.price) || 0 });
+  }
+  return out;
+}
+
+// Оптовая цена код→сумма, Firestore-кэш (меняется реже остатков) на 1 час.
+async function getWholesalePriceMap(): Promise<Map<string, number>> {
+  const arr = await getCachedList('prices_v1', fetchWholesalePrices, 60 * 60 * 1000);
+  return new Map(arr.map((x) => [x.code, x.price]));
+}
 
 // Только основные склады. Код склада — это префикс в его названии («001 Основной склад»).
 const MAIN_WAREHOUSE_CODES = new Set(['001', '002', '003', '005', '006', '008', '7776']);
@@ -243,12 +268,17 @@ export interface ProductStock {
   rows: StockRow[];
   total: number;
   input_price: number;
+  wholesale_price: number;
 }
 
 // Остатки конкретного товара: на каких складах и сколько.
 export async function getProductStock(code: string): Promise<ProductStock> {
   const needle = normalizeCode(code);
-  const [balance, whMap] = await Promise.all([getCachedBalance(), getWarehouseMap()]);
+  const [balance, whMap, priceMap] = await Promise.all([
+    getCachedBalance(),
+    getWarehouseMap(),
+    getWholesalePriceMap(),
+  ]);
 
   const byWh = new Map<string, number>();
   for (const b of balance) {
@@ -269,6 +299,7 @@ export async function getProductStock(code: string): Promise<ProductStock> {
     rows,
     total: rows.reduce((s, r) => s + r.quantity, 0),
     input_price: 0,
+    wholesale_price: priceMap.get(needle) ?? 0,
   };
 }
 

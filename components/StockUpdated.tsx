@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import { getStockUpdated } from '@/lib/api';
 
-// Остатки обновляются раз в 5 минут (совпадает с STOCK_FRESH_MS на сервере).
-const FRESH_MS = 5 * 60 * 1000;
+// Остатки обновляются раз в 2 часа (совпадает с STOCK_FRESH_MS на сервере).
+const FRESH_MS = 2 * 60 * 60 * 1000;
 
 function ago(ms: number): string {
   const diff = Date.now() - ms;
@@ -18,10 +18,11 @@ function ago(ms: number): string {
 function countdown(msLeft: number): string {
   if (msLeft <= 0) return 'обновится при заходе';
   const total = Math.floor(msLeft / 1000);
-  const m = Math.floor(total / 60);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
   const s = total % 60;
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(m)}:${pad(s)}`;
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
 // Подпись «Остатки обновлены … назад» + обратный отсчёт до следующего обновления.

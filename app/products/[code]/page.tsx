@@ -65,6 +65,14 @@ export default function ProductDetailPage() {
         {item && item.barcodes.length > 0 && (
           <p className="text-xs text-gray-500 mt-0.5">ШК: {item.barcodes.join(', ')}</p>
         )}
+        {stock && stock.wholesale_price > 0 && (
+          <p className="mt-2 text-sm">
+            💵 Оптовая цена:{' '}
+            <strong className="text-emerald-600">
+              {stock.wholesale_price.toLocaleString('ru-RU')} сум
+            </strong>
+          </p>
+        )}
       </div>
 
       {/* Остатки */}
