@@ -179,6 +179,7 @@ function getCachedBalance(): Promise<SlimBalance[]> {
 interface WhRef {
   id: string;
   name: string;
+  code: string;
 }
 
 async function fetchWarehouseRef(): Promise<WhRef[]> {
@@ -189,13 +190,22 @@ async function fetchWarehouseRef(): Promise<WhRef[]> {
   return (data.warehouse || []).map((w) => ({
     id: normalizeCode(w.warehouse_id),
     name: String(w.name ?? ''),
+    code: normalizeCode(w.code),
   }));
 }
 
-// Справочник складов id→название, тоже в Firestore-кэше на 4 часа.
+// Справочник складов id→название (Firestore-кэш 4ч). v2 — добавили code.
 async function getWarehouseMap(): Promise<Map<string, string>> {
-  const refs = await getCachedList('warehouse_ref', fetchWarehouseRef, STOCK_TTL_MS);
+  const refs = await getCachedList('warehouse_ref_v2', fetchWarehouseRef, STOCK_TTL_MS);
   return new Map(refs.map((r) => [r.id, r.name]));
+}
+
+// Справочник складов код→название (для «откуда → куда» в накладных).
+export async function getWarehouseCodeMap(): Promise<Map<string, string>> {
+  const refs = await getCachedList('warehouse_ref_v2', fetchWarehouseRef, STOCK_TTL_MS);
+  const map = new Map<string, string>();
+  for (const r of refs) if (r.code) map.set(r.code, r.name);
+  return map;
 }
 
 // Каталог из Firestore-кэша (тот же, что у /api/products), без живого Smartup.

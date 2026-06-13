@@ -75,6 +75,8 @@ export interface MovementListItem {
   filial_code: string;
   from_warehouse_code: string | null;
   to_warehouse_code: string | null;
+  from_warehouse_name: string | null;
+  to_warehouse_name: string | null;
   status: string;
   items_count: number;
   total_quantity: number;

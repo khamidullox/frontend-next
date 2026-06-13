@@ -1,5 +1,5 @@
 import { smartupRequest } from './smartup';
-import { getProductInfos } from './products';
+import { getProductInfos, getWarehouseCodeMap } from './products';
 import { CheckDocument, DocItem } from './document';
 import { cached } from './cache';
 
@@ -103,15 +103,22 @@ export interface MovementListItem {
   filial_code: string;
   from_warehouse_code: string | null;
   to_warehouse_code: string | null;
+  from_warehouse_name: string | null;
+  to_warehouse_name: string | null;
   status: string;
   items_count: number;
   total_quantity: number;
 }
 
+function whName(code: string | null, map: Map<string, string>): string | null {
+  if (!code) return null;
+  return map.get(String(code).trim()) || String(code);
+}
+
 // Лёгкий список доступных накладных (из кэша).
 // Завершённые (status "C") не показываем — их уже отгрузили, проверять нечего.
 export async function listMovements(): Promise<MovementListItem[]> {
-  const movements = await getAllMovements();
+  const [movements, whMap] = await Promise.all([getAllMovements(), getWarehouseCodeMap()]);
 
   return movements
     .filter((m) => m.status !== 'C')
@@ -124,6 +131,8 @@ export async function listMovements(): Promise<MovementListItem[]> {
         filial_code: m.filial_code,
         from_warehouse_code: m.from_warehouse_code,
         to_warehouse_code: m.to_warehouse_code,
+        from_warehouse_name: whName(m.from_warehouse_code, whMap),
+        to_warehouse_name: whName(m.to_warehouse_code, whMap),
         status: m.status,
         items_count: items.length,
         total_quantity: items.reduce((sum, it) => sum + toNumber(it.quantity), 0),
@@ -172,6 +181,12 @@ export async function getMovementDocument(
       `${item.product_code}-${index}`,
   }));
 
+  // «Откуда → Куда» названиями складов (коды теперь заполнены в Smartup).
+  const whMap = await getWarehouseCodeMap();
+  const from = whName(movement.from_warehouse_code, whMap);
+  const to = whName(movement.to_warehouse_code, whMap);
+  const route = [from, to].filter(Boolean).join(' → ') || null;
+
   return {
     doc_type: 'movement',
     doc_id: String(movement.movement_id),
@@ -179,7 +194,7 @@ export async function getMovementDocument(
     date: movement.from_movement_date,
     from_warehouse_code: movement.from_warehouse_code,
     to_warehouse_code: movement.to_warehouse_code,
-    client_name: null,
+    client_name: route,
     note: movement.note,
     items,
   };

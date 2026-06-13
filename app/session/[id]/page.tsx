@@ -551,7 +551,7 @@ export default function SessionPage() {
             }`}>{docLabel}</span>
             <span className="font-bold text-sm truncate">#{doc.doc_number || doc.doc_id || '—'}</span>
             {doc.client_name && (
-              <span className="text-[11px] text-gray-500 truncate hidden sm:inline">· {doc.client_name}</span>
+              <span className="text-[11px] text-gray-500 truncate">· {doc.client_name}</span>
             )}
             <span className="ml-auto text-xs font-semibold whitespace-nowrap">
               <span className="text-green-600">{summary.done_items}</span>

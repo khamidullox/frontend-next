@@ -26,7 +26,7 @@ export default function MovementsPage() {
 
 function MovementsContent() {
   const { data: movements, loading, error: loadError } = useCachedList(
-    'cache:movements',
+    'cache:movements_v2',
     listMovements
   );
   const [error, setError] = useState('');
@@ -136,6 +136,11 @@ function MovementsContent() {
                     </span>
                   )}
                 </div>
+                {(m.from_warehouse_name || m.to_warehouse_name) && (
+                  <div className="text-xs text-teal-700 mt-0.5 truncate">
+                    {m.from_warehouse_name || '—'} → {m.to_warehouse_name || '—'}
+                  </div>
+                )}
                 <div className="text-xs text-gray-400 mt-0.5">
                   ID: {m.movement_id}
                   {m.from_movement_date && ` · ${m.from_movement_date}`}
