@@ -17,7 +17,9 @@ export interface Session {
 }
 
 const COOKIE = 'auth';
-const MAX_AGE_S = 30 * 24 * 60 * 60; // 30 дней
+// Год. Плюс «скользящее» продление при каждом заходе (см. /api/auth/me) —
+// фактически сессия живёт, пока пользователь сам не выйдет.
+const MAX_AGE_S = 365 * 24 * 60 * 60;
 
 function secret(): string {
   return process.env.AUTH_SECRET || process.env.CRON_SECRET || 'dev-insecure-secret-change-me';

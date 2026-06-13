@@ -3,6 +3,24 @@
 import { useEffect, useState, useCallback } from 'react';
 import { listUsers, createUser, deleteUserApi, UserInfo, Role, ROLE_LABEL } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
+import { loadXLSX } from '@/lib/xlsx';
+
+async function exportUsersExcel(users: UserInfo[]) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const XLSX: any = await loadXLSX();
+  const rows = users.map((u, i) => ({
+    '№': i + 1,
+    'Логин': u.username,
+    'Имя': u.name,
+    'Роль': ROLE_LABEL[u.role],
+    'Создан': u.created_at ? new Date(u.created_at).toLocaleString('ru-RU') : '',
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 5 }, { wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 20 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Пользователи');
+  XLSX.writeFile(wb, 'polzovateli.xlsx');
+}
 
 export default function UsersPage() {
   return (
@@ -63,7 +81,17 @@ function UsersContent() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold mb-4">👤 Пользователи</h2>
+      <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+        <h2 className="text-xl font-bold">👤 Пользователи <span className="text-sm text-gray-400 font-normal">({users.length})</span></h2>
+        {users.length > 0 && (
+          <button
+            onClick={() => exportUsersExcel(users).catch(e => setError((e as Error).message))}
+            className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg"
+          >
+            📥 Excel
+          </button>
+        )}
+      </div>
 
       {/* Добавление */}
       <form onSubmit={add} className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-col gap-2">
