@@ -79,6 +79,15 @@ export async function deleteUserApi(username: string): Promise<void> {
   if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка удаления');
 }
 
+export async function setUserPassword(username: string, password: string): Promise<void> {
+  const res = await fetch(`/api/users/${encodeURIComponent(username)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка смены пароля');
+}
+
 // ─── Types ───────────────────────────────────────────
 
 export type ItemStatus = 'pending' | 'partial' | 'done';

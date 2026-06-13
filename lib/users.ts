@@ -76,3 +76,15 @@ export async function createUser(input: {
 export async function deleteUser(username: string): Promise<void> {
   await getDb().collection(COLLECTION).doc(normUsername(username)).delete();
 }
+
+export async function setPassword(
+  username: string,
+  password: string
+): Promise<{ ok: true } | { error: string }> {
+  if (!password || password.length < 4) return { error: 'Пароль минимум 4 символа' };
+  const ref = getDb().collection(COLLECTION).doc(normUsername(username));
+  const snap = await ref.get();
+  if (!snap.exists) return { error: 'Пользователь не найден' };
+  await ref.set({ password_hash: hashPassword(password) }, { merge: true });
+  return { ok: true };
+}
