@@ -51,8 +51,21 @@ async function exportToExcel(session: Session) {
     'Статус': statusLabel[it.status],
   }));
 
+  const doc = session.document;
+  const docLabel = DOC_TYPE_LABEL[doc.doc_type] || 'Документ';
+
+  // Шапка: тип/номер, дата, маршрут «откуда → куда», проверяющий.
+  const info: (string | number)[][] = [
+    [`${docLabel} № ${doc.doc_number || doc.doc_id || '—'}`],
+    [`Дата: ${doc.date || '—'}`],
+  ];
+  if (doc.client_name) info.push([`Откуда → Куда: ${doc.client_name}`]);
+  if (session.checker_name) info.push([`Проверил: ${session.checker_name}`]);
+  info.push([]); // пустая строка перед таблицей
+
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(rows);
+  const ws = XLSX.utils.aoa_to_sheet(info);
+  XLSX.utils.sheet_add_json(ws, rows, { origin: -1 });
   ws['!cols'] = [
     { wch: 5 }, { wch: 10 }, { wch: 45 }, { wch: 28 },
     { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 12 },
