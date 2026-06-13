@@ -52,6 +52,32 @@ async function readListCache<T>(type: string): Promise<{ items: T[]; updated_ms:
   return { items, updated_ms };
 }
 
+// Как getCachedList, но «устарел» = снимок сделан ДО момента staleBeforeMs
+// (например, до последней границы расписания 08:00/10:00/…), а не «N мс назад».
+export async function getCachedListStaleBefore<T>(
+  type: string,
+  fetcher: () => Promise<T[]>,
+  staleBeforeMs: number
+): Promise<T[]> {
+  const cached = await readListCache<T>(type);
+  if (cached) {
+    if (cached.updated_ms < staleBeforeMs) {
+      after(async () => {
+        try {
+          const fresh = await fetcher();
+          await writeListCache(type, fresh);
+        } catch {
+          // обновится при следующем заходе
+        }
+      });
+    }
+    return cached.items;
+  }
+  const fresh = await fetcher();
+  await writeListCache(type, fresh);
+  return fresh;
+}
+
 // Когда снимок последний раз обновлялся (мс). null — если кэша ещё нет.
 export async function getCachedListUpdatedMs(type: string): Promise<number | null> {
   const db = getDb();

@@ -7,12 +7,21 @@ const CATALOG_TTL_MS = 30 * 60 * 1000;
 
 import { smartupRequest } from './smartup';
 import { cached } from './cache';
-import { getCachedList, refreshCachedList, getCachedListUpdatedMs } from './listCache';
+import { getCachedList, getCachedListStaleBefore, refreshCachedList, getCachedListUpdatedMs } from './listCache';
 
-// Остатки/склады обновляются не чаще раза в 4 часа: снимок лежит в Firestore,
-// читается мгновенно, а при устаревании обновляется фоном (1 запрос в Smartup
-// на всех пользователей, а не на каждого).
-const STOCK_TTL_MS = 4 * 60 * 60 * 1000;
+// Остатки обновляются по расписанию — каждые 2 часа в фиксированное время
+// (08:00, 10:00, 12:00 … по Ташкенту, UTC+5). Снимок лежит в Firestore,
+// читается мгновенно, а при наступлении нового слота обновляется фоном
+// (1 запрос в Smartup на всех, а не на каждого пользователя).
+const STOCK_TTL_MS = 4 * 60 * 60 * 1000; // для справочников (склады/каталог)
+const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
+const STOCK_SLOT_MS = 2 * 60 * 60 * 1000;
+
+// Граница последнего слота расписания (в UTC-мс): последний чётный час по Ташкенту.
+function currentStockSlotStart(): number {
+  const local = Date.now() + TASHKENT_OFFSET_MS;
+  return Math.floor(local / STOCK_SLOT_MS) * STOCK_SLOT_MS - TASHKENT_OFFSET_MS;
+}
 
 export interface ProductDoc {
   code: string;
@@ -173,7 +182,8 @@ async function fetchSlimBalance(): Promise<SlimBalance[]> {
 
 // Снимок остатков в Firestore (chunked), обновляется раз в 4 часа.
 function getCachedBalance(): Promise<SlimBalance[]> {
-  return getCachedList('balance', fetchSlimBalance, STOCK_TTL_MS);
+  // Обновляется при наступлении нового слота (чётный час), а не «через N часов».
+  return getCachedListStaleBefore('balance', fetchSlimBalance, currentStockSlotStart());
 }
 
 interface WhRef {

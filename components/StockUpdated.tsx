@@ -3,9 +3,6 @@
 import { useEffect, useState } from 'react';
 import { getStockUpdated } from '@/lib/api';
 
-// Снимок остатков живёт 4 часа (совпадает с STOCK_TTL_MS на сервере).
-const TTL_MS = 4 * 60 * 60 * 1000;
-
 function ago(ms: number): string {
   const diff = Date.now() - ms;
   const min = Math.floor(diff / 60000);
@@ -15,8 +12,18 @@ function ago(ms: number): string {
   return `${h} ч ${min % 60} мин назад`;
 }
 
+// Время до следующего обновления по расписанию — ближайший чётный час (08:00, 10:00…).
+function msToNextSlot(now: number): number {
+  const d = new Date(now);
+  const h = d.getHours();
+  const nextEven = h % 2 === 0 ? h + 2 : h + 1;
+  const next = new Date(d);
+  next.setHours(nextEven, 0, 0, 0);
+  return next.getTime() - now;
+}
+
 function countdown(msLeft: number): string {
-  if (msLeft <= 0) return 'обновится при следующем открытии';
+  if (msLeft <= 0) return 'скоро';
   const total = Math.floor(msLeft / 1000);
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
@@ -44,7 +51,7 @@ export default function StockUpdated({ className = '' }: { className?: string })
 
   if (!ms) return null;
 
-  const left = ms + TTL_MS - now;
+  const left = msToNextSlot(now);
   const exact = new Date(ms).toLocaleString('ru-RU', {
     day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
   });
