@@ -14,8 +14,8 @@ import { getCachedList, getCachedSnapshot, refreshCachedList, getCachedListUpdat
 const STOCK_FRESH_MS = 10 * 60 * 1000;
 // Баланс ~24k строк {w,p,q} — пишем крупными кусками, чтобы экономить записи Firestore.
 const BALANCE_CHUNK = 8000;
-// Справочники (склады, каталог) меняются редко — держим дольше.
-const REF_TTL_MS = 12 * 60 * 60 * 1000;
+// Справочники (склады, каталог: названия/бренд/вид/новые товары) — каждые 2 часа.
+const REF_TTL_MS = 2 * 60 * 60 * 1000;
 
 export interface ProductDoc {
   code: string;
@@ -145,9 +145,9 @@ async function fetchWholesalePrices(): Promise<PriceRow[]> {
   return out;
 }
 
-// Оптовая цена код→сумма, Firestore-кэш (меняется реже остатков) на 1 час.
+// Оптовая цена код→сумма, Firestore-кэш на 2 часа (как и остальной «паспорт»).
 async function getWholesalePriceMap(): Promise<Map<string, number>> {
-  const arr = await getCachedList('prices_v1', fetchWholesalePrices, 60 * 60 * 1000);
+  const arr = await getCachedList('prices_v1', fetchWholesalePrices, REF_TTL_MS);
   return new Map(arr.map((x) => [x.code, x.price]));
 }
 
