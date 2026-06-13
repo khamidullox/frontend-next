@@ -14,8 +14,8 @@ import { getCachedList, getCachedSnapshot, refreshCachedList, getCachedListUpdat
 const STOCK_FRESH_MS = 10 * 60 * 1000;
 // Баланс ~24k строк {w,p,q} — пишем крупными кусками, чтобы экономить записи Firestore.
 const BALANCE_CHUNK = 8000;
-// Справочники (склады, каталог: названия/бренд/вид/новые товары) — каждые 2 часа.
-const REF_TTL_MS = 2 * 60 * 60 * 1000;
+// Справочники (склады, каталог: названия/бренд/вид/цена/новые товары) — каждые 30 минут.
+const REF_TTL_MS = 30 * 60 * 1000;
 
 export interface ProductDoc {
   code: string;
