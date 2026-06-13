@@ -9,14 +9,14 @@ import { useAuth } from '@/components/AuthProvider';
 export default function AppHeader() {
   const pathname = usePathname();
   const router = useRouter();
-  const { session } = useAuth();
+  const { session, refresh } = useAuth();
 
   if (pathname.startsWith('/session') || pathname === '/login') return null;
 
   async function doLogout() {
     await logout();
+    await refresh();        // сбросить сессию в провайдере
     router.replace('/login');
-    router.refresh();
   }
 
   return (

@@ -49,26 +49,32 @@ export default function LoginPage() {
           {setupNeeded && (
             <input
               type="text"
+              name="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Имя (как показывать)"
+              autoComplete="name"
               className="border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-400"
             />
           )}
           <input
             type="text"
+            name="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             placeholder="Логин"
             autoFocus
             autoCapitalize="none"
+            autoComplete="username"
             className="border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-400"
           />
           <input
             type="password"
+            name="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Пароль"
+            autoComplete={setupNeeded ? 'new-password' : 'current-password'}
             className="border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-400"
           />
 
