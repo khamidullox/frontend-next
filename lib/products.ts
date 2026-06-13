@@ -315,7 +315,9 @@ export interface WarehouseSummary {
 }
 
 // Список складов с агрегатами (для страницы выбора склада).
-export async function listWarehouseStock(): Promise<WarehouseSummary[]> {
+// allowed — коды складов пользователя; если задан, показываем именно их
+// (7 основных + свой). Если пусто — по умолчанию основные склады.
+export async function listWarehouseStock(allowed?: string[]): Promise<WarehouseSummary[]> {
   const [balance, whMap] = await Promise.all([getCachedBalance(), getWarehouseMap()]);
 
   const agg = new Map<string, { products: Set<string>; qty: number }>();
@@ -326,6 +328,8 @@ export async function listWarehouseStock(): Promise<WarehouseSummary[]> {
     a.qty += b.q;
   }
 
+  const allow = allowed && allowed.length ? new Set(allowed.map((c) => String(c).trim())) : null;
+
   return [...agg.entries()]
     .map(([whId, a]) => ({
       warehouse_id: whId,
@@ -334,7 +338,9 @@ export async function listWarehouseStock(): Promise<WarehouseSummary[]> {
       total_quantity: a.qty,
     }))
     .filter((w) => w.total_quantity !== 0)
-    .filter((w) => isMainWarehouse(w.warehouse_name)) // только основные склады
+    .filter((w) =>
+      allow ? allow.has(warehouseCodeFromName(w.warehouse_name)) : isMainWarehouse(w.warehouse_name)
+    )
     .sort((a, b) => a.warehouse_name.localeCompare(b.warehouse_name, 'ru'));
 }
 
