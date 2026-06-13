@@ -10,7 +10,7 @@ export default function WarehousesPage() {
   const { data: warehouses, loading, error } = useCachedList(
     'cache:warehouses_v2',
     listWarehouses,
-    30 * 60 * 1000
+    2 * 60 * 1000
   );
   const [query, setQuery] = useState('');
 

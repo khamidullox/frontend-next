@@ -7,21 +7,15 @@ const CATALOG_TTL_MS = 30 * 60 * 1000;
 
 import { smartupRequest } from './smartup';
 import { cached } from './cache';
-import { getCachedList, getCachedListStaleBefore, refreshCachedList, getCachedListUpdatedMs } from './listCache';
+import { getCachedList, getCachedSnapshot, refreshCachedList, getCachedListUpdatedMs } from './listCache';
 
-// Остатки обновляются по расписанию — каждые 2 часа в фиксированное время
-// (08:00, 10:00, 12:00 … по Ташкенту, UTC+5). Снимок лежит в Firestore,
-// читается мгновенно, а при наступлении нового слота обновляется фоном
-// (1 запрос в Smartup на всех, а не на каждого пользователя).
-const STOCK_TTL_MS = 4 * 60 * 60 * 1000; // для справочников (склады/каталог)
-const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
-const STOCK_SLOT_MS = 2 * 60 * 60 * 1000;
-
-// Граница последнего слота расписания (в UTC-мс): последний чётный час по Ташкенту.
-function currentStockSlotStart(): number {
-  const local = Date.now() + TASHKENT_OFFSET_MS;
-  return Math.floor(local / STOCK_SLOT_MS) * STOCK_SLOT_MS - TASHKENT_OFFSET_MS;
-}
+// Остатки — почти «живые»: снимок в Firestore обновляется фоном, если старше
+// 5 минут (1 тяжёлый запрос на всех 25 магазинов, а не на каждого).
+const STOCK_FRESH_MS = 5 * 60 * 1000;
+// Баланс ~24k строк {w,p,q} — пишем крупными кусками, чтобы экономить записи Firestore.
+const BALANCE_CHUNK = 8000;
+// Справочники (склады, каталог) меняются редко — держим дольше.
+const REF_TTL_MS = 12 * 60 * 60 * 1000;
 
 export interface ProductDoc {
   code: string;
@@ -182,8 +176,8 @@ async function fetchSlimBalance(): Promise<SlimBalance[]> {
 
 // Снимок остатков в Firestore (chunked), обновляется раз в 4 часа.
 function getCachedBalance(): Promise<SlimBalance[]> {
-  // Обновляется при наступлении нового слота (чётный час), а не «через N часов».
-  return getCachedListStaleBefore('balance', fetchSlimBalance, currentStockSlotStart());
+  // Снимок старше 5 минут → фоновое обновление (с защитой от «толпы»).
+  return getCachedSnapshot('balance', fetchSlimBalance, STOCK_FRESH_MS, BALANCE_CHUNK);
 }
 
 interface WhRef {
@@ -204,15 +198,15 @@ async function fetchWarehouseRef(): Promise<WhRef[]> {
   }));
 }
 
-// Справочник складов id→название (Firestore-кэш 4ч). v2 — добавили code.
+// Справочник складов id→название (Firestore-кэш 12ч). v2 — добавили code.
 async function getWarehouseMap(): Promise<Map<string, string>> {
-  const refs = await getCachedList('warehouse_ref_v2', fetchWarehouseRef, STOCK_TTL_MS);
+  const refs = await getCachedList('warehouse_ref_v2', fetchWarehouseRef, REF_TTL_MS);
   return new Map(refs.map((r) => [r.id, r.name]));
 }
 
 // Справочник складов код→название (для «откуда → куда» в накладных).
 export async function getWarehouseCodeMap(): Promise<Map<string, string>> {
-  const refs = await getCachedList('warehouse_ref_v2', fetchWarehouseRef, STOCK_TTL_MS);
+  const refs = await getCachedList('warehouse_ref_v2', fetchWarehouseRef, REF_TTL_MS);
   const map = new Map<string, string>();
   for (const r of refs) if (r.code) map.set(r.code, r.name);
   return map;
@@ -221,7 +215,7 @@ export async function getWarehouseCodeMap(): Promise<Map<string, string>> {
 // Каталог из Firestore-кэша (тот же, что у /api/products), без живого Smartup.
 // Ключ v2 — после добавления названий бренда/вида (старый кэш был с кодами).
 function getCachedCatalog(): Promise<CatalogItem[]> {
-  return getCachedList('catalog_v2', getProductCatalog, 6 * 60 * 60 * 1000);
+  return getCachedList('catalog_v2', getProductCatalog, REF_TTL_MS);
 }
 
 // Когда снимок остатков последний раз обновлялся (для подписи «обновлено …»).
@@ -233,9 +227,9 @@ export function getStockUpdatedMs(): Promise<number | null> {
 // Вызывается из cron — чтобы первый пользователь после интервала не ждал Smartup.
 export async function refreshStockCache(): Promise<{ balance: number; warehouses: number }> {
   const [balance, warehouses] = await Promise.all([
-    refreshCachedList('balance', fetchSlimBalance),
-    refreshCachedList('warehouse_ref', fetchWarehouseRef),
-    refreshCachedList('products', getProductCatalog),
+    refreshCachedList('balance', fetchSlimBalance, BALANCE_CHUNK),
+    refreshCachedList('warehouse_ref_v2', fetchWarehouseRef),
+    refreshCachedList('catalog_v2', getProductCatalog),
   ]);
   return { balance, warehouses };
 }

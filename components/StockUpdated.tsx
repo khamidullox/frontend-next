@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react';
 import { getStockUpdated } from '@/lib/api';
 
+// Остатки обновляются раз в 5 минут (совпадает с STOCK_FRESH_MS на сервере).
+const FRESH_MS = 5 * 60 * 1000;
+
 function ago(ms: number): string {
   const diff = Date.now() - ms;
   const min = Math.floor(diff / 60000);
@@ -12,24 +15,13 @@ function ago(ms: number): string {
   return `${h} ч ${min % 60} мин назад`;
 }
 
-// Время до следующего обновления по расписанию — ближайший чётный час (08:00, 10:00…).
-function msToNextSlot(now: number): number {
-  const d = new Date(now);
-  const h = d.getHours();
-  const nextEven = h % 2 === 0 ? h + 2 : h + 1;
-  const next = new Date(d);
-  next.setHours(nextEven, 0, 0, 0);
-  return next.getTime() - now;
-}
-
 function countdown(msLeft: number): string {
-  if (msLeft <= 0) return 'скоро';
+  if (msLeft <= 0) return 'обновится при заходе';
   const total = Math.floor(msLeft / 1000);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
+  const m = Math.floor(total / 60);
   const s = total % 60;
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  return `${pad(m)}:${pad(s)}`;
 }
 
 // Подпись «Остатки обновлены … назад» + обратный отсчёт до следующего обновления.
@@ -51,7 +43,7 @@ export default function StockUpdated({ className = '' }: { className?: string })
 
   if (!ms) return null;
 
-  const left = msToNextSlot(now);
+  const left = ms + FRESH_MS - now;
   const exact = new Date(ms).toLocaleString('ru-RU', {
     day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
   });
