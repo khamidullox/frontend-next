@@ -1,10 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { listMovements, createSession, MOVEMENT_STATUS_LABEL } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
 import { useCachedList } from '@/lib/useCachedList';
+import Pager from '@/components/Pager';
+
+const PAGE_SIZE = 50;
 
 // Палитра как в Smartup: ожидание — лавандовый, завершено — бирюзовый.
 const STATUS_STYLE: Record<string, string> = {
@@ -33,6 +36,7 @@ function MovementsContent() {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [openingId, setOpeningId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
   const router = useRouter();
 
   async function open(movementId: string) {
@@ -48,6 +52,9 @@ function MovementsContent() {
     }
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setPage(1); }, [query, statusFilter]);
+
   // Статусы, которые реально встречаются в списке
   const statuses = Array.from(new Set(movements.map(m => m.status).filter(Boolean)));
 
@@ -60,6 +67,10 @@ function MovementsContent() {
       m.movement_number.toLowerCase().includes(q)
     );
   });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const shown = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   if (loading) {
     return (
@@ -117,8 +128,10 @@ function MovementsContent() {
           Накладных не найдено
         </div>
       ) : (
+        <>
+        <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
         <div className="flex flex-col gap-2.5">
-          {filtered.map(m => (
+          {shown.map(m => (
             <button
               key={m.movement_id}
               onClick={() => open(m.movement_id)}
@@ -157,6 +170,8 @@ function MovementsContent() {
             </button>
           ))}
         </div>
+        <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
+        </>
       )}
     </div>
   );

@@ -4,6 +4,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { listUsers, createUser, deleteUserApi, setUserPassword, setUserWarehouses, listWarehouses, WarehouseSummary, UserInfo, Role, ROLE_LABEL } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
 import { loadXLSX } from '@/lib/xlsx';
+import Pager from '@/components/Pager';
+
+const PAGE_SIZE = 50;
 
 // Код склада = первый токен названия («001 Основной склад» → «001»).
 function whCode(name: string): string {
@@ -81,6 +84,7 @@ function UsersContent() {
   const [selectedWh, setSelectedWh] = useState<string[]>([]);
   const [whList, setWhList] = useState<WarehouseSummary[]>([]);
   const [busy, setBusy] = useState(false);
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
     try {
@@ -190,6 +194,10 @@ function UsersContent() {
     }
   }
 
+  const totalPages = Math.max(1, Math.ceil(users.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const shownUsers = users.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
@@ -271,8 +279,10 @@ function UsersContent() {
       {loading ? (
         <div className="text-gray-500 text-sm">Загрузка…</div>
       ) : (
+        <>
+        <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
         <div className="flex flex-col gap-2">
-          {users.map((u) => (
+          {shownUsers.map((u) => (
             <div key={u.username} className="bg-white rounded-lg shadow-sm px-3 py-2.5 flex items-center gap-2 flex-wrap">
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-sm">{u.name} <span className="text-gray-400">@{u.username}</span></div>
@@ -293,6 +303,8 @@ function UsersContent() {
             </div>
           ))}
         </div>
+        <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
+        </>
       )}
     </div>
   );

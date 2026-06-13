@@ -1,10 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { listOrders, createSession } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
 import { useCachedList } from '@/lib/useCachedList';
+import Pager from '@/components/Pager';
+
+const PAGE_SIZE = 50;
 
 export default function OrdersPage() {
   return (
@@ -23,6 +26,7 @@ function OrdersContent() {
   const [query, setQuery] = useState('');
   const [newestFirst, setNewestFirst] = useState(true);
   const [openingId, setOpeningId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
   const router = useRouter();
 
   async function open(dealId: string) {
@@ -52,6 +56,13 @@ function OrdersContent() {
       const cmp = (a.date || '').localeCompare(b.date || '');
       return newestFirst ? -cmp : cmp;
     });
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setPage(1); }, [query, newestFirst]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const shown = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   if (loading) {
     return (
@@ -104,8 +115,10 @@ function OrdersContent() {
           Заказов не найдено
         </div>
       ) : (
+        <>
+        <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
         <div className="flex flex-col gap-2.5">
-          {filtered.map(o => (
+          {shown.map(o => (
             <button
               key={o.deal_id}
               onClick={() => open(o.deal_id)}
@@ -134,6 +147,8 @@ function OrdersContent() {
             </button>
           ))}
         </div>
+        <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
+        </>
       )}
     </div>
   );

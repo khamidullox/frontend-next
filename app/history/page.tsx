@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import { listSessions, SessionListItem, getSmartupLimits, SmartupLimit, DOC_TYPE_LABEL } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
 import { useCachedList } from '@/lib/useCachedList';
+import Pager from '@/components/Pager';
+
+const PAGE_SIZE = 50;
 
 function isToday(iso?: string | null): boolean {
   if (!iso) return false;
@@ -144,6 +147,11 @@ function HistoryContent() {
     30_000 // история обновляется чаще — окно «свежести» меньше
   );
   const router = useRouter();
+  const [page, setPage] = useState(1);
+
+  const totalPages = Math.max(1, Math.ceil(sessions.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const shown = sessions.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   if (loading) {
     return (
@@ -170,8 +178,10 @@ function HistoryContent() {
           Проверок пока нет
         </div>
       ) : (
+        <>
+        <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
         <div className="flex flex-col gap-2.5">
-          {sessions.map(s => (
+          {shown.map(s => (
             <button
               key={s.id}
               onClick={() => router.push(`/session/${s.id}`)}
@@ -202,6 +212,8 @@ function HistoryContent() {
             </button>
           ))}
         </div>
+        <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
+        </>
       )}
     </div>
   );
