@@ -16,7 +16,7 @@ export default function WarehouseDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
-  const [sortMode, setSortMode] = useState<SortMode>('qty_desc');
+  const [sortMode, setSortMode] = useState<SortMode>('group');
   const [page, setPage] = useState(1);
 
   useEffect(() => {

@@ -242,13 +242,13 @@ export async function getProductStock(code: string): Promise<ProductStock> {
     byWh.set(b.w, (byWh.get(b.w) || 0) + b.q);
   }
 
+  // В карточке товара показываем ВСЕ склады (не только основные).
   const rows: StockRow[] = [...byWh.entries()]
     .filter(([, qty]) => qty !== 0)
     .map(([whId, qty]) => ({
       warehouse_name: whMap.get(whId) || `склад ${whId}`,
       quantity: qty,
     }))
-    .filter((r) => isMainWarehouse(r.warehouse_name)) // только основные склады
     .sort((a, b) => b.quantity - a.quantity);
 
   return {
