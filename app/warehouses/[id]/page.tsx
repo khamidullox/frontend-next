@@ -2,11 +2,39 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getWarehouseStock, WarehouseStock } from '@/lib/api';
+import { getWarehouseStock, WarehouseStock, WarehouseProduct } from '@/lib/api';
 import StockUpdated from '@/components/StockUpdated';
+import { loadXLSX } from '@/lib/xlsx';
 
 const PAGE_SIZE = 50;
 type SortMode = 'qty_desc' | 'qty_asc' | 'name' | 'group';
+
+async function exportWarehouseExcel(name: string, rows: WarehouseProduct[]) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const XLSX: any = await loadXLSX();
+  const data = rows.map((r, i) => ({
+    '№': i + 1,
+    'Код': r.product_code,
+    'Название': r.product_name,
+    'Бренд': r.producer,
+    'Вид': r.group,
+    'Цена (опт)': r.price || '',
+    'Остаток (доступно)': r.quantity,
+  }));
+  const info = [
+    [`Остатки: ${name}`],
+    [`Сформировано: ${new Date().toLocaleString('ru-RU')}`],
+    [`Позиций: ${rows.length} · Всего доступно: ${rows.reduce((s, r) => s + r.quantity, 0)} шт.`],
+    [],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(info);
+  XLSX.utils.sheet_add_json(ws, data, { origin: -1 });
+  ws['!cols'] = [{ wch: 5 }, { wch: 10 }, { wch: 48 }, { wch: 16 }, { wch: 20 }, { wch: 14 }, { wch: 18 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Остатки');
+  const safe = name.replace(/[^\wа-яё0-9 -]/gi, '').trim().replace(/\s+/g, '_') || 'sklad';
+  XLSX.writeFile(wb, `ostatki_${safe}.xlsx`);
+}
 
 export default function WarehouseDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -18,6 +46,7 @@ export default function WarehouseDetailPage() {
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('group');
   const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -94,13 +123,32 @@ export default function WarehouseDetailPage() {
       </button>
 
       <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
-        <h2 className="font-bold text-base leading-snug">{stock?.warehouse_name || `Склад ${id}`}</h2>
-        {stock && (
-          <p className="text-xs text-gray-400 mt-1">
-            Товаров: {stock.rows.length} · Доступно: <strong className="text-green-600">{stock.total}</strong> шт.
-          </p>
-        )}
-        <div className="mt-1"><StockUpdated /></div>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="font-bold text-base leading-snug">{stock?.warehouse_name || `Склад ${id}`}</h2>
+            {stock && (
+              <p className="text-xs text-gray-400 mt-1">
+                Товаров: {stock.rows.length} · Доступно: <strong className="text-green-600">{stock.total}</strong> шт.
+              </p>
+            )}
+            <div className="mt-1"><StockUpdated /></div>
+          </div>
+          {stock && stock.rows.length > 0 && (
+            <button
+              onClick={async () => {
+                setExporting(true);
+                try { await exportWarehouseExcel(stock.warehouse_name, rows); }
+                catch (e) { setError((e as Error).message); }
+                finally { setExporting(false); }
+              }}
+              disabled={exporting}
+              className="flex-shrink-0 px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300
+                         text-white text-sm font-semibold rounded-lg transition-colors whitespace-nowrap"
+            >
+              {exporting ? '⏳…' : '📥 Excel'}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-4">
