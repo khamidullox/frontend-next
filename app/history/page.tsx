@@ -183,6 +183,7 @@ function HistoryContent() {
                   <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
                     s.doc_type === 'order' ? 'bg-purple-100 text-purple-700'
                     : s.doc_type === 'transfer' ? 'bg-teal-100 text-teal-700'
+                    : s.doc_type === 'receipt' ? 'bg-emerald-100 text-emerald-700'
                     : 'bg-blue-100 text-blue-700'
                   }`}>
                     {DOC_TYPE_LABEL[s.doc_type] || 'Документ'}

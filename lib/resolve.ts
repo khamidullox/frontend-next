@@ -2,6 +2,7 @@ import { CheckDocument } from './document';
 import { getMovementDocument } from './movement';
 import { getOrderDocument, getOrderDocumentByTTN } from './orders';
 import { getTransferDocument } from './transfers';
+import { getReceiptDocument } from './receipts';
 
 export interface ResolveInput {
   query?: string;
@@ -9,6 +10,7 @@ export interface ResolveInput {
   movement_number?: string;
   deal_id?: string;
   transfer_id?: string;
+  receipt_id?: string;
 }
 
 // deal_id заказов — крупные (сотни миллионов, ~9 цифр),
@@ -36,6 +38,7 @@ export async function resolveDocument(input: ResolveInput): Promise<CheckDocumen
   // Явные типы (из соответствующих разделов) — без авто-определения.
   if (input.deal_id) return getOrderDocument(input.deal_id);
   if (input.transfer_id) return getTransferDocument(input.transfer_id);
+  if (input.receipt_id) return getReceiptDocument(input.receipt_id);
   if (input.movement_id) return getMovementDocument({ movement_id: input.movement_id });
   if (input.movement_number)
     return getMovementDocument({ movement_number: input.movement_number });
@@ -64,6 +67,9 @@ export async function resolveDocument(input: ResolveInput): Promise<CheckDocumen
   // (дёшево — общий кэш со списком, без новых запросов при попадании).
   const transfer = await getTransferDocument(q);
   if (transfer) return transfer;
+
+  const receipt = await getReceiptDocument(q);
+  if (receipt) return receipt;
 
   // Последний шанс: это может быть номер ТТН заказа (delivery_number).
   return getOrderDocumentByTTN(q);

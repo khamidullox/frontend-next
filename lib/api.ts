@@ -16,12 +16,13 @@ export interface SessionItem {
   barcodes: string[];
 }
 
-export type DocType = 'movement' | 'order' | 'transfer';
+export type DocType = 'movement' | 'order' | 'transfer' | 'receipt';
 
 export const DOC_TYPE_LABEL: Record<DocType, string> = {
   movement: 'Накладная',
   order: 'Заказ',
   transfer: 'Перемещение',
+  receipt: 'Приёмка',
 };
 
 export interface SessionDocument {
@@ -222,6 +223,23 @@ export interface TransferListItem {
 
 export async function listTransfers(): Promise<TransferListItem[]> {
   const res = await fetch('/api/transfers', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
+export interface ReceiptListItem {
+  receipt_id: string;
+  number: string;
+  date: string;
+  warehouse_name: string | null;
+  status: string;
+  items_count: number;
+  total_quantity: number;
+}
+
+export async function listReceipts(): Promise<ReceiptListItem[]> {
+  const res = await fetch('/api/receipts', { cache: 'no-store' });
   if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
   const data = await res.json();
   return data.data || [];

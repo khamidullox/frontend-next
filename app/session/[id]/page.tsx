@@ -73,7 +73,7 @@ async function exportToExcel(session: Session) {
   XLSX.utils.book_append_sheet(wb, ws, 'Проверка');
 
   const prefixMap: Record<string, string> = {
-    order: 'zakaz', movement: 'nakladnaya', transfer: 'peremeshenie', return: 'vozvrat',
+    order: 'zakaz', movement: 'nakladnaya', transfer: 'peremeshenie', receipt: 'priemka',
   };
   const prefix = prefixMap[session.document.doc_type] || 'dokument';
   const num = session.document.doc_number || session.document.doc_id || prefix;
@@ -560,6 +560,7 @@ export default function SessionPage() {
             <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
               doc.doc_type === 'order' ? 'bg-purple-100 text-purple-700'
               : doc.doc_type === 'transfer' ? 'bg-teal-100 text-teal-700'
+              : doc.doc_type === 'receipt' ? 'bg-emerald-100 text-emerald-700'
               : 'bg-blue-100 text-blue-700'
             }`}>{docLabel}</span>
             <span className="font-bold text-sm truncate">#{doc.doc_number || doc.doc_id || '—'}</span>
