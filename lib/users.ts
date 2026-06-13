@@ -9,6 +9,7 @@ export interface StoredUser {
   role: Role;
   password_hash: string;
   created_at: string;
+  warehouses?: string[];
 }
 
 export interface UserInfo {
@@ -16,10 +17,26 @@ export interface UserInfo {
   name: string;
   role: Role;
   created_at: string;
+  warehouses: string[];
 }
 
 function publicUser(u: StoredUser): UserInfo {
-  return { username: u.username, name: u.name, role: u.role, created_at: u.created_at };
+  return {
+    username: u.username,
+    name: u.name,
+    role: u.role,
+    created_at: u.created_at,
+    warehouses: Array.isArray(u.warehouses) ? u.warehouses : [],
+  };
+}
+
+// Нормализация списка складов: "001, 002 ; 003" → ["001","002","003"]
+export function normWarehouses(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+  return String(value ?? '')
+    .split(/[,;\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function normUsername(u: string): string {
@@ -48,6 +65,7 @@ export async function createUser(input: {
   name: string;
   role: Role;
   password: string;
+  warehouses?: string[];
 }): Promise<{ ok: true } | { error: string }> {
   const username = normUsername(input.username);
   if (!username) return { error: 'Логин обязателен' };
@@ -68,8 +86,20 @@ export async function createUser(input: {
     role: input.role,
     password_hash: hashPassword(input.password),
     created_at: new Date().toISOString(),
+    warehouses: normWarehouses(input.warehouses),
   };
   await ref.set(user);
+  return { ok: true };
+}
+
+export async function setUserWarehouses(
+  username: string,
+  warehouses: string[]
+): Promise<{ ok: true } | { error: string }> {
+  const ref = getDb().collection(COLLECTION).doc(normUsername(username));
+  const snap = await ref.get();
+  if (!snap.exists) return { error: 'Пользователь не найден' };
+  await ref.set({ warehouses: normWarehouses(warehouses) }, { merge: true });
   return { ok: true };
 }
 

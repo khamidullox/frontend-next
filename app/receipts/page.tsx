@@ -8,7 +8,7 @@ import { useCachedList } from '@/lib/useCachedList';
 
 export default function ReceiptsPage() {
   return (
-    <AdminGate>
+    <AdminGate min="admin">
       <ReceiptsContent />
     </AdminGate>
   );

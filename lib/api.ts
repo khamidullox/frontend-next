@@ -12,6 +12,7 @@ export interface UserSession {
   username: string;
   name: string;
   role: Role;
+  warehouses: string[];
 }
 
 export interface MeResult {
@@ -53,6 +54,7 @@ export interface UserInfo {
   name: string;
   role: Role;
   created_at: string;
+  warehouses: string[];
 }
 
 export async function listUsers(): Promise<UserInfo[]> {
@@ -63,7 +65,7 @@ export async function listUsers(): Promise<UserInfo[]> {
 }
 
 export async function createUser(input: {
-  username: string; name: string; role: Role; password: string;
+  username: string; name: string; role: Role; password: string; warehouses?: string[];
 }): Promise<void> {
   const res = await fetch('/api/users', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -86,6 +88,15 @@ export async function setUserPassword(username: string, password: string): Promi
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка смены пароля');
+}
+
+export async function setUserWarehouses(username: string, warehouses: string[]): Promise<void> {
+  const res = await fetch(`/api/users/${encodeURIComponent(username)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ warehouses }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка сохранения складов');
 }
 
 // ─── Types ───────────────────────────────────────────

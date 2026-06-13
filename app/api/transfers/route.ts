@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  return withRole('manager', async () => {
+  return withRole('admin', async () => {
     try {
       const data = await listTransfers();
       return Response.json({ data });

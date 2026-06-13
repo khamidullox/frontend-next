@@ -8,7 +8,7 @@ import { useCachedList } from '@/lib/useCachedList';
 
 export default function TransfersPage() {
   return (
-    <AdminGate>
+    <AdminGate min="admin">
       <TransfersContent />
     </AdminGate>
   );

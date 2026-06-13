@@ -14,6 +14,7 @@ export interface Session {
   username: string;
   name: string;
   role: Role;
+  warehouses: string[]; // коды прикреплённых складов (пусто = все)
 }
 
 const COOKIE = 'auth';
@@ -65,7 +66,12 @@ export function verifyToken(token: string): Session | null {
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
     const data = JSON.parse(Buffer.from(body, 'base64url').toString());
     if (!data.exp || Date.now() > data.exp) return null;
-    return { username: data.username, name: data.name, role: data.role };
+    return {
+      username: data.username,
+      name: data.name,
+      role: data.role,
+      warehouses: Array.isArray(data.warehouses) ? data.warehouses : [],
+    };
   } catch {
     return null;
   }

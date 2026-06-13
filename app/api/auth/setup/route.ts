@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
 
     const uname = String(username).trim().toLowerCase();
-    await setSessionCookie({ username: uname, name: String(name || uname), role: 'admin' });
+    await setSessionCookie({ username: uname, name: String(name || uname), role: 'admin', warehouses: [] });
     return Response.json({ ok: true });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 500 });

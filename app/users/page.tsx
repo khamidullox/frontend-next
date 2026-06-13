@@ -1,9 +1,17 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { listUsers, createUser, deleteUserApi, setUserPassword, UserInfo, Role, ROLE_LABEL } from '@/lib/api';
+import { listUsers, createUser, deleteUserApi, setUserPassword, setUserWarehouses, listWarehouses, WarehouseSummary, UserInfo, Role, ROLE_LABEL } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
 import { loadXLSX } from '@/lib/xlsx';
+
+// Код склада = первый токен названия («001 Основной склад» → «001»).
+function whCode(name: string): string {
+  return String(name || '').trim().split(/\s+/)[0] || '';
+}
+function parseWarehouses(v: string): string[] {
+  return String(v || '').split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+}
 
 async function exportUsersExcel(users: UserInfo[]) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -13,10 +21,11 @@ async function exportUsersExcel(users: UserInfo[]) {
     'Логин': u.username,
     'Имя': u.name,
     'Роль': ROLE_LABEL[u.role],
+    'Склады': u.warehouses.join(', '),
     'Создан': u.created_at ? new Date(u.created_at).toLocaleString('ru-RU') : '',
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{ wch: 5 }, { wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 20 }];
+  ws['!cols'] = [{ wch: 5 }, { wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 20 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Пользователи');
   XLSX.writeFile(wb, 'polzovateli.xlsx');
@@ -27,10 +36,10 @@ async function downloadTemplate() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const XLSX: any = await loadXLSX();
   const ws = XLSX.utils.json_to_sheet([
-    { 'Логин': 'ivan', 'Имя': 'Иван', 'Роль': 'Кладовщик', 'Пароль': '1234' },
-    { 'Логин': 'manager1', 'Имя': 'Менеджер', 'Роль': 'Менеджер', 'Пароль': '1234' },
+    { 'Логин': 'ivan', 'Имя': 'Иван', 'Роль': 'Кладовщик', 'Пароль': '1234', 'Склады': '001,002' },
+    { 'Логин': 'manager1', 'Имя': 'Менеджер', 'Роль': 'Менеджер', 'Пароль': '1234', 'Склады': '' },
   ]);
-  ws['!cols'] = [{ wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 14 }];
+  ws['!cols'] = [{ wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 16 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Шаблон');
   XLSX.writeFile(wb, 'shablon_polzovateli.xlsx');
@@ -69,6 +78,8 @@ function UsersContent() {
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('worker');
   const [password, setPassword] = useState('');
+  const [selectedWh, setSelectedWh] = useState<string[]>([]);
+  const [whList, setWhList] = useState<WarehouseSummary[]>([]);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -82,19 +93,37 @@ function UsersContent() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { listWarehouses().then(setWhList).catch(() => {}); }, []);
+
+  function toggleWh(code: string) {
+    setSelectedWh((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
+  }
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError('');
     try {
-      await createUser({ username: username.trim(), name: name.trim(), role, password });
-      setUsername(''); setName(''); setPassword(''); setRole('worker');
+      await createUser({ username: username.trim(), name: name.trim(), role, password, warehouses: selectedWh });
+      setUsername(''); setName(''); setPassword(''); setRole('worker'); setSelectedWh([]);
       await load();
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function editWh(u: UserInfo) {
+    const cur = u.warehouses.join(', ');
+    const v = prompt(`Склады для ${u.username} (коды через запятую, напр. 001,002). Пусто = все:`, cur);
+    if (v === null) return;
+    setError('');
+    try {
+      await setUserWarehouses(u.username, parseWarehouses(v));
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
     }
   }
 
@@ -132,8 +161,9 @@ function UsersContent() {
         if (!username && !password) continue;
         const name = pick(r, ['имя', 'name', 'фио']).trim();
         const role = parseRole(pick(r, ['роль', 'role']));
+        const warehouses = parseWarehouses(pick(r, ['склады', 'склад', 'warehouses', 'warehouse']));
         try {
-          await createUser({ username, name, role, password });
+          await createUser({ username, name, role, password, warehouses });
           ok++;
         } catch (err) {
           errs.push(`${username || '—'}: ${(err as Error).message}`);
@@ -183,7 +213,7 @@ function UsersContent() {
       </div>
 
       <p className="text-xs text-gray-400 mb-3">
-        Колонки в Excel: <b>Логин</b>, <b>Имя</b>, <b>Роль</b> (Кладовщик/Менеджер/Админ), <b>Пароль</b>. Нажми «Шаблон» для примера.
+        Колонки в Excel: <b>Логин</b>, <b>Имя</b>, <b>Роль</b> (Кладовщик/Менеджер/Админ), <b>Пароль</b>, <b>Склады</b> (коды через запятую, напр. 001,002). Нажми «Шаблон» для примера.
       </p>
       {importMsg && <p className="text-sm text-blue-600 mb-3">{importMsg}</p>}
 
@@ -207,6 +237,28 @@ function UsersContent() {
             placeholder="Пароль"
             className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
         </div>
+
+        {/* Прикреплённые склады */}
+        {whList.length > 0 && (
+          <div className="mt-1">
+            <div className="text-xs text-gray-500 mb-1">Склады (пусто = все):</div>
+            <div className="flex flex-wrap gap-1.5">
+              {whList.map((w) => {
+                const code = whCode(w.warehouse_name);
+                const on = selectedWh.includes(code);
+                return (
+                  <button type="button" key={w.warehouse_id} onClick={() => toggleWh(code)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                      on ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+                    }`}>
+                    {w.warehouse_name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <button type="submit" disabled={busy}
           className="self-start mt-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg">
           {busy ? '⏳…' : 'Добавить'}
@@ -221,13 +273,21 @@ function UsersContent() {
       ) : (
         <div className="flex flex-col gap-2">
           {users.map((u) => (
-            <div key={u.username} className="bg-white rounded-lg shadow-sm px-3 py-2.5 flex items-center gap-3">
+            <div key={u.username} className="bg-white rounded-lg shadow-sm px-3 py-2.5 flex items-center gap-2 flex-wrap">
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-sm">{u.name} <span className="text-gray-400">@{u.username}</span></div>
-                <div className="text-xs text-gray-400">{ROLE_LABEL[u.role]}</div>
+                <div className="text-xs text-gray-400">
+                  {ROLE_LABEL[u.role]}
+                  {' · '}
+                  <span className="text-teal-600">
+                    {u.warehouses.length ? `Склады: ${u.warehouses.join(', ')}` : 'Склады: все'}
+                  </span>
+                </div>
               </div>
+              <button onClick={() => editWh(u)}
+                className="text-teal-600 hover:text-teal-800 text-sm px-2 py-1">Склады</button>
               <button onClick={() => changePass(u.username)}
-                className="text-blue-500 hover:text-blue-700 text-sm px-2 py-1">Сменить пароль</button>
+                className="text-blue-500 hover:text-blue-700 text-sm px-2 py-1">Пароль</button>
               <button onClick={() => remove(u.username)}
                 className="text-red-400 hover:text-red-600 text-sm px-2 py-1">Удалить</button>
             </div>

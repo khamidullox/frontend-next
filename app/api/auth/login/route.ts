@@ -12,8 +12,9 @@ export async function POST(request: NextRequest) {
     if (!user || !verifyPassword(String(password || ''), user.password_hash)) {
       return Response.json({ error: 'Неверный логин или пароль' }, { status: 401 });
     }
-    await setSessionCookie({ username: user.username, name: user.name, role: user.role });
-    return Response.json({ username: user.username, name: user.name, role: user.role });
+    const warehouses = Array.isArray(user.warehouses) ? user.warehouses : [];
+    await setSessionCookie({ username: user.username, name: user.name, role: user.role, warehouses });
+    return Response.json({ username: user.username, name: user.name, role: user.role, warehouses });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 500 });
   }
