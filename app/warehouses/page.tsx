@@ -62,7 +62,7 @@ export default function WarehousesPage() {
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-sm leading-tight truncate">{w.warehouse_name}</div>
                 <div className="text-[11px] text-gray-400">
-                  Товаров: {w.products_count} · Всего: {w.total_quantity} шт.
+                  Товаров: {w.products_count} · Доступно: {w.total_quantity} шт.
                 </div>
               </div>
               <span className="text-teal-500 text-base">📦</span>

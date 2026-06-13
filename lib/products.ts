@@ -188,9 +188,11 @@ interface SlimBalance {
 
 async function fetchSlimBalance(): Promise<SlimBalance[]> {
   const t = todaySmartup();
+  // product_conditions: ["F"] — доступный (free) остаток, без брони и транзита.
   const data = await smartupRequest<{ balance?: RawBalance[] }>(BALANCE_EXPORT_ENDPOINT, {
     begin_date: t,
     end_date: t,
+    product_conditions: ['F'],
   });
   return (data.balance || []).map((b) => ({
     w: normalizeCode(b.warehouse_id),
@@ -199,10 +201,10 @@ async function fetchSlimBalance(): Promise<SlimBalance[]> {
   }));
 }
 
-// Снимок остатков в Firestore (chunked), обновляется раз в 4 часа.
+// Снимок ДОСТУПНЫХ остатков в Firestore (chunked). Ключ _free — после перехода
+// на доступный остаток (старый кэш хранил общий).
 function getCachedBalance(): Promise<SlimBalance[]> {
-  // Снимок старше 5 минут → фоновое обновление (с защитой от «толпы»).
-  return getCachedSnapshot('balance', fetchSlimBalance, STOCK_FRESH_MS, BALANCE_CHUNK);
+  return getCachedSnapshot('balance_free', fetchSlimBalance, STOCK_FRESH_MS, BALANCE_CHUNK);
 }
 
 interface WhRef {
@@ -245,14 +247,14 @@ function getCachedCatalog(): Promise<CatalogItem[]> {
 
 // Когда снимок остатков последний раз обновлялся (для подписи «обновлено …»).
 export function getStockUpdatedMs(): Promise<number | null> {
-  return getCachedListUpdatedMs('balance');
+  return getCachedListUpdatedMs('balance_free');
 }
 
 // Принудительно обновить снимки остатков/складов/каталога в Firestore.
 // Вызывается из cron — чтобы первый пользователь после интервала не ждал Smartup.
 export async function refreshStockCache(): Promise<{ balance: number; warehouses: number }> {
   const [balance, warehouses] = await Promise.all([
-    refreshCachedList('balance', fetchSlimBalance, BALANCE_CHUNK),
+    refreshCachedList('balance_free', fetchSlimBalance, BALANCE_CHUNK),
     refreshCachedList('warehouse_ref_v2', fetchWarehouseRef),
     refreshCachedList('catalog_v2', getProductCatalog),
   ]);

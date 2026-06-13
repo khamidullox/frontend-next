@@ -81,7 +81,7 @@ export default function ProductDetailPage() {
           <span className="font-semibold">📦 Остатки по складам</span>
           {stock && (
             <span className="text-sm">
-              всего: <strong className="text-green-600">{stock.total}</strong> шт.
+              доступно: <strong className="text-green-600">{stock.total}</strong> шт.
             </span>
           )}
         </div>

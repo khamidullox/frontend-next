@@ -97,7 +97,7 @@ export default function WarehouseDetailPage() {
         <h2 className="font-bold text-base leading-snug">{stock?.warehouse_name || `Склад ${id}`}</h2>
         {stock && (
           <p className="text-xs text-gray-400 mt-1">
-            Товаров: {stock.rows.length} · Всего: <strong className="text-green-600">{stock.total}</strong> шт.
+            Товаров: {stock.rows.length} · Доступно: <strong className="text-green-600">{stock.total}</strong> шт.
           </p>
         )}
         <div className="mt-1"><StockUpdated /></div>
