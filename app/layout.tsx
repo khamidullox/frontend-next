@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import AppHeader from "@/components/AppHeader";
+import AppShell from "@/components/AppShell";
 import AuthProvider from "@/components/AuthProvider";
 
 export const metadata: Metadata = {
@@ -29,10 +29,7 @@ export default function RootLayout({
     <html lang="ru" className="h-full">
       <body className="min-h-full bg-gray-100 antialiased">
         <AuthProvider>
-          <AppHeader />
-          <main className="max-w-3xl mx-auto px-4 py-4">
-            {children}
-          </main>
+          <AppShell>{children}</AppShell>
         </AuthProvider>
       </body>
     </html>
