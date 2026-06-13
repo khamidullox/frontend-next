@@ -1,0 +1,78 @@
+import { getDb } from './firebase';
+import { hashPassword, Role } from './auth';
+
+const COLLECTION = 'users';
+
+export interface StoredUser {
+  username: string;
+  name: string;
+  role: Role;
+  password_hash: string;
+  created_at: string;
+}
+
+export interface UserInfo {
+  username: string;
+  name: string;
+  role: Role;
+  created_at: string;
+}
+
+function publicUser(u: StoredUser): UserInfo {
+  return { username: u.username, name: u.name, role: u.role, created_at: u.created_at };
+}
+
+function normUsername(u: string): string {
+  return String(u || '').trim().toLowerCase();
+}
+
+export async function countUsers(): Promise<number> {
+  const snap = await getDb().collection(COLLECTION).count().get();
+  return snap.data().count;
+}
+
+export async function getUserRaw(username: string): Promise<StoredUser | null> {
+  const snap = await getDb().collection(COLLECTION).doc(normUsername(username)).get();
+  return snap.exists ? (snap.data() as StoredUser) : null;
+}
+
+export async function listUsers(): Promise<UserInfo[]> {
+  const snap = await getDb().collection(COLLECTION).get();
+  return snap.docs
+    .map((d) => publicUser(d.data() as StoredUser))
+    .sort((a, b) => a.username.localeCompare(b.username));
+}
+
+export async function createUser(input: {
+  username: string;
+  name: string;
+  role: Role;
+  password: string;
+}): Promise<{ ok: true } | { error: string }> {
+  const username = normUsername(input.username);
+  if (!username) return { error: 'Логин обязателен' };
+  if (!/^[a-z0-9._-]{3,}$/.test(username))
+    return { error: 'Логин: латиница/цифры, минимум 3 символа' };
+  if (!input.password || input.password.length < 4)
+    return { error: 'Пароль минимум 4 символа' };
+  if (!['worker', 'manager', 'admin'].includes(input.role))
+    return { error: 'Неверная роль' };
+
+  const ref = getDb().collection(COLLECTION).doc(username);
+  const exists = await ref.get();
+  if (exists.exists) return { error: 'Такой логин уже есть' };
+
+  const user: StoredUser = {
+    username,
+    name: String(input.name || '').trim() || username,
+    role: input.role,
+    password_hash: hashPassword(input.password),
+    created_at: new Date().toISOString(),
+  };
+  await ref.set(user);
+  return { ok: true };
+}
+
+export async function deleteUser(username: string): Promise<void> {
+  await getDb().collection(COLLECTION).doc(normUsername(username)).delete();
+}

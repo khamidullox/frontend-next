@@ -2,50 +2,48 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { isAdminUnlocked, setAdminUnlocked } from '@/lib/admin';
+import { logout, ROLE_LABEL, ROLE_RANK, Role } from '@/lib/api';
+import { useAuth } from '@/components/AuthProvider';
 
-// Видны всем (без пароля)
-const PUBLIC_LINKS = [
-  { href: '/', label: '📦 Проверка' },
-  { href: '/products', label: '📚 Справочник' },
-  { href: '/warehouses', label: '🏬 Остатки' },
-];
+interface NavLink {
+  href: string;
+  label: string;
+  min: Role; // минимальная роль
+}
 
-const ADMIN_LINKS = [
-  { href: '/movements', label: '🗂️ Накладные' },
-  { href: '/orders', label: '🧾 Заказы' },
-  { href: '/transfers', label: '🔄 Перемещения' },
-  { href: '/receipts', label: '📥 Приёмка' },
-  { href: '/history', label: '📋 История' },
+const LINKS: NavLink[] = [
+  { href: '/', label: '📦 Проверка', min: 'worker' },
+  { href: '/products', label: '📚 Справочник', min: 'worker' },
+  { href: '/warehouses', label: '🏬 Остатки', min: 'worker' },
+  { href: '/movements', label: '🗂️ Накладные', min: 'manager' },
+  { href: '/orders', label: '🧾 Заказы', min: 'manager' },
+  { href: '/transfers', label: '🔄 Перемещения', min: 'manager' },
+  { href: '/receipts', label: '📥 Приёмка', min: 'manager' },
+  { href: '/history', label: '📋 История', min: 'manager' },
+  { href: '/users', label: '👤 Пользователи', min: 'admin' },
 ];
 
 export default function Nav() {
   const pathname = usePathname();
   const router = useRouter();
-  const [unlocked, setUnlocked] = useState(false);
+  const { session } = useAuth();
 
-  // Перечитываем флаг при каждой смене страницы (после /unlock).
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setUnlocked(isAdminUnlocked());
-  }, [pathname]);
+  const rank = session ? ROLE_RANK[session.role] : 0;
+  const links = LINKS.filter((l) => rank >= ROLE_RANK[l.min]);
 
   function isActive(href: string) {
     if (href === '/') return pathname === '/' || pathname.startsWith('/session');
     return pathname.startsWith(href);
   }
 
-  function lock() {
-    setAdminUnlocked(false);
-    setUnlocked(false);
-    router.push('/');
+  async function doLogout() {
+    await logout();
+    router.replace('/login');
+    router.refresh();
   }
 
-  const links = unlocked ? [...PUBLIC_LINKS, ...ADMIN_LINKS] : PUBLIC_LINKS;
-
   return (
-    <nav className="flex items-center gap-1 px-4 pt-3 max-w-3xl mx-auto">
+    <nav className="flex items-center gap-1 px-4 pt-3 max-w-3xl mx-auto flex-wrap">
       {links.map((link) => (
         <Link
           key={link.href}
@@ -59,14 +57,19 @@ export default function Nav() {
           {link.label}
         </Link>
       ))}
-      {unlocked && (
-        <button
-          onClick={lock}
-          title="Закрыть разделы"
-          className="ml-auto px-3 py-2 text-sm text-gray-400 hover:text-white transition-colors"
-        >
-          🔒
-        </button>
+      {session && (
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-gray-400 hidden sm:inline">
+            {session.name} · {ROLE_LABEL[session.role]}
+          </span>
+          <button
+            onClick={doLogout}
+            title="Выйти"
+            className="px-3 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+          >
+            🚪
+          </button>
+        </div>
       )}
     </nav>
   );

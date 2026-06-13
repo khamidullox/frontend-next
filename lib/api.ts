@@ -1,6 +1,84 @@
 // Бэкенд теперь — это API-роуты самого Next.js (тот же домен).
 const API_BASE = '/api/invoice-check';
 
+// ─── Авторизация ─────────────────────────────────────
+export type Role = 'worker' | 'manager' | 'admin';
+export const ROLE_RANK: Record<Role, number> = { worker: 1, manager: 2, admin: 3 };
+export const ROLE_LABEL: Record<Role, string> = {
+  worker: 'Кладовщик', manager: 'Менеджер', admin: 'Админ',
+};
+
+export interface UserSession {
+  username: string;
+  name: string;
+  role: Role;
+}
+
+export interface MeResult {
+  session: UserSession | null;
+  setup_needed?: boolean;
+}
+
+export async function getMe(): Promise<MeResult> {
+  const res = await fetch('/api/auth/me', { cache: 'no-store' });
+  if (!res.ok) return { session: null };
+  return res.json();
+}
+
+export async function login(username: string, password: string): Promise<UserSession> {
+  const res = await fetch('/api/auth/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка входа');
+  return data as UserSession;
+}
+
+export async function setupAdmin(username: string, name: string, password: string): Promise<void> {
+  const res = await fetch('/api/auth/setup', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, name, password }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка настройки');
+}
+
+export async function logout(): Promise<void> {
+  await fetch('/api/auth/logout', { method: 'POST' });
+}
+
+export interface UserInfo {
+  username: string;
+  name: string;
+  role: Role;
+  created_at: string;
+}
+
+export async function listUsers(): Promise<UserInfo[]> {
+  const res = await fetch('/api/users', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
+export async function createUser(input: {
+  username: string; name: string; role: Role; password: string;
+}): Promise<void> {
+  const res = await fetch('/api/users', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка создания');
+}
+
+export async function deleteUserApi(username: string): Promise<void> {
+  const res = await fetch(`/api/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка удаления');
+}
+
 // ─── Types ───────────────────────────────────────────
 
 export type ItemStatus = 'pending' | 'partial' | 'done';

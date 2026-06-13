@@ -7,7 +7,7 @@ import Nav from './Nav';
 // место под список и закреплённый сканер.
 export default function AppHeader() {
   const pathname = usePathname();
-  if (pathname.startsWith('/session')) return null;
+  if (pathname.startsWith('/session') || pathname === '/login') return null;
 
   return (
     <header className="bg-slate-900 text-white shadow-lg print:hidden">

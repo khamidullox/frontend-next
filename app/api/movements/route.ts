@@ -1,5 +1,6 @@
 import { listMovements } from '@/lib/movement';
 import { getCachedList } from '@/lib/listCache';
+import { withRole } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -7,10 +8,12 @@ export const dynamic = 'force-dynamic';
 const LIST_TTL_MS = 10 * 60 * 1000;
 
 export async function GET() {
-  try {
-    const movements = await getCachedList('movements_v2', listMovements, LIST_TTL_MS);
-    return Response.json({ data: movements });
-  } catch (err) {
-    return Response.json({ error: (err as Error).message }, { status: 500 });
-  }
+  return withRole('manager', async () => {
+    try {
+      const movements = await getCachedList('movements_v2', listMovements, LIST_TTL_MS);
+      return Response.json({ data: movements });
+    } catch (err) {
+      return Response.json({ error: (err as Error).message }, { status: 500 });
+    }
+  });
 }

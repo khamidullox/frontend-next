@@ -1,24 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { isAdminUnlocked } from '@/lib/admin';
+import { ROLE_RANK, Role } from '@/lib/api';
+import { useAuth } from '@/components/AuthProvider';
 
-// Оборачивает страницы, скрытые в киоск-режиме. Если не разблокировано —
-// перенаправляет на главную (сканер).
-export default function AdminGate({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  const [ok, setOk] = useState<boolean | null>(null);
+// Оборачивает страницы, требующие роль не ниже `min` (по умолчанию менеджер).
+export default function AdminGate({
+  children,
+  min = 'manager',
+}: {
+  children: React.ReactNode;
+  min?: Role;
+}) {
+  const { session } = useAuth();
 
-  useEffect(() => {
-    if (isAdminUnlocked()) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setOk(true);
-    } else {
-      router.replace('/');
-    }
-  }, [router]);
-
-  if (!ok) return null;
+  if (!session || ROLE_RANK[session.role] < ROLE_RANK[min]) {
+    return (
+      <div className="bg-white rounded-xl p-8 text-center text-gray-400">
+        Недостаточно прав для этого раздела
+      </div>
+    );
+  }
   return <>{children}</>;
 }

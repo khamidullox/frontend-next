@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import AppHeader from "@/components/AppHeader";
+import AuthProvider from "@/components/AuthProvider";
 
 export const metadata: Metadata = {
   title: "TaminotWeb",
@@ -27,10 +28,12 @@ export default function RootLayout({
   return (
     <html lang="ru" className="h-full">
       <body className="min-h-full bg-gray-100 antialiased">
-        <AppHeader />
-        <main className="max-w-3xl mx-auto px-4 py-4">
-          {children}
-        </main>
+        <AuthProvider>
+          <AppHeader />
+          <main className="max-w-3xl mx-auto px-4 py-4">
+            {children}
+          </main>
+        </AuthProvider>
       </body>
     </html>
   );
