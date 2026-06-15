@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { getWarehouseStock, WarehouseStock, WarehouseProduct } from '@/lib/api';
-import StockUpdated from '@/components/StockUpdated';
 import { loadXLSX } from '@/lib/xlsx';
 
 const PAGE_SIZE = 50;
@@ -131,7 +130,6 @@ export default function WarehouseDetailPage() {
                 Товаров: {stock.rows.length} · Доступно: <strong className="text-green-600">{stock.total}</strong> шт.
               </p>
             )}
-            <div className="mt-1"><StockUpdated /></div>
           </div>
           {stock && stock.rows.length > 0 && (
             <button

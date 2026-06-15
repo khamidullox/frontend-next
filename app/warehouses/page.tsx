@@ -4,7 +4,6 @@ import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { listWarehouses } from '@/lib/api';
 import { useCachedList } from '@/lib/useCachedList';
-import StockUpdated from '@/components/StockUpdated';
 
 export default function WarehousesPage() {
   const { data: warehouses, loading, error } = useCachedList(
@@ -29,7 +28,6 @@ export default function WarehousesPage() {
         <h2 className="text-xl font-bold">🏬 Остатки по складам</h2>
         <span className="text-sm text-gray-400">{loading ? '…' : `${warehouses.length} складов`}</span>
       </div>
-      <div className="mb-3"><StockUpdated /></div>
 
       <input
         type="text"
