@@ -19,7 +19,6 @@ interface PickedRow extends WarehouseProduct {
 }
 
 const A4_TAG = { width: '190mm', height: '136mm' };          // 2 ценника на лист A4
-const DISPLAY_CAP = 500;
 
 // Размеры термоэтикеток (по одной на «страницу» термопринтера).
 const BC_SIZES: Record<string, { label: string; w: string; h: string }> = {
@@ -110,7 +109,7 @@ export default function PriceTagsPage() {
       (a.group || '').localeCompare(b.group || '', 'ru', { numeric: true }) ||
       (a.product_name || '').localeCompare(b.product_name || '', 'ru')
     );
-    return rows.slice(0, DISPLAY_CAP);
+    return rows;
   }, [stockRows, groupFilter, brandFilter, q]);
 
   // Группировка для заголовков с галочкой «вся группа»
