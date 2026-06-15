@@ -407,10 +407,10 @@ export default function PriceTagsPage() {
                   <span className="line-clamp-2 break-words">{it.product_name || it.product_code}</span>
                 </div>
               </div>
-              {/* Штрихкод + значение ШК под ним */}
-              <div className="flex flex-col items-center justify-center overflow-hidden" style={{ flex: '1 1 auto', minHeight: 0 }}>
-                <BarcodeSvg value={it.barcode} format={it.format} height={60} width={2} par="none" className="w-full flex-1 min-h-0 block" />
-                <span className="font-mono text-[8px] text-gray-700 leading-none mt-0.5">{it.barcode}</span>
+              {/* Штрихкод (по центру, с полями для сканера) + значение ШК */}
+              <div className="flex flex-col items-center justify-center overflow-hidden gap-0.5" style={{ flex: '1 1 auto', minHeight: 0 }}>
+                <BarcodeSvg value={it.barcode} format={it.format} height={50} width={2} margin={10} par="xMidYMid meet" className="max-w-[88%] max-h-[78%]" />
+                <span className="font-mono text-[8px] text-gray-700 leading-none">{it.barcode}</span>
               </div>
               {/* Капсула с кодом товара */}
               <div className="flex" style={{ flex: '0 0 24%', minHeight: 0 }}>
@@ -497,8 +497,8 @@ function TriCheckbox({ state, onClick }: { state: TriState; onClick: () => void 
 
 // Самостоятельный штрихкод: рисует JsBarcode в свой ref (без рассинхрона по id),
 // добавляет viewBox — масштабируется по контейнеру с сохранением пропорций.
-function BarcodeSvg({ value, format, height, width, displayValue, className, par = 'xMidYMid meet' }: {
-  value: string; format: string; height: number; width: number; displayValue?: boolean; className?: string; par?: string;
+function BarcodeSvg({ value, format, height, width, displayValue, className, par = 'xMidYMid meet', margin = 0 }: {
+  value: string; format: string; height: number; width: number; displayValue?: boolean; className?: string; par?: string; margin?: number;
 }) {
   const ref = useRef<SVGSVGElement>(null);
   useEffect(() => {
@@ -506,14 +506,14 @@ function BarcodeSvg({ value, format, height, width, displayValue, className, par
     loadJsBarcode().then(JsBarcode => {
       const el = ref.current;
       if (!alive || !el) return;
-      const opts = { displayValue: !!displayValue, margin: 0, height, width };
+      const opts = { displayValue: !!displayValue, margin, height, width };
       try { JsBarcode(el, value, { format, ...opts }); }
       catch { try { JsBarcode(el, value, { format: 'CODE128', ...opts }); } catch { return; } }
       const w = el.getAttribute('width'); const h = el.getAttribute('height');
       if (w && h) { el.setAttribute('viewBox', `0 0 ${w} ${h}`); el.removeAttribute('width'); el.removeAttribute('height'); }
     }).catch(() => {});
     return () => { alive = false; };
-  }, [value, format, height, width, displayValue]);
+  }, [value, format, height, width, displayValue, margin]);
   return <svg ref={ref} className={className} preserveAspectRatio={par} />;
 }
 
