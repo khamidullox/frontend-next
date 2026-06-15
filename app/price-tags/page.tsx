@@ -183,13 +183,17 @@ export default function PriceTagsPage() {
         if (!el) return;
         const opts = tab === 'tags'
           ? { displayValue: false, margin: 0, height: 34, width: 1.4 }
-          : { displayValue: true, margin: 0, height: 60, width: 2, fontSize: 16, textMargin: 1, fontOptions: 'bold' };
+          : { displayValue: false, margin: 0, height: 60, width: 2 };
         try { JsBarcode(el, it.barcode, { format: it.format, ...opts }); }
         catch { try { JsBarcode(el, it.barcode, { format: 'CODE128', ...opts }); } catch { /* пропуск */ } }
-        // Для этикеток: viewBox, чтобы штрихкод тянулся на всю ширину (JsBarcode его не ставит).
+        // Для этикеток: viewBox + неравномерное масштабирование, чтобы штрихкод заполнял центр.
         if (tab === 'barcodes') {
           const w = el.getAttribute('width'); const h = el.getAttribute('height');
-          if (w && h) { el.setAttribute('viewBox', `0 0 ${w} ${h}`); el.removeAttribute('width'); el.removeAttribute('height'); }
+          if (w && h) {
+            el.setAttribute('viewBox', `0 0 ${w} ${h}`);
+            el.setAttribute('preserveAspectRatio', 'none');
+            el.removeAttribute('width'); el.removeAttribute('height');
+          }
         }
       });
     }).catch(e => setError((e as Error).message));
@@ -206,7 +210,7 @@ export default function PriceTagsPage() {
          @media print { .tag { page-break-inside: avoid; } .tag:nth-child(2n) { page-break-after: always; } }`
       : `@page { size: ${bcLabel.w} ${bcLabel.h}; margin: 0; }
          @media print {
-           .bclabel { width: ${bcLabel.w}; height: ${bcLabel.h}; border: none !important; page-break-after: always; }
+           .bclabel { width: ${bcLabel.w}; height: ${bcLabel.h}; page-break-after: always; }
            .bclabel:last-child { page-break-after: auto; }
          }`;
     return () => { el?.remove(); };
@@ -386,14 +390,22 @@ export default function PriceTagsPage() {
           {printItems.map((it, idx) => (
             <div
               key={idx}
-              className="bclabel border border-dashed border-gray-300 flex flex-col items-center justify-between px-1.5 py-1 overflow-hidden"
+              className="bclabel border border-gray-500 rounded flex flex-col overflow-hidden"
               style={{ width: bcLabel.w, height: bcLabel.h }}
             >
-              <div className="text-[9px] font-semibold leading-tight text-center w-full line-clamp-2 break-words">
+              {/* Название (верхняя рамка) */}
+              <div className="border-b border-gray-500 px-1 py-0.5 text-center font-bold text-[10px] leading-tight line-clamp-2 break-words">
                 {it.product_name || it.product_code}
               </div>
-              <svg id={`bc-${idx}`} className="w-full" style={{ height: 'auto' }} />
-              <div className="self-start text-[9px] font-mono text-gray-800 leading-none">Код {it.product_code}</div>
+              {/* Штрихкод (центр) */}
+              <div className="flex-1 min-h-0 px-1.5 py-1">
+                <svg id={`bc-${idx}`} className="w-full h-full" />
+              </div>
+              {/* Описание: код товара + значение ШК (нижняя рамка) */}
+              <div className="border-t border-gray-500 px-1 py-0.5 text-center leading-tight">
+                <div className="font-mono text-[10px] text-gray-900">{it.barcode}</div>
+                <div className="text-[8px] text-gray-600">Код {it.product_code}</div>
+              </div>
             </div>
           ))}
         </div>
