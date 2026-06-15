@@ -211,6 +211,12 @@ export default function PriceTagsPage() {
   const masterState: TriState = allVisibleSelected ? 'all' : someVisibleSelected ? 'some' : 'none';
 
   const pickedList = useMemo(() => Object.values(picked), [picked]);
+  // Выбранные товары, которых нет в текущем списке склада (добавлены из справочника / другого склада) —
+  // для них показываем отдельный список, чтобы указать количество и цену.
+  const extraPicked = useMemo(() => {
+    const stockCodes = new Set(stockRows.map(r => r.product_code));
+    return pickedList.filter(p => !stockCodes.has(p.product_code));
+  }, [pickedList, stockRows]);
   const printItems = useMemo(() => {
     const out: PickedRow[] = [];
     for (const p of pickedList) for (let i = 0; i < Math.max(1, p.copies); i++) out.push(p);
@@ -362,6 +368,34 @@ export default function PriceTagsPage() {
                 })}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Добавленные из справочника — указать количество и цену */}
+        {extraPicked.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm p-3 mb-3 flex flex-col gap-2">
+            <div className="text-xs font-semibold text-gray-500">Добавлено из справочника ({extraPicked.length})</div>
+            {extraPicked.map(p => (
+              <div key={p.product_code} className="flex items-center gap-2 border-b border-gray-100 last:border-0 pb-2 last:pb-0">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">{p.product_name || p.product_code}</div>
+                  <div className="text-[11px] text-gray-400 truncate">Код {p.product_code} · ШК {p.barcode}</div>
+                </div>
+                <input
+                  type="number" min={0} value={p.price}
+                  onChange={e => setPrice(p.product_code, Number(e.target.value) || 0)}
+                  title="Цена"
+                  className="w-24 border-2 border-gray-200 rounded-lg px-2 py-1 text-sm text-right outline-none focus:border-blue-400"
+                />
+                <input
+                  type="number" min={1} value={p.copies}
+                  onChange={e => setCopies(p.product_code, Number(e.target.value) || 1)}
+                  title="Количество"
+                  className="w-16 border-2 border-gray-200 rounded-lg px-2 py-1 text-sm text-right outline-none focus:border-blue-400"
+                />
+                <button onClick={() => setRows([p], false)} className="text-red-400 hover:text-red-600 px-1 text-lg">✕</button>
+              </div>
+            ))}
           </div>
         )}
 
