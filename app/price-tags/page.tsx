@@ -23,6 +23,7 @@ const A4_TAG = { width: '190mm', height: '136mm' };          // 2 ценника
 // Размеры термоэтикеток (по одной на «страницу» термопринтера).
 const BC_SIZES: Record<string, { label: string; w: string; h: string }> = {
   '58x40': { label: '58 × 40 мм', w: '58mm', h: '40mm' },
+  '56x40': { label: '56 × 40 мм', w: '56mm', h: '40mm' },
   '58x30': { label: '58 × 30 мм', w: '58mm', h: '30mm' },
   '40x30': { label: '40 × 30 мм', w: '40mm', h: '30mm' },
   '30x20': { label: '30 × 20 мм', w: '30mm', h: '20mm' },
@@ -68,9 +69,22 @@ export default function PriceTagsPage() {
     return () => { alive = false; };
   }, [whId]);
 
-  // Размер термоэтикетки для штрих-кодов
+  // Размер термоэтикетки для штрих-кодов (+ свой размер с сохранением в браузере)
   const [bcSize, setBcSize] = useState<string>('58x40');
-  const bcLabel = BC_SIZES[bcSize];
+  const [customW, setCustomW] = useState(58);
+  const [customH, setCustomH] = useState(40);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('bc-custom-size');
+      if (raw) { const { w, h } = JSON.parse(raw); if (w) setCustomW(w); if (h) setCustomH(h); }
+    } catch { /* нет сохранённого */ }
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem('bc-custom-size', JSON.stringify({ w: customW, h: customH })); } catch { /* недоступно */ }
+  }, [customW, customH]);
+  const bcLabel = bcSize === 'custom'
+    ? { label: 'Свой', w: `${customW}mm`, h: `${customH}mm` }
+    : BC_SIZES[bcSize];
 
   // Шаблон магазина: по умолчанию подбираем по названию склада. Доступны все шаблоны.
   const [storeId, setStoreId] = useState<string>(STORES[0].id);
@@ -214,7 +228,7 @@ export default function PriceTagsPage() {
            .bclabel:last-child { page-break-after: auto; }
          }`;
     return () => { el?.remove(); };
-  }, [tab, bcLabel]);
+  }, [tab, bcLabel.w, bcLabel.h]);
 
   return (
     <div>
@@ -264,7 +278,26 @@ export default function PriceTagsPage() {
                 className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400"
               >
                 {Object.entries(BC_SIZES).map(([id, s]) => <option key={id} value={id}>{s.label}</option>)}
+                <option value="custom">Свой размер…</option>
               </select>
+              {bcSize === 'custom' && (
+                <div className="flex items-center gap-2 mt-2">
+                  <input
+                    type="number" min={10} max={210} value={customW}
+                    onChange={e => setCustomW(Math.max(10, Number(e.target.value) || 0))}
+                    title="Ширина, мм"
+                    className="w-20 border-2 border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right outline-none focus:border-blue-400"
+                  />
+                  <span className="text-gray-400">×</span>
+                  <input
+                    type="number" min={10} max={297} value={customH}
+                    onChange={e => setCustomH(Math.max(10, Number(e.target.value) || 0))}
+                    title="Высота, мм"
+                    className="w-20 border-2 border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right outline-none focus:border-blue-400"
+                  />
+                  <span className="text-xs text-gray-400">мм</span>
+                </div>
+              )}
             </div>
           )}
         </div>
