@@ -71,6 +71,7 @@ export default function PriceTagsPage() {
 
   // Размер термоэтикетки для штрих-кодов (+ свой размер с сохранением в браузере)
   const [bcSize, setBcSize] = useState<string>('58x40');
+  const [bcFormat, setBcFormat] = useState<string>('auto'); // тип штрихкода (под сканер)
   const [customW, setCustomW] = useState(58);
   const [customH, setCustomH] = useState(40);
   useEffect(() => {
@@ -284,6 +285,17 @@ export default function PriceTagsPage() {
                   <span className="text-xs text-gray-400">мм</span>
                 </div>
               )}
+              <label className="block text-xs font-semibold text-gray-500 mb-1 mt-2">Тип штрих-кода (под сканер)</label>
+              <select
+                value={bcFormat}
+                onChange={e => setBcFormat(e.target.value)}
+                className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400"
+              >
+                <option value="auto">Авто</option>
+                <option value="ITF">ITF / 2 из 5 (для сканеров EAN)</option>
+                <option value="CODE128">CODE128</option>
+                <option value="EAN13">EAN-13</option>
+              </select>
             </div>
           )}
         </div>
@@ -428,7 +440,7 @@ export default function PriceTagsPage() {
               </div>
               {/* Штрихкод (крупный, на всю ширину, с полями для сканера) + значение ШК */}
               <div className="flex flex-col items-center justify-center overflow-hidden" style={{ flex: '1 1 auto', minHeight: 0 }}>
-                <BarcodeSvg value={it.barcode} format={it.format} height={80} width={2} margin={10} par="xMidYMid meet" className="w-full max-h-full" />
+                <BarcodeSvg value={it.barcode} format={bcFormat === 'auto' ? it.format : bcFormat} height={80} width={2} margin={10} par="xMidYMid meet" className="w-full max-h-full" />
                 <span className="font-mono text-[8px] text-gray-700 leading-none -mt-1">{it.barcode}</span>
               </div>
               {/* Капсула с кодом товара */}
