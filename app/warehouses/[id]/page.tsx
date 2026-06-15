@@ -217,8 +217,12 @@ export default function WarehouseDetailPage() {
                           Код {r.product_code}
                           {r.producer && ` · ${r.producer}`}
                           {r.group && ` · ${r.group}`}
-                          {r.price > 0 && ` · ${r.price.toLocaleString('ru-RU')}`}
                         </span>
+                        {r.price > 0 && (
+                          <span className="block text-[11px] text-emerald-700 sm:hidden">
+                            {r.price.toLocaleString('ru-RU')}
+                          </span>
+                        )}
                       </span>
                       <span className="hidden sm:block text-center text-xs text-gray-500 truncate">{r.producer || '—'}</span>
                       <span className="hidden sm:block text-center text-xs text-gray-500 truncate">{r.group || '—'}</span>
