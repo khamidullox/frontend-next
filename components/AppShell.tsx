@@ -12,6 +12,7 @@ const LINKS: NavLink[] = [
   { href: '/', label: '📦 Проверка', min: 'worker' },
   { href: '/products', label: '📚 Справочник', min: 'worker' },
   { href: '/warehouses', label: '🏬 Остатки', min: 'worker' },
+  { href: '/price-tags', label: '🏷️ Ценники', min: 'worker' },
   { href: '/movements', label: '🗂️ Накладные', min: 'manager' },
   { href: '/orders', label: '🧾 Заказы', min: 'manager' },
   { href: '/history', label: '📋 История', min: 'manager' },
