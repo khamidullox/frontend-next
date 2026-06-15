@@ -439,9 +439,9 @@ export default function PriceTagsPage() {
                 </div>
               </div>
               {/* Штрихкод (крупный, на всю ширину, с полями для сканера) + значение ШК */}
-              <div className="flex flex-col items-center justify-center overflow-hidden" style={{ flex: '1 1 auto', minHeight: 0 }}>
-                <BarcodeSvg value={it.barcode} format={bcFormat === 'auto' ? it.format : bcFormat} height={80} width={2} margin={10} par="xMidYMid meet" className="w-full max-h-full" />
-                <span className="font-mono text-[8px] text-gray-700 leading-none -mt-1">{it.barcode}</span>
+              <div className="flex flex-col items-center justify-center overflow-hidden gap-1 py-0.5" style={{ flex: '1 1 auto', minHeight: 0 }}>
+                <BarcodeSvg value={it.barcode} format={bcFormat === 'auto' ? it.format : bcFormat} height={80} width={2} margin={10} par="xMidYMid meet" className="w-full flex-1 min-h-0" />
+                <span className="font-mono text-[8px] text-gray-700 leading-none">{it.barcode}</span>
               </div>
               {/* Капсула с кодом товара */}
               <div className="flex" style={{ flex: '0 0 24%', minHeight: 0 }}>
@@ -545,7 +545,8 @@ function BarcodeSvg({ value, format, height, width, displayValue, className, par
     }).catch(() => {});
     return () => { alive = false; };
   }, [value, format, height, width, displayValue, margin]);
-  return <svg ref={ref} className={className} preserveAspectRatio={par} />;
+  // shapeRendering=crispEdges — резкие края полос (без сглаживания), критично для печати/сканера.
+  return <svg ref={ref} className={className} preserveAspectRatio={par} shapeRendering="crispEdges" />;
 }
 
 function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
