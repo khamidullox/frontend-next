@@ -139,12 +139,13 @@ export default function PriceTagsPage() {
 
   // ── Выделение ──
   const [picked, setPicked] = useState<Record<string, PickedRow>>({});
+  const [stockMode, setStockMode] = useState(false); // кол-во копий = остаток
   const lastIndexRef = useRef<number | null>(null);
 
   function makePicked(row: WarehouseProduct): PickedRow {
     const codes = barcodeByCode.get(row.product_code) || [];
     const { value, format } = pickBarcode(row.product_code, codes);
-    return { ...row, copies: 1, barcode: value, format };
+    return { ...row, copies: stockMode ? Math.max(1, row.quantity || 1) : 1, barcode: value, format };
   }
   function setRows(rows: WarehouseProduct[], on: boolean) {
     setPicked(prev => {
@@ -171,11 +172,13 @@ export default function PriceTagsPage() {
   function setPrice(code: string, price: number) {
     setPicked(prev => prev[code] ? { ...prev, [code]: { ...prev[code], price: Math.max(0, price) } } : prev);
   }
-  // Кол-во копий = остаток на складе (для всех выбранных).
-  function copiesFromStock() {
+  // Переключатель: кол-во копий = остаток (вкл) или = 1 (выкл), для всех выбранных.
+  function toggleStockMode() {
+    const on = !stockMode;
+    setStockMode(on);
     setPicked(prev => {
       const next: Record<string, PickedRow> = {};
-      for (const [code, p] of Object.entries(prev)) next[code] = { ...p, copies: Math.max(1, p.quantity || 1) };
+      for (const [code, p] of Object.entries(prev)) next[code] = { ...p, copies: on ? Math.max(1, p.quantity || 1) : 1 };
       return next;
     });
   }
@@ -305,16 +308,15 @@ export default function PriceTagsPage() {
           <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-t-xl border border-b-0 border-gray-100 text-xs text-gray-500">
             <TriCheckbox state={masterState} onClick={() => setRows(orderedList, masterState !== 'all')} />
             <span>Выделить всё ({orderedList.length})</span>
-            {pickedList.length > 0 && (
-              <button
-                onClick={copiesFromStock}
-                title="Поставить количество копий ШК равным остатку на складе"
-                className="ml-auto text-[11px] px-2 py-1 rounded-md bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors whitespace-nowrap"
-              >
-                🔢 Кол-во = остаток
-              </button>
-            )}
-            <span className={`text-gray-400 hidden sm:inline ${pickedList.length > 0 ? '' : 'ml-auto'}`}>Shift+клик — диапазон</span>
+            <button
+              onClick={toggleStockMode}
+              title="Количество копий = остаток на складе"
+              className={`ml-auto text-[11px] px-2 py-0.5 rounded-md whitespace-nowrap transition-colors border ${
+                stockMode ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-300 hover:bg-blue-50'
+              }`}
+            >
+              {stockMode ? '✓ ' : ''}кол-во=остаток
+            </button>
           </div>
         )}
 
@@ -424,10 +426,10 @@ export default function PriceTagsPage() {
                   <span className="line-clamp-2 break-words">{it.product_name || it.product_code}</span>
                 </div>
               </div>
-              {/* Штрихкод (по центру, с полями для сканера) + значение ШК */}
-              <div className="flex flex-col items-center justify-center overflow-hidden gap-0.5" style={{ flex: '1 1 auto', minHeight: 0 }}>
-                <BarcodeSvg value={it.barcode} format={it.format} height={50} width={2} margin={10} par="xMidYMid meet" className="max-w-[88%] max-h-[78%]" />
-                <span className="font-mono text-[8px] text-gray-700 leading-none">{it.barcode}</span>
+              {/* Штрихкод (крупный, на всю ширину, с полями для сканера) + значение ШК */}
+              <div className="flex flex-col items-center justify-center overflow-hidden" style={{ flex: '1 1 auto', minHeight: 0 }}>
+                <BarcodeSvg value={it.barcode} format={it.format} height={80} width={2} margin={10} par="xMidYMid meet" className="w-full max-h-full" />
+                <span className="font-mono text-[8px] text-gray-700 leading-none -mt-1">{it.barcode}</span>
               </div>
               {/* Капсула с кодом товара */}
               <div className="flex" style={{ flex: '0 0 24%', minHeight: 0 }}>
