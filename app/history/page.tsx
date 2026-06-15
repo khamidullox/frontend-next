@@ -204,6 +204,9 @@ function HistoryContent() {
                   {fmt(s.finished_at || s.created_at)}
                   {s.checker_name && ` · 👤 ${s.checker_name}`}
                 </div>
+                {s.client_name && (
+                  <div className="text-xs text-gray-500 mt-0.5 truncate">🚚 {s.client_name}</div>
+                )}
                 <div className="text-xs text-gray-500 mt-1">
                   Собрано {s.summary.done_items} из {s.summary.total_items} позиций
                 </div>

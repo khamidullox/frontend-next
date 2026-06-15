@@ -164,6 +164,7 @@ export interface SessionListItem {
   doc_type: DocType;
   doc_id: string;
   doc_number: string;
+  client_name: string | null;
   summary: SessionSummary;
 }
 

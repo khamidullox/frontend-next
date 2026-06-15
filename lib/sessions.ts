@@ -64,6 +64,7 @@ export interface SessionListItem {
   doc_type: DocType;
   doc_id: string;
   doc_number: string;
+  client_name: string | null;
   summary: ReturnType<typeof summarize>;
 }
 
@@ -229,6 +230,7 @@ export async function listSessions(limit = 100): Promise<SessionListItem[]> {
       doc_type: s.document.doc_type,
       doc_id: s.document.doc_id,
       doc_number: s.document.doc_number,
+      client_name: s.document.client_name ?? null,
       summary: summarize(s.items || []),
     };
   });
