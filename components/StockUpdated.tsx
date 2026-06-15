@@ -3,9 +3,6 @@
 import { useEffect, useState } from 'react';
 import { getStockUpdated } from '@/lib/api';
 
-// Остатки обновляются раз в 10 минут (совпадает с STOCK_FRESH_MS на сервере).
-const FRESH_MS = 10 * 60 * 1000;
-
 function ago(ms: number): string {
   const diff = Date.now() - ms;
   const min = Math.floor(diff / 60000);
@@ -15,20 +12,9 @@ function ago(ms: number): string {
   return `${h} ч ${min % 60} мин назад`;
 }
 
-function countdown(msLeft: number): string {
-  if (msLeft <= 0) return 'обновится при заходе';
-  const total = Math.floor(msLeft / 1000);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
-}
-
-// Подпись «Остатки обновлены … назад» + обратный отсчёт до следующего обновления.
+// Подпись «Остатки обновлены … назад».
 export default function StockUpdated({ className = '' }: { className?: string }) {
   const [ms, setMs] = useState<number | null>(null);
-  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     let alive = true;
@@ -36,22 +22,15 @@ export default function StockUpdated({ className = '' }: { className?: string })
     return () => { alive = false; };
   }, []);
 
-  // Тикаем раз в секунду — живой обратный отсчёт.
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
   if (!ms) return null;
 
-  const left = ms + FRESH_MS - now;
   const exact = new Date(ms).toLocaleString('ru-RU', {
     day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
   });
 
   return (
     <span className={`text-[11px] text-gray-400 ${className}`} title={`Снимок: ${exact}`}>
-      🕒 Обновлено {ago(ms)} · до обновления {countdown(left)}
+      🕒 Обновлено {ago(ms)}
     </span>
   );
 }

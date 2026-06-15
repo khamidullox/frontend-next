@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { listSessions, SessionListItem, getSmartupLimits, SmartupLimit, DOC_TYPE_LABEL } from '@/lib/api';
+import { listSessions, deleteSessionApi, setSessionStatusApi, SessionListItem, getSmartupLimits, SmartupLimit, DOC_TYPE_LABEL } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
+import { useAuth } from '@/components/AuthProvider';
 import { useCachedList } from '@/lib/useCachedList';
 import Pager from '@/components/Pager';
 
@@ -141,13 +142,59 @@ export default function HistoryPage() {
 }
 
 function HistoryContent() {
-  const { data: sessions, loading, error } = useCachedList(
+  const { data: cachedSessions, loading, error } = useCachedList(
     'cache:history',
     listSessions,
     30_000 // история обновляется чаще — окно «свежести» меньше
   );
+  const { session: authSession } = useAuth();
+  const isAdmin = authSession?.role === 'admin';
   const router = useRouter();
   const [page, setPage] = useState(1);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState('');
+  const [sessions, setSessions] = useState<SessionListItem[]>([]);
+
+  useEffect(() => { setSessions(cachedSessions); }, [cachedSessions]);
+
+  function syncCache(next: SessionListItem[]) {
+    setSessions(next);
+    try {
+      sessionStorage.setItem('cache:history', JSON.stringify({ t: Date.now(), v: next }));
+    } catch {
+      // переполнение sessionStorage — не страшно
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('Удалить эту запись проверки из истории?')) return;
+    setBusyId(id);
+    setActionError('');
+    try {
+      await deleteSessionApi(id);
+      syncCache(sessions.filter(s => s.id !== id));
+    } catch (e) {
+      setActionError((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleToggleStatus(s: SessionListItem) {
+    const next = s.status === 'finished' ? 'active' : 'finished';
+    setBusyId(s.id);
+    setActionError('');
+    try {
+      const updated = await setSessionStatusApi(s.id, next);
+      syncCache(sessions.map(item => item.id === s.id
+        ? { ...item, status: updated.status, finished_at: updated.finished_at }
+        : item));
+    } catch (e) {
+      setActionError((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   const totalPages = Math.max(1, Math.ceil(sessions.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -172,6 +219,7 @@ function HistoryContent() {
       <Dashboard sessions={sessions} />
 
       {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+      {actionError && <p className="text-red-500 text-sm mb-3">{actionError}</p>}
 
       {sessions.length === 0 ? (
         <div className="bg-white rounded-xl p-8 text-center text-gray-400">
@@ -182,37 +230,63 @@ function HistoryContent() {
         <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
         <div className="flex flex-col gap-2.5">
           {shown.map(s => (
-            <button
+            <div
               key={s.id}
+              role="button"
+              tabIndex={0}
               onClick={() => router.push(`/session/${s.id}`)}
-              className="bg-white rounded-xl shadow-sm p-4 flex items-center gap-4 text-left
+              onKeyDown={e => { if (e.key === 'Enter') router.push(`/session/${s.id}`); }}
+              className="bg-white rounded-xl shadow-sm p-4 flex flex-col gap-2 text-left cursor-pointer
                          hover:shadow-md hover:ring-2 hover:ring-blue-200 transition-all"
             >
-              <div className="flex-1 min-w-0">
-                <div className="font-bold text-base flex items-center gap-2">
-                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                    s.doc_type === 'order' ? 'bg-purple-100 text-purple-700'
-                    : s.doc_type === 'transfer' ? 'bg-teal-100 text-teal-700'
-                    : s.doc_type === 'receipt' ? 'bg-emerald-100 text-emerald-700'
-                    : 'bg-blue-100 text-blue-700'
-                  }`}>
-                    {DOC_TYPE_LABEL[s.doc_type] || 'Документ'}
-                  </span>
-                  № {s.doc_number || s.doc_id}
+              <div className="flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-base flex items-center gap-2">
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                      s.doc_type === 'order' ? 'bg-purple-100 text-purple-700'
+                      : s.doc_type === 'transfer' ? 'bg-teal-100 text-teal-700'
+                      : s.doc_type === 'receipt' ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      {DOC_TYPE_LABEL[s.doc_type] || 'Документ'}
+                    </span>
+                    № {s.doc_number || s.doc_id}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    {fmt(s.finished_at || s.created_at)}
+                    {s.checker_name && ` · 👤 ${s.checker_name}`}
+                  </div>
+                  {s.client_name && (
+                    <div className="text-xs text-gray-500 mt-0.5 truncate">🚚 {s.client_name}</div>
+                  )}
+                  <div className="text-xs text-gray-500 mt-1">
+                    Собрано {s.summary.done_items} из {s.summary.total_items} позиций
+                  </div>
                 </div>
-                <div className="text-xs text-gray-400 mt-0.5">
-                  {fmt(s.finished_at || s.created_at)}
-                  {s.checker_name && ` · 👤 ${s.checker_name}`}
-                </div>
-                {s.client_name && (
-                  <div className="text-xs text-gray-500 mt-0.5 truncate">🚚 {s.client_name}</div>
-                )}
-                <div className="text-xs text-gray-500 mt-1">
-                  Собрано {s.summary.done_items} из {s.summary.total_items} позиций
-                </div>
+                {resultBadge(s)}
               </div>
-              {resultBadge(s)}
-            </button>
+
+              {isAdmin && s.doc_type === 'transfer' && (
+                <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                  <button
+                    onClick={e => { e.stopPropagation(); handleToggleStatus(s); }}
+                    disabled={busyId === s.id}
+                    className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700
+                               hover:bg-amber-200 disabled:opacity-50 transition-colors"
+                  >
+                    {s.status === 'finished' ? '↩️ Вернуть в работу' : '✅ Завершить'}
+                  </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); handleDelete(s.id); }}
+                    disabled={busyId === s.id}
+                    className="text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700
+                               hover:bg-red-200 disabled:opacity-50 transition-colors"
+                  >
+                    🗑️ Удалить
+                  </button>
+                </div>
+              )}
+            </div>
           ))}
         </div>
         <Pager page={safePage} totalPages={totalPages} onChange={setPage} />

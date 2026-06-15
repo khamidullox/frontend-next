@@ -288,6 +288,23 @@ export async function finishSession(sessionId: string): Promise<Session> {
   return res.json();
 }
 
+export async function deleteSessionApi(sessionId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}`, { method: 'DELETE' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка удаления');
+}
+
+export async function setSessionStatusApi(sessionId: string, status: SessionStatus): Promise<Session> {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/status`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка изменения статуса');
+  return data as Session;
+}
+
 export async function listSessions(): Promise<SessionListItem[]> {
   const res = await fetch(`${API_BASE}/sessions`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);

@@ -184,6 +184,32 @@ export async function finishSession(sessionId: string) {
   });
 }
 
+export async function setSessionStatus(sessionId: string, status: SessionStatus) {
+  const db = getDb();
+  const ref = db.collection(SESSIONS_COLLECTION).doc(sessionId);
+
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return null;
+
+    const session = snap.data() as StoredSession;
+    session.status = status;
+    session.finished_at = status === 'finished' ? (session.finished_at || new Date().toISOString()) : null;
+
+    tx.set(ref, session);
+    return serialize(session);
+  });
+}
+
+export async function deleteSession(sessionId: string): Promise<boolean> {
+  const db = getDb();
+  const ref = db.collection(SESSIONS_COLLECTION).doc(sessionId);
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+  await ref.delete();
+  return true;
+}
+
 // Удаляет сессии старше `days` дней — чтобы Firestore не рос бесконечно
 // (история проверок не нужна вечно, исходные документы есть в Smartup).
 export async function purgeOldSessions(days = 60): Promise<number> {
