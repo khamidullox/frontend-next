@@ -15,14 +15,22 @@ export function loadJsBarcode(): Promise<any> {
   });
 }
 
-// Выбирает штрихкод для печати: предпочитает цифровой EAN-13/EAN-8, иначе берёт первый, иначе — код товара.
+// Формат под длину цифрового штрихкода (нестандартная длина — CODE128).
+function fmt(value: string): string {
+  return value.length === 13 ? 'EAN13' : value.length === 8 ? 'EAN8' : 'CODE128';
+}
+
+// Выбирает штрихкод для печати.
+// Приоритет — НАШ внутренний ШК: цифровой, начинается с «1000» и заканчивается кодом товара
+// (напр. код 157 → 10000000000157). Иначе — первый цифровой, иначе первый, иначе код товара.
 export function pickBarcode(code: string, barcodes: string[]): { value: string; format: string } {
-  const digitsOnly = barcodes.find(b => /^\d{8}$|^\d{13}$/.test(b));
-  if (digitsOnly) {
-    return { value: digitsOnly, format: digitsOnly.length === 13 ? 'EAN13' : 'EAN8' };
-  }
-  if (barcodes[0]) {
-    return { value: barcodes[0], format: 'CODE128' };
-  }
-  return { value: code, format: 'CODE128' };
+  const norm = String(code).trim();
+  const own = barcodes.find(b => /^\d+$/.test(b) && b.startsWith('1000') && b.endsWith(norm));
+  if (own) return { value: own, format: fmt(own) };
+
+  const digitsOnly = barcodes.find(b => /^\d+$/.test(b));
+  if (digitsOnly) return { value: digitsOnly, format: fmt(digitsOnly) };
+
+  if (barcodes[0]) return { value: barcodes[0], format: 'CODE128' };
+  return { value: norm, format: 'CODE128' };
 }
