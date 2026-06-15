@@ -77,10 +77,10 @@ export default function PriceTagsPage() {
   }, [currentWh]);
   const store = getStore(storeId);
 
-  // Фильтры
+  // Фильтры (можно выбирать несколько групп/брендов)
   const [query, setQuery] = useState('');
-  const [groupFilter, setGroupFilter] = useState('');
-  const [brandFilter, setBrandFilter] = useState('');
+  const [groupFilter, setGroupFilter] = useState<Set<string>>(new Set());
+  const [brandFilter, setBrandFilter] = useState<Set<string>>(new Set());
 
   const groupOptions = useMemo(
     () => Array.from(new Set(stockRows.map(r => r.group).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ru')),
@@ -95,8 +95,8 @@ export default function PriceTagsPage() {
   const q = query.trim().toLowerCase();
   const orderedList = useMemo(() => {
     const rows = stockRows.filter(r =>
-      (!groupFilter || r.group === groupFilter) &&
-      (!brandFilter || r.producer === brandFilter) &&
+      (groupFilter.size === 0 || groupFilter.has(r.group)) &&
+      (brandFilter.size === 0 || brandFilter.has(r.producer)) &&
       (!q ||
         r.product_code.toLowerCase().includes(q) ||
         r.product_name.toLowerCase().includes(q) ||
@@ -242,24 +242,10 @@ export default function PriceTagsPage() {
           )}
         </div>
 
-        {/* Фильтры: группа + бренд + поиск */}
+        {/* Фильтры: группы + бренды (множественный выбор) + поиск */}
         <div className="flex flex-col sm:flex-row gap-2 mb-3">
-          <select
-            value={groupFilter}
-            onChange={e => setGroupFilter(e.target.value)}
-            className="sm:w-48 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400"
-          >
-            <option value="">Все группы</option>
-            {groupOptions.map(g => <option key={g} value={g}>{g}</option>)}
-          </select>
-          <select
-            value={brandFilter}
-            onChange={e => setBrandFilter(e.target.value)}
-            className="sm:w-48 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400"
-          >
-            <option value="">Все бренды</option>
-            {brandOptions.map(b => <option key={b} value={b}>{b}</option>)}
-          </select>
+          <MultiSelect label="группы" options={groupOptions} selected={groupFilter} onChange={setGroupFilter} />
+          <MultiSelect label="бренды" options={brandOptions} selected={brandFilter} onChange={setBrandFilter} />
           <input
             type="text"
             value={query}
@@ -281,7 +267,7 @@ export default function PriceTagsPage() {
         )}
 
         {/* Список остатков по группам */}
-        <div className="bg-white rounded-b-xl shadow-sm mb-3 max-h-[46vh] overflow-y-auto border border-gray-100">
+        <div className="bg-white rounded-b-xl shadow-sm mb-3 max-h-[62vh] overflow-y-auto border border-gray-100">
           {stockLoading ? (
             <div className="flex items-center justify-center py-8 gap-2 text-gray-500 text-sm">
               <span className="w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
@@ -321,6 +307,15 @@ export default function PriceTagsPage() {
                       <div className="text-[12px] text-emerald-700 whitespace-nowrap">
                         {row.price > 0 ? row.price.toLocaleString('ru-RU') : '—'}
                       </div>
+                      {checked && (
+                        <input
+                          type="number" min={1} value={picked[row.product_code].copies}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => setCopies(row.product_code, Number(e.target.value) || 1)}
+                          title="Сколько печатать"
+                          className="w-14 border-2 border-gray-200 rounded-lg px-1.5 py-1 text-sm text-right outline-none focus:border-blue-400"
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -329,7 +324,17 @@ export default function PriceTagsPage() {
           })}
         </div>
 
-        {/* Выбранные позиции */}
+        {/* Кнопка печати — сразу после списка, чтобы не искать внизу */}
+        {printItems.length > 0 && (
+          <button
+            onClick={() => window.print()}
+            className="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors mb-3"
+          >
+            🖨️ Печать ({printItems.length} шт.)
+          </button>
+        )}
+
+        {/* Выбранные позиции (цены) */}
         {pickedList.length > 0 && (
           <div className="bg-white rounded-xl shadow-sm p-3 mb-3 flex flex-col gap-2">
             <div className="flex items-center justify-between">
@@ -360,15 +365,6 @@ export default function PriceTagsPage() {
             ))}
           </div>
         )}
-
-        {printItems.length > 0 && (
-          <button
-            onClick={() => window.print()}
-            className="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors mb-4"
-          >
-            🖨️ Печать ({printItems.length} шт.)
-          </button>
-        )}
       </div>
 
       {/* ── Область печати ── */}
@@ -392,6 +388,60 @@ export default function PriceTagsPage() {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// Множественный выбор (группы / бренды)
+function MultiSelect({ label, options, selected, onChange }: {
+  label: string; options: string[]; selected: Set<string>; onChange: (s: Set<string>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const title = selected.size === 0 ? `Все ${label}` : `${label}: ${selected.size}`;
+  return (
+    <div className="relative sm:w-48">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-left flex items-center justify-between gap-1 outline-none focus:border-blue-400"
+      >
+        <span className="truncate">{title}</span>
+        <span className="text-gray-400">▾</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute z-20 mt-1 left-0 right-0 bg-white rounded-lg shadow-lg border border-gray-100 max-h-64 overflow-y-auto">
+            {selected.size > 0 && (
+              <button
+                onClick={() => onChange(new Set())}
+                className="w-full text-left px-3 py-1.5 text-xs text-blue-600 hover:bg-blue-50 border-b border-gray-50"
+              >
+                Сбросить
+              </button>
+            )}
+            {options.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">Нет вариантов</div>}
+            {options.map(o => {
+              const on = selected.has(o);
+              return (
+                <label key={o} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-blue-50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={() => {
+                      const next = new Set(selected);
+                      if (on) next.delete(o); else next.add(o);
+                      onChange(next);
+                    }}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  <span className="truncate">{o}</span>
+                </label>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );
