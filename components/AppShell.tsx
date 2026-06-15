@@ -48,7 +48,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="md:flex md:min-h-screen">
+    <div className="md:flex md:min-h-screen print:block print:min-h-0">
       {/* Верхняя полоса на телефоне */}
       <div className="md:hidden sticky top-0 z-30 bg-slate-900 text-white flex items-center gap-3 px-4 h-14 print:hidden">
         <button onClick={() => setOpen(true)} aria-label="Меню" className="text-2xl leading-none">☰</button>
@@ -106,7 +106,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Контент */}
       <main className="flex-1 min-w-0">
-        <div className="max-w-3xl mx-auto px-4 py-4">{children}</div>
+        <div className="max-w-3xl mx-auto px-4 py-4 print:p-0 print:m-0 print:max-w-none">{children}</div>
       </main>
     </div>
   );
