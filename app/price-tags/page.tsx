@@ -398,12 +398,12 @@ export default function PriceTagsPage() {
           {printItems.map((it, idx) => (
             <div
               key={idx}
-              className="bclabel border border-gray-400 rounded-lg flex flex-col gap-1 p-1.5 overflow-hidden box-border"
+              className="bclabel border border-gray-300 rounded-lg flex flex-col gap-1 p-1.5 overflow-hidden box-border"
               style={{ width: bcLabel.w, height: bcLabel.h }}
             >
               {/* Капсула с названием */}
               <div className="flex" style={{ flex: '0 0 24%', minHeight: 0 }}>
-                <div className="flex-1 border-2 border-black rounded-lg px-1 flex items-center justify-center text-center font-extrabold text-[13px] leading-tight overflow-hidden">
+                <div className="flex-1 border border-gray-700 rounded-lg px-1 flex items-center justify-center text-center font-bold text-[9px] leading-tight overflow-hidden">
                   <span className="line-clamp-2 break-words">{it.product_name || it.product_code}</span>
                 </div>
               </div>
@@ -414,7 +414,7 @@ export default function PriceTagsPage() {
               </div>
               {/* Капсула с кодом товара */}
               <div className="flex" style={{ flex: '0 0 24%', minHeight: 0 }}>
-                <div className="flex-1 border-2 border-black rounded-lg px-1 flex items-center justify-center text-center font-extrabold text-[16px] leading-none overflow-hidden">
+                <div className="flex-1 border border-gray-700 rounded-lg px-1 flex items-center justify-center text-center font-bold text-[14px] leading-none overflow-hidden">
                   Код {it.product_code}
                 </div>
               </div>
