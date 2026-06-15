@@ -410,8 +410,8 @@ export default function PriceTagsPage() {
               {/* Описание: значение ШК + код товара (нижняя рамка) */}
               <div className="border-t border-gray-500 px-1 flex flex-col items-center justify-center text-center leading-tight"
                    style={{ flex: '0 0 26%' }}>
-                <div className="font-mono text-[10px] text-gray-900">{it.barcode}</div>
-                <div className="text-[8px] text-gray-600">Код {it.product_code}</div>
+                <div className="font-mono text-[9px] text-gray-700">{it.barcode}</div>
+                <div className="font-bold text-[15px] text-gray-900 leading-none">Код {it.product_code}</div>
               </div>
             </div>
           ))}
