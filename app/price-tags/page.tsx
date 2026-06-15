@@ -438,9 +438,9 @@ export default function PriceTagsPage() {
                   <span className="line-clamp-2 break-words">{it.product_name || it.product_code}</span>
                 </div>
               </div>
-              {/* Штрихкод (крупный, на всю ширину, с полями для сканера) + значение ШК */}
+              {/* Штрихкод — те же пропорции, что и на ценнике (он сканируется): фикс. высота + ширина авто */}
               <div className="flex flex-col items-center justify-center overflow-hidden gap-1 py-0.5" style={{ flex: '1 1 auto', minHeight: 0 }}>
-                <BarcodeSvg value={it.barcode} format={bcFormat === 'auto' ? it.format : bcFormat} height={80} width={2} margin={10} par="xMidYMid meet" className="w-full flex-1 min-h-0" />
+                <BarcodeSvg value={it.barcode} format={bcFormat === 'auto' ? it.format : bcFormat} height={40} width={1.4} margin={10} par="xMidYMid meet" className="h-14 w-auto max-w-full max-h-full" />
                 <span className="font-mono text-[8px] text-gray-700 leading-none">{it.barcode}</span>
               </div>
               {/* Капсула с кодом товара */}
