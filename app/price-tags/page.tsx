@@ -395,23 +395,24 @@ export default function PriceTagsPage() {
           {printItems.map((it, idx) => (
             <div
               key={idx}
-              className="bclabel border border-gray-500 rounded flex flex-col overflow-hidden"
+              className="bclabel border-2 border-gray-800 rounded flex flex-col overflow-hidden"
               style={{ width: bcLabel.w, height: bcLabel.h }}
             >
               {/* Название (верхняя рамка) — фикс. высота, чтобы штрихкод у всех был одинаковый */}
-              <div className="border-b border-gray-500 px-1 flex items-center justify-center text-center font-bold text-[10px] leading-tight overflow-hidden"
-                   style={{ flex: '0 0 28%' }}>
+              <div className="border-b-2 border-gray-700 px-1 flex items-center justify-center text-center font-bold text-[10px] leading-tight overflow-hidden"
+                   style={{ flex: '0 0 28%', minHeight: 0 }}>
                 <span className="line-clamp-2 break-words">{it.product_name || it.product_code}</span>
               </div>
               {/* Штрихкод (центр) — растянут ровно на свою зону, размер одинаковый */}
-              <div className="px-1.5 py-1" style={{ flex: '0 0 46%' }}>
-                <BarcodeSvg value={it.barcode} format={it.format} height={60} width={2} par="none" className="w-full h-full" />
+              <div className="px-1.5 py-1 flex items-center justify-center overflow-hidden"
+                   style={{ flex: '0 0 46%', minHeight: 0 }}>
+                <BarcodeSvg value={it.barcode} format={it.format} height={60} width={2} par="none" className="w-full h-full block" />
               </div>
               {/* Описание: значение ШК + код товара (нижняя рамка) */}
-              <div className="border-t border-gray-500 px-1 flex flex-col items-center justify-center text-center leading-tight"
-                   style={{ flex: '0 0 26%' }}>
+              <div className="border-t-2 border-gray-700 px-1 flex flex-col items-center justify-center text-center leading-none overflow-hidden"
+                   style={{ flex: '0 0 26%', minHeight: 0 }}>
                 <div className="font-mono text-[9px] text-gray-700">{it.barcode}</div>
-                <div className="font-bold text-[15px] text-gray-900 leading-none">Код {it.product_code}</div>
+                <div className="font-bold text-[15px] text-gray-900 mt-0.5">Код {it.product_code}</div>
               </div>
             </div>
           ))}
