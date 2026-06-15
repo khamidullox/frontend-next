@@ -196,7 +196,9 @@ export default function PriceTagsPage() {
          @media print { .tag { page-break-inside: avoid; } .tag:nth-child(2n) { page-break-after: always; } }`
       : `@page { size: ${bcLabel.w} ${bcLabel.h}; margin: 0; }
          @media print {
-           .bc-sheet { display: block !important; gap: 0 !important; }
+           html, body { margin: 0 !important; padding: 0 !important; }
+           main { margin: 0 !important; padding: 0 !important; max-width: none !important; }
+           .bc-sheet { display: block !important; gap: 0 !important; margin: 0 !important; padding: 0 !important; }
            .bclabel { width: ${bcLabel.w}; height: ${bcLabel.h}; margin: 0 !important; page-break-after: always; }
            .bclabel:last-child { page-break-after: auto; }
          }`;
