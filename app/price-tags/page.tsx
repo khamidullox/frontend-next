@@ -398,16 +398,18 @@ export default function PriceTagsPage() {
               className="bclabel border border-gray-500 rounded flex flex-col overflow-hidden"
               style={{ width: bcLabel.w, height: bcLabel.h }}
             >
-              {/* Название (верхняя рамка) */}
-              <div className="border-b border-gray-500 px-1 py-0.5 text-center font-bold text-[10px] leading-tight line-clamp-2 break-words">
-                {it.product_name || it.product_code}
+              {/* Название (верхняя рамка) — фикс. высота, чтобы штрихкод у всех был одинаковый */}
+              <div className="border-b border-gray-500 px-1 flex items-center justify-center text-center font-bold text-[10px] leading-tight overflow-hidden"
+                   style={{ flex: '0 0 28%' }}>
+                <span className="line-clamp-2 break-words">{it.product_name || it.product_code}</span>
               </div>
-              {/* Штрихкод (центр) — единый размер у всех */}
-              <div className="flex-1 min-h-0 px-1.5 py-1 flex items-center justify-center">
-                <BarcodeSvg value={it.barcode} format={it.format} height={60} width={2} className="w-full h-full" />
+              {/* Штрихкод (центр) — растянут ровно на свою зону, размер одинаковый */}
+              <div className="px-1.5 py-1" style={{ flex: '0 0 46%' }}>
+                <BarcodeSvg value={it.barcode} format={it.format} height={60} width={2} par="none" className="w-full h-full" />
               </div>
-              {/* Описание: код товара + значение ШК (нижняя рамка) */}
-              <div className="border-t border-gray-500 px-1 py-0.5 text-center leading-tight">
+              {/* Описание: значение ШК + код товара (нижняя рамка) */}
+              <div className="border-t border-gray-500 px-1 flex flex-col items-center justify-center text-center leading-tight"
+                   style={{ flex: '0 0 26%' }}>
                 <div className="font-mono text-[10px] text-gray-900">{it.barcode}</div>
                 <div className="text-[8px] text-gray-600">Код {it.product_code}</div>
               </div>
@@ -490,8 +492,8 @@ function TriCheckbox({ state, onClick }: { state: TriState; onClick: () => void 
 
 // Самостоятельный штрихкод: рисует JsBarcode в свой ref (без рассинхрона по id),
 // добавляет viewBox — масштабируется по контейнеру с сохранением пропорций.
-function BarcodeSvg({ value, format, height, width, displayValue, className }: {
-  value: string; format: string; height: number; width: number; displayValue?: boolean; className?: string;
+function BarcodeSvg({ value, format, height, width, displayValue, className, par = 'xMidYMid meet' }: {
+  value: string; format: string; height: number; width: number; displayValue?: boolean; className?: string; par?: string;
 }) {
   const ref = useRef<SVGSVGElement>(null);
   useEffect(() => {
@@ -507,7 +509,7 @@ function BarcodeSvg({ value, format, height, width, displayValue, className }: {
     }).catch(() => {});
     return () => { alive = false; };
   }, [value, format, height, width, displayValue]);
-  return <svg ref={ref} className={className} preserveAspectRatio="xMidYMid meet" />;
+  return <svg ref={ref} className={className} preserveAspectRatio={par} />;
 }
 
 function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
