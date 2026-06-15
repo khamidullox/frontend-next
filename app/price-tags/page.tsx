@@ -171,6 +171,14 @@ export default function PriceTagsPage() {
   function setPrice(code: string, price: number) {
     setPicked(prev => prev[code] ? { ...prev, [code]: { ...prev[code], price: Math.max(0, price) } } : prev);
   }
+  // Кол-во копий = остаток на складе (для всех выбранных).
+  function copiesFromStock() {
+    setPicked(prev => {
+      const next: Record<string, PickedRow> = {};
+      for (const [code, p] of Object.entries(prev)) next[code] = { ...p, copies: Math.max(1, p.quantity || 1) };
+      return next;
+    });
+  }
 
   const allVisibleSelected = orderedList.length > 0 && orderedList.every(r => picked[r.product_code]);
   const someVisibleSelected = orderedList.some(r => picked[r.product_code]);
@@ -297,7 +305,16 @@ export default function PriceTagsPage() {
           <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-t-xl border border-b-0 border-gray-100 text-xs text-gray-500">
             <TriCheckbox state={masterState} onClick={() => setRows(orderedList, masterState !== 'all')} />
             <span>Выделить всё ({orderedList.length})</span>
-            <span className="ml-auto hidden sm:inline text-gray-400">Shift+клик — выделить диапазон</span>
+            {pickedList.length > 0 && (
+              <button
+                onClick={copiesFromStock}
+                title="Поставить количество копий ШК равным остатку на складе"
+                className="ml-auto text-[11px] px-2 py-1 rounded-md bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors whitespace-nowrap"
+              >
+                🔢 Кол-во = остаток
+              </button>
+            )}
+            <span className={`text-gray-400 hidden sm:inline ${pickedList.length > 0 ? '' : 'ml-auto'}`}>Shift+клик — диапазон</span>
           </div>
         )}
 
