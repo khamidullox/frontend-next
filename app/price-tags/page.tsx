@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   listProducts, listWarehouses, getWarehouseStock,
   WarehouseSummary, WarehouseProduct,
@@ -18,8 +18,12 @@ interface PickedRow extends WarehouseProduct {
   format: string;
 }
 
+// Основные склады — их видят только менеджер/админ, магазинам не показываем.
+const MAIN_WAREHOUSE_IDS = new Set(['001', '002', '003', '005', '006', '008', '7776']);
+
 const A4_TAG = { width: '190mm', height: '136mm' };          // 2 ценника на лист A4
 const BC_LABEL = { width: '50mm', height: '30mm', cols: 4 }; // сетка штрих-кодов
+const DISPLAY_CAP = 500;
 
 export default function PriceTagsPage() {
   const { session } = useAuth();
@@ -35,12 +39,12 @@ export default function PriceTagsPage() {
     return m;
   }, [catalog]);
 
-  // Склады: менеджер видит все, магазин — только свои.
+  // Склады: менеджер/админ видят все; магазин — только свои, без основных складов.
   const { data: allWarehouses, loading: whLoading } = useCachedList('cache:warehouses_v2', listWarehouses, 2 * 60 * 1000);
   const warehouses = useMemo<WarehouseSummary[]>(() => {
     if (isManager) return allWarehouses;
     const mine = new Set(session?.warehouses || []);
-    return allWarehouses.filter(w => mine.has(w.warehouse_id));
+    return allWarehouses.filter(w => mine.has(w.warehouse_id) && !MAIN_WAREHOUSE_IDS.has(w.warehouse_id));
   }, [allWarehouses, isManager, session]);
 
   const [whId, setWhId] = useState('');
@@ -66,29 +70,84 @@ export default function PriceTagsPage() {
     return () => { alive = false; };
   }, [whId]);
 
-  // Шаблон магазина: по умолчанию подбираем по названию склада.
+  // Шаблон магазина: по умолчанию подбираем по названию склада. Доступны все шаблоны.
   const [storeId, setStoreId] = useState<string>(STORES[0].id);
   useEffect(() => {
     if (currentWh) setStoreId(pickStoreByWarehouse(currentWh.warehouse_name).id);
   }, [currentWh]);
   const store = getStore(storeId);
 
-  // Выбранные позиции (общие для обеих вкладок)
-  const [picked, setPicked] = useState<Record<string, PickedRow>>({});
+  // Фильтры
   const [query, setQuery] = useState('');
+  const [groupFilter, setGroupFilter] = useState('');
+  const [brandFilter, setBrandFilter] = useState('');
 
-  function toggle(row: WarehouseProduct) {
+  const groupOptions = useMemo(
+    () => Array.from(new Set(stockRows.map(r => r.group).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ru')),
+    [stockRows]
+  );
+  const brandOptions = useMemo(
+    () => Array.from(new Set(stockRows.map(r => r.producer).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ru')),
+    [stockRows]
+  );
+
+  // Отфильтрованный и отсортированный по группе список (плоский, индексы — для диапазонного выделения)
+  const q = query.trim().toLowerCase();
+  const orderedList = useMemo(() => {
+    const rows = stockRows.filter(r =>
+      (!groupFilter || r.group === groupFilter) &&
+      (!brandFilter || r.producer === brandFilter) &&
+      (!q ||
+        r.product_code.toLowerCase().includes(q) ||
+        r.product_name.toLowerCase().includes(q) ||
+        r.producer.toLowerCase().includes(q) ||
+        r.group.toLowerCase().includes(q))
+    );
+    rows.sort((a, b) =>
+      (a.group || '').localeCompare(b.group || '', 'ru', { numeric: true }) ||
+      (a.product_name || '').localeCompare(b.product_name || '', 'ru')
+    );
+    return rows.slice(0, DISPLAY_CAP);
+  }, [stockRows, groupFilter, brandFilter, q]);
+
+  // Группировка для заголовков с галочкой «вся группа»
+  const groups = useMemo(() => {
+    const map = new Map<string, { row: WarehouseProduct; index: number }[]>();
+    orderedList.forEach((row, index) => {
+      const g = row.group || '— Без группы';
+      if (!map.has(g)) map.set(g, []);
+      map.get(g)!.push({ row, index });
+    });
+    return Array.from(map, ([group, items]) => ({ group, items }));
+  }, [orderedList]);
+
+  // ── Выделение ──
+  const [picked, setPicked] = useState<Record<string, PickedRow>>({});
+  const lastIndexRef = useRef<number | null>(null);
+
+  function makePicked(row: WarehouseProduct): PickedRow {
+    const codes = barcodeByCode.get(row.product_code) || [];
+    const { value, format } = pickBarcode(row.product_code, codes);
+    return { ...row, copies: 1, barcode: value, format };
+  }
+  function setRows(rows: WarehouseProduct[], on: boolean) {
     setPicked(prev => {
       const next = { ...prev };
-      if (next[row.product_code]) {
-        delete next[row.product_code];
-      } else {
-        const codes = barcodeByCode.get(row.product_code) || [];
-        const { value, format } = pickBarcode(row.product_code, codes);
-        next[row.product_code] = { ...row, copies: 1, barcode: value, format };
+      for (const r of rows) {
+        if (on) { if (!next[r.product_code]) next[r.product_code] = makePicked(r); }
+        else delete next[r.product_code];
       }
       return next;
     });
+  }
+  function rowClick(e: React.MouseEvent, row: WarehouseProduct, index: number) {
+    if (e.shiftKey && lastIndexRef.current !== null) {
+      const [a, b] = [lastIndexRef.current, index].sort((x, y) => x - y);
+      setRows(orderedList.slice(a, b + 1), true); // диапазон — выделяем всё
+    } else {
+      setRows([row], !picked[row.product_code]);
+    }
+    lastIndexRef.current = index;
   }
   function setCopies(code: string, copies: number) {
     setPicked(prev => prev[code] ? { ...prev, [code]: { ...prev[code], copies: Math.max(1, copies) } } : prev);
@@ -97,47 +156,38 @@ export default function PriceTagsPage() {
     setPicked(prev => prev[code] ? { ...prev, [code]: { ...prev[code], price: Math.max(0, price) } } : prev);
   }
 
-  const q = query.trim().toLowerCase();
-  const filteredStock = useMemo(() => {
-    const rows = q
-      ? stockRows.filter(r =>
-          r.product_code.toLowerCase().includes(q) ||
-          r.product_name.toLowerCase().includes(q) ||
-          r.producer.toLowerCase().includes(q) ||
-          r.group.toLowerCase().includes(q))
-      : stockRows;
-    return rows.slice(0, 200);
-  }, [stockRows, q]);
+  const allVisibleSelected = orderedList.length > 0 && orderedList.every(r => picked[r.product_code]);
+  const someVisibleSelected = orderedList.some(r => picked[r.product_code]);
+  const masterState: TriState = allVisibleSelected ? 'all' : someVisibleSelected ? 'some' : 'none';
 
   const pickedList = useMemo(() => Object.values(picked), [picked]);
-
-  // Разворачиваем в отдельные экземпляры для печати
   const printItems = useMemo(() => {
     const out: PickedRow[] = [];
     for (const p of pickedList) for (let i = 0; i < Math.max(1, p.copies); i++) out.push(p);
     return out;
   }, [pickedList]);
 
-  // Рисуем штрих-коды (для вкладки штрих-кодов)
+  // Сброс выделения при смене склада
+  useEffect(() => { setPicked({}); lastIndexRef.current = null; }, [whId]);
+
+  // Рисуем штрих-коды для активной вкладки
   useEffect(() => {
-    if (tab !== 'barcodes' || printItems.length === 0) return;
+    if (printItems.length === 0) return;
     let alive = true;
     loadJsBarcode().then(JsBarcode => {
       if (!alive) return;
       printItems.forEach((it, idx) => {
-        const el = document.getElementById(`bc-${idx}`);
+        const el = document.getElementById(tab === 'tags' ? `tag-bc-${idx}` : `bc-${idx}`);
         if (!el) return;
-        try {
-          JsBarcode(el, it.barcode, { format: it.format, displayValue: false, margin: 0, height: 38 });
-        } catch {
-          try { JsBarcode(el, it.barcode, { format: 'CODE128', displayValue: false, margin: 0, height: 38 }); } catch { /* пропуск */ }
-        }
+        const opts = { displayValue: false, margin: 0, height: tab === 'tags' ? 34 : 38, width: tab === 'tags' ? 1.4 : 1.6 };
+        try { JsBarcode(el, it.barcode, { format: it.format, ...opts }); }
+        catch { try { JsBarcode(el, it.barcode, { format: 'CODE128', ...opts }); } catch { /* пропуск */ } }
       });
     }).catch(e => setError((e as Error).message));
     return () => { alive = false; };
   }, [tab, printItems]);
 
-  // CSS печати в зависимости от вкладки
+  // CSS печати
   useEffect(() => {
     const id = 'price-print-style';
     let el = document.getElementById(id) as HTMLStyleElement | null;
@@ -152,7 +202,6 @@ export default function PriceTagsPage() {
 
   return (
     <div>
-      {/* Заголовок + вкладки */}
       <div className="print:hidden">
         <h2 className="text-xl font-bold mb-3">🏷️ Печать ценников и штрих-кодов</h2>
 
@@ -161,11 +210,11 @@ export default function PriceTagsPage() {
           <TabBtn active={tab === 'barcodes'} onClick={() => setTab('barcodes')}>📊 Штрих-коды</TabBtn>
         </div>
 
-        {/* Склад + (для ценников) шаблон магазина */}
+        {/* Склад + шаблон магазина */}
         <div className="bg-white rounded-xl shadow-sm p-4 mb-3 flex flex-col sm:flex-row gap-3">
           <div className="flex-1">
             <label className="block text-xs font-semibold text-gray-500 mb-1">
-              {isManager ? 'Склад' : 'Мой магазин / склад'}
+              {isManager ? 'Склад' : 'Мой магазин'}
             </label>
             <select
               value={whId}
@@ -193,54 +242,100 @@ export default function PriceTagsPage() {
           )}
         </div>
 
-        {/* Поиск товара на складе */}
-        <input
-          type="text"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="🔍 Найти товар на складе по названию, коду, бренду…"
-          className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-3 outline-none focus:border-blue-400"
-        />
+        {/* Фильтры: группа + бренд + поиск */}
+        <div className="flex flex-col sm:flex-row gap-2 mb-3">
+          <select
+            value={groupFilter}
+            onChange={e => setGroupFilter(e.target.value)}
+            className="sm:w-48 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400"
+          >
+            <option value="">Все группы</option>
+            {groupOptions.map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+          <select
+            value={brandFilter}
+            onChange={e => setBrandFilter(e.target.value)}
+            className="sm:w-48 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400"
+          >
+            <option value="">Все бренды</option>
+            {brandOptions.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+          <input
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="🔍 Поиск товара…"
+            className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400"
+          />
+        </div>
 
         {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
 
-        {/* Список остатков с галочками */}
-        <div className="bg-white rounded-xl shadow-sm mb-3 max-h-[42vh] overflow-y-auto">
+        {/* Шапка списка: выделить всё + подсказка */}
+        {orderedList.length > 0 && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-t-xl border border-b-0 border-gray-100 text-xs text-gray-500">
+            <TriCheckbox state={masterState} onClick={() => setRows(orderedList, masterState !== 'all')} />
+            <span>Выделить всё ({orderedList.length})</span>
+            <span className="ml-auto hidden sm:inline text-gray-400">Shift+клик — выделить диапазон</span>
+          </div>
+        )}
+
+        {/* Список остатков по группам */}
+        <div className="bg-white rounded-b-xl shadow-sm mb-3 max-h-[46vh] overflow-y-auto border border-gray-100">
           {stockLoading ? (
             <div className="flex items-center justify-center py-8 gap-2 text-gray-500 text-sm">
               <span className="w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
               Загрузка остатков…
             </div>
-          ) : filteredStock.length === 0 ? (
-            <div className="text-center text-gray-400 py-8 text-sm">
-              {whId ? 'Нет товаров' : 'Выберите склад'}
-            </div>
-          ) : filteredStock.map(r => {
-            const checked = !!picked[r.product_code];
+          ) : orderedList.length === 0 ? (
+            <div className="text-center text-gray-400 py-8 text-sm">{whId ? 'Нет товаров' : 'Выберите склад'}</div>
+          ) : groups.map(g => {
+            const gRows = g.items.map(i => i.row);
+            const gAll = gRows.every(r => picked[r.product_code]);
+            const gSome = gRows.some(r => picked[r.product_code]);
+            const gState: TriState = gAll ? 'all' : gSome ? 'some' : 'none';
             return (
-              <label
-                key={r.product_code}
-                className="flex items-center gap-2 px-3 py-2 border-b border-gray-50 last:border-0 cursor-pointer hover:bg-blue-50/50"
-              >
-                <input type="checkbox" checked={checked} onChange={() => toggle(r)} className="w-4 h-4 accent-blue-600" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-medium truncate">{r.product_name || '—'}</div>
-                  <div className="text-[11px] text-gray-400 truncate">
-                    Код {r.product_code}{r.producer && ` · ${r.producer}`} · остаток {r.quantity} шт.
-                  </div>
+              <div key={g.group}>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100/70 sticky top-0 text-[12px] font-semibold text-gray-600">
+                  <TriCheckbox state={gState} onClick={() => setRows(gRows, gState !== 'all')} />
+                  <span className="truncate">{g.group}</span>
+                  <span className="text-gray-400 font-normal">· {g.items.length}</span>
                 </div>
-                <div className="text-[12px] text-emerald-700 whitespace-nowrap">
-                  {r.price > 0 ? `${r.price.toLocaleString('ru-RU')}` : '—'}
-                </div>
-              </label>
+                {g.items.map(({ row, index }) => {
+                  const checked = !!picked[row.product_code];
+                  return (
+                    <div
+                      key={row.product_code}
+                      onClick={e => rowClick(e, row, index)}
+                      className={`flex items-center gap-2 px-3 py-2 border-b border-gray-50 last:border-0 cursor-pointer select-none ${
+                        checked ? 'bg-blue-50' : 'hover:bg-blue-50/50'
+                      }`}
+                    >
+                      <input type="checkbox" readOnly checked={checked} className="w-4 h-4 accent-blue-600 pointer-events-none" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] font-medium truncate">{row.product_name || '—'}</div>
+                        <div className="text-[11px] text-gray-400 truncate">
+                          Код {row.product_code}{row.producer && ` · ${row.producer}`} · остаток {row.quantity} шт.
+                        </div>
+                      </div>
+                      <div className="text-[12px] text-emerald-700 whitespace-nowrap">
+                        {row.price > 0 ? row.price.toLocaleString('ru-RU') : '—'}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             );
           })}
         </div>
 
-        {/* Выбранные позиции: цена + количество копий */}
+        {/* Выбранные позиции */}
         {pickedList.length > 0 && (
           <div className="bg-white rounded-xl shadow-sm p-3 mb-3 flex flex-col gap-2">
-            <div className="text-xs font-semibold text-gray-500">Выбрано: {pickedList.length} · к печати: {printItems.length}</div>
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-semibold text-gray-500">Выбрано: {pickedList.length} · к печати: {printItems.length}</div>
+              <button onClick={() => setPicked({})} className="text-xs text-gray-400 hover:text-red-500">Очистить</button>
+            </div>
             {pickedList.map(p => (
               <div key={p.product_code} className="flex items-center gap-2 border-b border-gray-100 last:border-0 pb-2 last:pb-0">
                 <div className="flex-1 min-w-0">
@@ -260,7 +355,7 @@ export default function PriceTagsPage() {
                   onChange={e => setCopies(p.product_code, Number(e.target.value) || 1)}
                   title="Сколько печатать" className="w-16 border-2 border-gray-200 rounded-lg px-2 py-1 text-sm text-right outline-none focus:border-blue-400"
                 />
-                <button onClick={() => toggle(p)} className="text-red-400 hover:text-red-600 px-1 text-lg">✕</button>
+                <button onClick={() => setRows([p], false)} className="text-red-400 hover:text-red-600 px-1 text-lg">✕</button>
               </div>
             ))}
           </div>
@@ -279,7 +374,7 @@ export default function PriceTagsPage() {
       {/* ── Область печати ── */}
       {printItems.length > 0 && tab === 'tags' && (
         <div className="flex flex-col items-center gap-2">
-          {printItems.map((it, idx) => <PriceTag key={idx} item={it} store={store} />)}
+          {printItems.map((it, idx) => <PriceTag key={idx} item={it} store={store} idx={idx} />)}
         </div>
       )}
 
@@ -302,6 +397,21 @@ export default function PriceTagsPage() {
   );
 }
 
+type TriState = 'none' | 'some' | 'all';
+
+function TriCheckbox({ state, onClick }: { state: TriState; onClick: () => void }) {
+  return (
+    <input
+      type="checkbox"
+      readOnly
+      checked={state === 'all'}
+      ref={el => { if (el) el.indeterminate = state === 'some'; }}
+      onClick={onClick}
+      className="w-4 h-4 accent-blue-600 cursor-pointer"
+    />
+  );
+}
+
 function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
@@ -315,17 +425,14 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
   );
 }
 
-// Один ценник (2 шт. на лист A4). Шапка-логотип, бейдж рассрочки, цена, описание, код.
-function PriceTag({ item, store }: { item: PickedRow; store: StoreBrand }) {
+// Один ценник (2 шт. на лист A4). Логотип, бейдж рассрочки, цена, описание, код + штрих-код.
+function PriceTag({ item, store, idx }: { item: PickedRow; store: StoreBrand; idx: number }) {
   const [logoOk, setLogoOk] = useState(true);
   const title = `${item.group} ${item.producer}`.trim() || item.product_name;
   const monthly = monthlyInstallment(item.price);
 
   return (
-    <div
-      className="tag border-2 border-black bg-white flex flex-col p-3 overflow-hidden"
-      style={{ width: A4_TAG.width, height: A4_TAG.height }}
-    >
+    <div className="tag border-2 border-black bg-white flex flex-col p-3 overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
       {/* Шапка: логотип + бейдж рассрочки */}
       <div className="flex items-start justify-between">
         {logoOk ? (
@@ -351,15 +458,17 @@ function PriceTag({ item, store }: { item: PickedRow; store: StoreBrand }) {
         <div className="text-[64px] font-extrabold leading-none">{item.price.toLocaleString('ru-RU')}</div>
       </div>
 
-      {/* Низ: описание + код */}
+      {/* Низ: описание (слева) + код и штрих-код (справа) */}
       <div className="flex items-end gap-2">
-        <div className="flex-1 border border-black px-2 py-1 text-[12px] leading-tight min-h-[36px]">
+        <div className="flex-1 border border-black px-2 py-1 text-[12px] leading-tight min-h-[40px]">
           {item.product_name}
         </div>
-        <div className="border border-black px-3 py-1 text-base font-bold">{item.product_code}</div>
+        <div className="flex flex-col items-end">
+          <svg id={`tag-bc-${idx}`} className="h-9" />
+          <div className="border border-black px-3 py-0.5 text-base font-bold mt-0.5">{item.product_code}</div>
+        </div>
       </div>
 
-      {/* Слоган */}
       <div className="text-center text-[11px] text-gray-600 mt-1">{store.footer}</div>
     </div>
   );
