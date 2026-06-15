@@ -196,7 +196,8 @@ export default function PriceTagsPage() {
          @media print { .tag { page-break-inside: avoid; } .tag:nth-child(2n) { page-break-after: always; } }`
       : `@page { size: ${bcLabel.w} ${bcLabel.h}; margin: 0; }
          @media print {
-           .bclabel { width: ${bcLabel.w}; height: ${bcLabel.h}; page-break-after: always; }
+           .bc-sheet { display: block !important; gap: 0 !important; }
+           .bclabel { width: ${bcLabel.w}; height: ${bcLabel.h}; margin: 0 !important; page-break-after: always; }
            .bclabel:last-child { page-break-after: auto; }
          }`;
     return () => { el?.remove(); };
@@ -391,28 +392,28 @@ export default function PriceTagsPage() {
       )}
 
       {printItems.length > 0 && tab === 'barcodes' && (
-        <div className="flex flex-col items-center gap-2">
+        <div className="bc-sheet flex flex-col items-center gap-2">
           {printItems.map((it, idx) => (
             <div
               key={idx}
-              className="bclabel border-2 border-gray-800 rounded flex flex-col overflow-hidden"
+              className="bclabel border-2 border-gray-800 rounded flex flex-col overflow-hidden box-border"
               style={{ width: bcLabel.w, height: bcLabel.h }}
             >
-              {/* Название (верхняя рамка) — фикс. высота, чтобы штрихкод у всех был одинаковый */}
-              <div className="border-b-2 border-gray-700 px-1 flex items-center justify-center text-center font-bold text-[10px] leading-tight overflow-hidden"
-                   style={{ flex: '0 0 28%', minHeight: 0 }}>
-                <span className="line-clamp-2 break-words">{it.product_name || it.product_code}</span>
+              {/* Верхняя рамка: название + код товара */}
+              <div className="border-b-2 border-gray-700 px-1 flex flex-col items-center justify-center text-center overflow-hidden"
+                   style={{ flex: '0 0 34%', minHeight: 0 }}>
+                <span className="font-bold text-[10px] leading-tight line-clamp-2 break-words">{it.product_name || it.product_code}</span>
+                <span className="font-bold text-[14px] leading-none mt-0.5">Код {it.product_code}</span>
               </div>
               {/* Штрихкод (центр) — растянут ровно на свою зону, размер одинаковый */}
               <div className="px-1.5 py-1 flex items-center justify-center overflow-hidden"
                    style={{ flex: '0 0 46%', minHeight: 0 }}>
                 <BarcodeSvg value={it.barcode} format={it.format} height={60} width={2} par="none" className="w-full h-full block" />
               </div>
-              {/* Описание: значение ШК + код товара (нижняя рамка) */}
-              <div className="border-t-2 border-gray-700 px-1 flex flex-col items-center justify-center text-center leading-none overflow-hidden"
-                   style={{ flex: '0 0 26%', minHeight: 0 }}>
-                <div className="font-mono text-[9px] text-gray-700">{it.barcode}</div>
-                <div className="font-bold text-[15px] text-gray-900 mt-0.5">Код {it.product_code}</div>
+              {/* Нижняя рамка: значение ШК */}
+              <div className="border-t-2 border-gray-700 px-1 flex items-center justify-center text-center overflow-hidden"
+                   style={{ flex: '0 0 20%', minHeight: 0 }}>
+                <span className="font-mono text-[11px] text-gray-900">{it.barcode}</span>
               </div>
             </div>
           ))}
