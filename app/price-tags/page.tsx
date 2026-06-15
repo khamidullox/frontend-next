@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  listProducts, listWarehousesForTags, getWarehouseStock,
+  listProducts, listWarehousesForTags, getWarehouseStock, getProductStock,
   WarehouseProduct,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
@@ -162,13 +162,18 @@ export default function PriceTagsPage() {
     const { value, format } = pickBarcode(row.product_code, codes);
     return { ...row, copies: stockMode ? Math.max(1, row.quantity || 1) : 1, barcode: value, format };
   }
-  // Добавить любой товар из справочника (нет склада → остаток/цена 0, цену впишут вручную).
+  // Добавить любой товар из справочника. Цену подтягиваем автоматически (оптовая из остатков).
   function addCatalogItem(c: { code: string; name: string; producer: string; group: string }) {
+    if (picked[c.code]) { setCatalogQuery(''); return; }
     const row: WarehouseProduct = {
       product_code: c.code, product_name: c.name, producer: c.producer, group: c.group, quantity: 0, price: 0,
     };
     setPicked(prev => prev[c.code] ? prev : { ...prev, [c.code]: { ...makePicked(row), fromCatalog: true } });
     setCatalogQuery('');
+    // Автоподстановка цены
+    getProductStock(c.code)
+      .then(s => setPicked(prev => prev[c.code] ? { ...prev, [c.code]: { ...prev[c.code], price: s.wholesale_price || 0 } } : prev))
+      .catch(() => {});
   }
 
   function setRows(rows: WarehouseProduct[], on: boolean) {
