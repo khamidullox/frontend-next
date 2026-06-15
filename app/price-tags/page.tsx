@@ -16,6 +16,7 @@ interface PickedRow extends WarehouseProduct {
   copies: number;   // сколько печатать
   barcode: string;
   format: string;
+  fromCatalog?: boolean; // добавлен через поиск по справочнику
 }
 
 const A4_TAG = { width: '190mm', height: '136mm' };          // 2 ценника на лист A4
@@ -166,7 +167,7 @@ export default function PriceTagsPage() {
     const row: WarehouseProduct = {
       product_code: c.code, product_name: c.name, producer: c.producer, group: c.group, quantity: 0, price: 0,
     };
-    setPicked(prev => prev[c.code] ? prev : { ...prev, [c.code]: makePicked(row) });
+    setPicked(prev => prev[c.code] ? prev : { ...prev, [c.code]: { ...makePicked(row), fromCatalog: true } });
     setCatalogQuery('');
   }
 
@@ -211,12 +212,9 @@ export default function PriceTagsPage() {
   const masterState: TriState = allVisibleSelected ? 'all' : someVisibleSelected ? 'some' : 'none';
 
   const pickedList = useMemo(() => Object.values(picked), [picked]);
-  // Выбранные товары, которых нет в текущем списке склада (добавлены из справочника / другого склада) —
-  // для них показываем отдельный список, чтобы указать количество и цену.
-  const extraPicked = useMemo(() => {
-    const stockCodes = new Set(stockRows.map(r => r.product_code));
-    return pickedList.filter(p => !stockCodes.has(p.product_code));
-  }, [pickedList, stockRows]);
+  // Товары, добавленные через справочник — отдельный список, чтобы указать количество и цену
+  // (показываем независимо от того, есть ли товар на текущем складе).
+  const extraPicked = useMemo(() => pickedList.filter(p => p.fromCatalog), [pickedList]);
   const printItems = useMemo(() => {
     const out: PickedRow[] = [];
     for (const p of pickedList) for (let i = 0; i < Math.max(1, p.copies); i++) out.push(p);
