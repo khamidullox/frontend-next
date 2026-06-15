@@ -312,7 +312,10 @@ export interface WarehouseSummary {
 // Список складов с агрегатами (для страницы выбора склада).
 // allowed — коды складов пользователя; если задан, показываем именно их
 // (7 основных + свой). Если пусто — по умолчанию основные склады.
-export async function listWarehouseStock(allowed?: string[]): Promise<WarehouseSummary[]> {
+export async function listWarehouseStock(
+  allowed?: string[],
+  opts?: { all?: boolean; excludeMain?: boolean }
+): Promise<WarehouseSummary[]> {
   const [balance, whMap, idCode] = await Promise.all([
     getCachedBalance(),
     getWarehouseMap(),
@@ -328,7 +331,7 @@ export async function listWarehouseStock(allowed?: string[]): Promise<WarehouseS
   }
 
   // Фильтр по НАСТОЯЩЕМУ коду склада (различает брак/осн.средства).
-  // У пользователя свои склады — показываем их; иначе только основные.
+  // all — все склады (для менеджера/админа); иначе свои/основные.
   const allow = allowed && allowed.length
     ? new Set(allowed.map((c) => String(c).trim()))
     : new Set(MAIN_WAREHOUSE_CODES);
@@ -341,7 +344,12 @@ export async function listWarehouseStock(allowed?: string[]): Promise<WarehouseS
       total_quantity: a.qty,
     }))
     .filter((w) => w.total_quantity !== 0)
-    .filter((w) => allow.has(idCode.get(w.warehouse_id) || ''))
+    .filter((w) => {
+      const code = idCode.get(w.warehouse_id) || '';
+      if (opts?.excludeMain && MAIN_WAREHOUSE_CODES.has(code)) return false;
+      if (opts?.all) return true;
+      return allow.has(code);
+    })
     .sort((a, b) => a.warehouse_name.localeCompare(b.warehouse_name, 'ru'));
 }
 

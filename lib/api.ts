@@ -408,6 +408,14 @@ export async function listWarehouses(): Promise<WarehouseSummary[]> {
   return data.data || [];
 }
 
+// Для ценников: менеджер/админ видят все склады, магазин — только свои без основных.
+export async function listWarehousesForTags(): Promise<WarehouseSummary[]> {
+  const res = await fetch('/api/warehouses?for=tags', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
 export interface WarehouseProduct {
   product_code: string;
   product_name: string;

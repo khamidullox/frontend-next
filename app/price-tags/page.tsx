@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  listProducts, listWarehouses, getWarehouseStock,
-  WarehouseSummary, WarehouseProduct,
+  listProducts, listWarehousesForTags, getWarehouseStock,
+  WarehouseProduct,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 import { useCachedList } from '@/lib/useCachedList';
@@ -18,12 +18,16 @@ interface PickedRow extends WarehouseProduct {
   format: string;
 }
 
-// Основные склады — их видят только менеджер/админ, магазинам не показываем.
-const MAIN_WAREHOUSE_IDS = new Set(['001', '002', '003', '005', '006', '008', '7776']);
-
 const A4_TAG = { width: '190mm', height: '136mm' };          // 2 ценника на лист A4
-const BC_LABEL = { width: '50mm', height: '30mm', cols: 4 }; // сетка штрих-кодов
 const DISPLAY_CAP = 500;
+
+// Размеры термоэтикеток (по одной на «страницу» термопринтера).
+const BC_SIZES: Record<string, { label: string; w: string; h: string }> = {
+  '58x40': { label: '58 × 40 мм', w: '58mm', h: '40mm' },
+  '58x30': { label: '58 × 30 мм', w: '58mm', h: '30mm' },
+  '40x30': { label: '40 × 30 мм', w: '40mm', h: '30mm' },
+  '30x20': { label: '30 × 20 мм', w: '30mm', h: '20mm' },
+};
 
 export default function PriceTagsPage() {
   const { session } = useAuth();
@@ -39,13 +43,8 @@ export default function PriceTagsPage() {
     return m;
   }, [catalog]);
 
-  // Склады: менеджер/админ видят все; магазин — только свои, без основных складов.
-  const { data: allWarehouses, loading: whLoading } = useCachedList('cache:warehouses_v2', listWarehouses, 2 * 60 * 1000);
-  const warehouses = useMemo<WarehouseSummary[]>(() => {
-    if (isManager) return allWarehouses;
-    const mine = new Set(session?.warehouses || []);
-    return allWarehouses.filter(w => mine.has(w.warehouse_id) && !MAIN_WAREHOUSE_IDS.has(w.warehouse_id));
-  }, [allWarehouses, isManager, session]);
+  // Склады (бэк сам разруливает по роли: менеджер/админ — все, магазин — свои без основных).
+  const { data: warehouses, loading: whLoading } = useCachedList('cache:warehouses_tags', listWarehousesForTags, 2 * 60 * 1000);
 
   const [whId, setWhId] = useState('');
   useEffect(() => {
@@ -69,6 +68,10 @@ export default function PriceTagsPage() {
       .finally(() => { if (alive) setStockLoading(false); });
     return () => { alive = false; };
   }, [whId]);
+
+  // Размер термоэтикетки для штрих-кодов
+  const [bcSize, setBcSize] = useState<string>('58x40');
+  const bcLabel = BC_SIZES[bcSize];
 
   // Шаблон магазина: по умолчанию подбираем по названию склада. Доступны все шаблоны.
   const [storeId, setStoreId] = useState<string>(STORES[0].id);
@@ -179,7 +182,7 @@ export default function PriceTagsPage() {
       printItems.forEach((it, idx) => {
         const el = document.getElementById(tab === 'tags' ? `tag-bc-${idx}` : `bc-${idx}`);
         if (!el) return;
-        const opts = { displayValue: false, margin: 0, height: tab === 'tags' ? 34 : 38, width: tab === 'tags' ? 1.4 : 1.6 };
+        const opts = { displayValue: false, margin: 0, height: tab === 'tags' ? 34 : 30, width: tab === 'tags' ? 1.4 : 1.2 };
         try { JsBarcode(el, it.barcode, { format: it.format, ...opts }); }
         catch { try { JsBarcode(el, it.barcode, { format: 'CODE128', ...opts }); } catch { /* пропуск */ } }
       });
@@ -195,10 +198,13 @@ export default function PriceTagsPage() {
     el.textContent = tab === 'tags'
       ? `@page { size: A4 portrait; margin: 6mm; }
          @media print { .tag { page-break-inside: avoid; } .tag:nth-child(2n) { page-break-after: always; } }`
-      : `@page { size: A4 portrait; margin: 8mm; }
-         @media print { .bclabel { page-break-inside: avoid; } }`;
+      : `@page { size: ${bcLabel.w} ${bcLabel.h}; margin: 0; }
+         @media print {
+           .bclabel { width: ${bcLabel.w}; height: ${bcLabel.h}; border: none !important; page-break-after: always; }
+           .bclabel:last-child { page-break-after: auto; }
+         }`;
     return () => { el?.remove(); };
-  }, [tab]);
+  }, [tab, bcLabel]);
 
   return (
     <div>
@@ -228,7 +234,7 @@ export default function PriceTagsPage() {
               ))}
             </select>
           </div>
-          {tab === 'tags' && (
+          {tab === 'tags' ? (
             <div className="flex-1">
               <label className="block text-xs font-semibold text-gray-500 mb-1">Шаблон магазина</label>
               <select
@@ -237,6 +243,17 @@ export default function PriceTagsPage() {
                 className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400"
               >
                 {STORES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          ) : (
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Размер этикетки (термопринтер)</label>
+              <select
+                value={bcSize}
+                onChange={e => setBcSize(e.target.value)}
+                className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400"
+              >
+                {Object.entries(BC_SIZES).map(([id, s]) => <option key={id} value={id}>{s.label}</option>)}
               </select>
             </div>
           )}
@@ -359,16 +376,16 @@ export default function PriceTagsPage() {
       )}
 
       {printItems.length > 0 && tab === 'barcodes' && (
-        <div className="grid gap-2 justify-center" style={{ gridTemplateColumns: `repeat(${BC_LABEL.cols}, ${BC_LABEL.width})` }}>
+        <div className="flex flex-col items-center gap-2">
           {printItems.map((it, idx) => (
             <div
               key={idx}
-              className="bclabel border border-dashed border-gray-300 rounded flex flex-col items-center justify-center p-1 overflow-hidden"
-              style={{ width: BC_LABEL.width, height: BC_LABEL.height }}
+              className="bclabel border border-dashed border-gray-300 flex flex-col items-center justify-center px-1 py-0.5 overflow-hidden"
+              style={{ width: bcLabel.w, height: bcLabel.h }}
             >
               <div className="text-[8px] leading-tight text-center w-full truncate">{it.product_name || it.product_code}</div>
-              <svg id={`bc-${idx}`} className="w-full" />
-              <div className="text-[9px] font-mono text-gray-700">{it.barcode}</div>
+              <svg id={`bc-${idx}`} className="max-w-full" />
+              <div className="text-[9px] font-mono text-gray-800 leading-tight">{it.product_code}</div>
             </div>
           ))}
         </div>
