@@ -99,6 +99,18 @@ export default function PriceTagsPage() {
   const [groupFilter, setGroupFilter] = useState<Set<string>>(new Set());
   const [brandFilter, setBrandFilter] = useState<Set<string>>(new Set());
 
+  // Поиск по всему справочнику (для менеджера/админа) — любой товар, не только со склада
+  const [catalogQuery, setCatalogQuery] = useState('');
+  const cq = catalogQuery.trim().toLowerCase();
+  const catalogResults = useMemo(() => {
+    if (!cq) return [];
+    return catalog.filter(p =>
+      p.code.toLowerCase().includes(cq) ||
+      p.name.toLowerCase().includes(cq) ||
+      p.barcodes.some(b => b.includes(cq))
+    ).slice(0, 15);
+  }, [catalog, cq]);
+
   const groupOptions = useMemo(
     () => Array.from(new Set(stockRows.map(r => r.group).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ru')),
     [stockRows]
@@ -141,6 +153,7 @@ export default function PriceTagsPage() {
   // ── Выделение ──
   const [picked, setPicked] = useState<Record<string, PickedRow>>({});
   const [stockMode, setStockMode] = useState(false); // кол-во копий = остаток
+  const [previewPage, setPreviewPage] = useState(0); // страница предпросмотра при большом объёме
   const lastIndexRef = useRef<number | null>(null);
 
   function makePicked(row: WarehouseProduct): PickedRow {
@@ -148,6 +161,15 @@ export default function PriceTagsPage() {
     const { value, format } = pickBarcode(row.product_code, codes);
     return { ...row, copies: stockMode ? Math.max(1, row.quantity || 1) : 1, barcode: value, format };
   }
+  // Добавить любой товар из справочника (нет склада → остаток/цена 0, цену впишут вручную).
+  function addCatalogItem(c: { code: string; name: string; producer: string; group: string }) {
+    const row: WarehouseProduct = {
+      product_code: c.code, product_name: c.name, producer: c.producer, group: c.group, quantity: 0, price: 0,
+    };
+    setPicked(prev => prev[c.code] ? prev : { ...prev, [c.code]: makePicked(row) });
+    setCatalogQuery('');
+  }
+
   function setRows(rows: WarehouseProduct[], on: boolean) {
     setPicked(prev => {
       const next = { ...prev };
@@ -194,6 +216,13 @@ export default function PriceTagsPage() {
     for (const p of pickedList) for (let i = 0; i < Math.max(1, p.copies); i++) out.push(p);
     return out;
   }, [pickedList]);
+
+  // Постраничный предпросмотр/печать при большом объёме (чтобы не грузить тысячи этикеток сразу)
+  const PREVIEW_PAGE = 100;
+  const previewPages = Math.max(1, Math.ceil(printItems.length / PREVIEW_PAGE));
+  const safePreviewPage = Math.min(previewPage, previewPages - 1);
+  const visibleItems = printItems.slice(safePreviewPage * PREVIEW_PAGE, safePreviewPage * PREVIEW_PAGE + PREVIEW_PAGE);
+  useEffect(() => { setPreviewPage(0); }, [printItems.length, tab]);
 
   // Сброс выделения при смене склада
   useEffect(() => { setPicked({}); lastIndexRef.current = null; }, [whId]);
@@ -299,6 +328,42 @@ export default function PriceTagsPage() {
             </div>
           )}
         </div>
+
+        {/* Поиск по всему справочнику (менеджер/админ) — можно добавить любой товар */}
+        {isManager && (
+          <div className="relative mb-3">
+            <input
+              type="text"
+              value={catalogQuery}
+              onChange={e => setCatalogQuery(e.target.value)}
+              placeholder="📚 Добавить любой товар из справочника (по названию, коду, ШК)…"
+              className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-400"
+            />
+            {catalogResults.length > 0 && (
+              <div className="absolute z-10 left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-gray-100 max-h-72 overflow-y-auto">
+                {catalogResults.map(p => {
+                  const added = !!picked[p.code];
+                  return (
+                    <button
+                      key={p.code}
+                      onClick={() => addCatalogItem(p)}
+                      disabled={added}
+                      className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 disabled:opacity-50 border-b border-gray-50 last:border-0"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] font-medium truncate">{p.name || '—'}</div>
+                        <div className="text-[11px] text-gray-400 truncate">
+                          Код {p.code}{p.barcodes.length > 0 && ` · ШК ${p.barcodes.join(', ')}`}
+                        </div>
+                      </div>
+                      <span className={added ? 'text-green-500 text-xs' : 'text-blue-500 text-lg'}>{added ? 'добавлено' : '+'}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Фильтры: группы + бренды (множественный выбор) + поиск */}
         <div className="flex flex-col sm:flex-row gap-2 mb-3">
@@ -407,12 +472,35 @@ export default function PriceTagsPage() {
               <span>Выбрано: {pickedList.length} · к печати: {printItems.length}</span>
               <button onClick={() => setPicked({})} className="hover:text-red-500">Очистить</button>
             </div>
+
+            {/* Постранично, если этикеток много */}
+            {previewPages > 1 && (
+              <div className="flex items-center justify-center gap-3 mb-2 text-sm">
+                <button
+                  onClick={() => setPreviewPage(p => Math.max(0, p - 1))}
+                  disabled={safePreviewPage <= 0}
+                  className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-40"
+                >← Назад</button>
+                <span className="text-gray-500">Стр. {safePreviewPage + 1} из {previewPages}</span>
+                <button
+                  onClick={() => setPreviewPage(p => Math.min(previewPages - 1, p + 1))}
+                  disabled={safePreviewPage >= previewPages - 1}
+                  className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-40"
+                >Вперёд →</button>
+              </div>
+            )}
+
             <button
               onClick={() => window.print()}
-              className="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors mb-4"
+              className="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors mb-1"
             >
-              🖨️ Печать ({printItems.length} шт.)
+              🖨️ Печать {previewPages > 1 ? `этой порции (${visibleItems.length} шт.)` : `(${printItems.length} шт.)`}
             </button>
+            {previewPages > 1 && (
+              <p className="text-[11px] text-gray-400 text-center mb-4">
+                Печатается текущая страница. Всего {printItems.length} шт. — печатайте по порциям, листая «Вперёд».
+              </p>
+            )}
           </>
         )}
       </div>
@@ -420,13 +508,13 @@ export default function PriceTagsPage() {
       {/* ── Область печати ── */}
       {printItems.length > 0 && tab === 'tags' && (
         <div className="flex flex-col items-center gap-2">
-          {printItems.map((it, idx) => <PriceTag key={idx} item={it} store={store} />)}
+          {visibleItems.map((it, idx) => <PriceTag key={idx} item={it} store={store} />)}
         </div>
       )}
 
       {printItems.length > 0 && tab === 'barcodes' && (
         <div className="bc-sheet flex flex-col items-center gap-2">
-          {printItems.map((it, idx) => (
+          {visibleItems.map((it, idx) => (
             <div
               key={idx}
               className="bclabel border border-gray-300 rounded-lg flex flex-col gap-1 p-1.5 overflow-hidden box-border"
