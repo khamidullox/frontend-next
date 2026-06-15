@@ -398,24 +398,25 @@ export default function PriceTagsPage() {
           {printItems.map((it, idx) => (
             <div
               key={idx}
-              className="bclabel border-2 border-gray-800 rounded flex flex-col overflow-hidden box-border"
+              className="bclabel border border-gray-400 rounded-lg flex flex-col gap-1 p-1.5 overflow-hidden box-border"
               style={{ width: bcLabel.w, height: bcLabel.h }}
             >
-              {/* Верхняя рамка: название + код товара */}
-              <div className="border-b-2 border-gray-700 px-1 flex flex-col items-center justify-center text-center overflow-hidden"
-                   style={{ flex: '0 0 34%', minHeight: 0 }}>
-                <span className="font-bold text-[10px] leading-tight line-clamp-2 break-words">{it.product_name || it.product_code}</span>
-                <span className="font-bold text-[14px] leading-none mt-0.5">Код {it.product_code}</span>
+              {/* Капсула с названием */}
+              <div className="flex" style={{ flex: '0 0 24%', minHeight: 0 }}>
+                <div className="flex-1 border-2 border-black rounded-lg px-1 flex items-center justify-center text-center font-extrabold text-[13px] leading-tight overflow-hidden">
+                  <span className="line-clamp-2 break-words">{it.product_name || it.product_code}</span>
+                </div>
               </div>
-              {/* Штрихкод (центр) — растянут ровно на свою зону, размер одинаковый */}
-              <div className="px-1.5 py-1 flex items-center justify-center overflow-hidden"
-                   style={{ flex: '0 0 46%', minHeight: 0 }}>
-                <BarcodeSvg value={it.barcode} format={it.format} height={60} width={2} par="none" className="w-full h-full block" />
+              {/* Штрихкод + значение ШК под ним */}
+              <div className="flex flex-col items-center justify-center overflow-hidden" style={{ flex: '1 1 auto', minHeight: 0 }}>
+                <BarcodeSvg value={it.barcode} format={it.format} height={60} width={2} par="none" className="w-full flex-1 min-h-0 block" />
+                <span className="font-mono text-[8px] text-gray-700 leading-none mt-0.5">{it.barcode}</span>
               </div>
-              {/* Нижняя рамка: значение ШК */}
-              <div className="border-t-2 border-gray-700 px-1 flex items-center justify-center text-center overflow-hidden"
-                   style={{ flex: '0 0 20%', minHeight: 0 }}>
-                <span className="font-mono text-[11px] text-gray-900">{it.barcode}</span>
+              {/* Капсула с кодом товара */}
+              <div className="flex" style={{ flex: '0 0 24%', minHeight: 0 }}>
+                <div className="flex-1 border-2 border-black rounded-lg px-1 flex items-center justify-center text-center font-extrabold text-[16px] leading-none overflow-hidden">
+                  Код {it.product_code}
+                </div>
               </div>
             </div>
           ))}
