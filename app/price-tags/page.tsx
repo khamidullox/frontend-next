@@ -186,34 +186,6 @@ export default function PriceTagsPage() {
   // Сброс выделения при смене склада
   useEffect(() => { setPicked({}); lastIndexRef.current = null; }, [whId]);
 
-  // Рисуем штрих-коды для активной вкладки
-  useEffect(() => {
-    if (printItems.length === 0) return;
-    let alive = true;
-    loadJsBarcode().then(JsBarcode => {
-      if (!alive) return;
-      printItems.forEach((it, idx) => {
-        const el = document.getElementById(tab === 'tags' ? `tag-bc-${idx}` : `bc-${idx}`);
-        if (!el) return;
-        const opts = tab === 'tags'
-          ? { displayValue: false, margin: 0, height: 34, width: 1.4 }
-          : { displayValue: false, margin: 0, height: 60, width: 2 };
-        try { JsBarcode(el, it.barcode, { format: it.format, ...opts }); }
-        catch { try { JsBarcode(el, it.barcode, { format: 'CODE128', ...opts }); } catch { /* пропуск */ } }
-        // Для этикеток: viewBox + неравномерное масштабирование, чтобы штрихкод заполнял центр.
-        if (tab === 'barcodes') {
-          const w = el.getAttribute('width'); const h = el.getAttribute('height');
-          if (w && h) {
-            el.setAttribute('viewBox', `0 0 ${w} ${h}`);
-            el.setAttribute('preserveAspectRatio', 'none');
-            el.removeAttribute('width'); el.removeAttribute('height');
-          }
-        }
-      });
-    }).catch(e => setError((e as Error).message));
-    return () => { alive = false; };
-  }, [tab, printItems]);
-
   // CSS печати
   useEffect(() => {
     const id = 'price-print-style';
@@ -414,7 +386,7 @@ export default function PriceTagsPage() {
       {/* ── Область печати ── */}
       {printItems.length > 0 && tab === 'tags' && (
         <div className="flex flex-col items-center gap-2">
-          {printItems.map((it, idx) => <PriceTag key={idx} item={it} store={store} idx={idx} />)}
+          {printItems.map((it, idx) => <PriceTag key={idx} item={it} store={store} />)}
         </div>
       )}
 
@@ -430,9 +402,9 @@ export default function PriceTagsPage() {
               <div className="border-b border-gray-500 px-1 py-0.5 text-center font-bold text-[10px] leading-tight line-clamp-2 break-words">
                 {it.product_name || it.product_code}
               </div>
-              {/* Штрихкод (центр) */}
-              <div className="flex-1 min-h-0 px-1.5 py-1">
-                <svg id={`bc-${idx}`} className="w-full h-full" />
+              {/* Штрихкод (центр) — единый размер у всех */}
+              <div className="flex-1 min-h-0 px-1.5 py-1 flex items-center justify-center">
+                <BarcodeSvg value={it.barcode} format={it.format} height={60} width={2} className="w-full h-full" />
               </div>
               {/* Описание: код товара + значение ШК (нижняя рамка) */}
               <div className="border-t border-gray-500 px-1 py-0.5 text-center leading-tight">
@@ -516,6 +488,28 @@ function TriCheckbox({ state, onClick }: { state: TriState; onClick: () => void 
   );
 }
 
+// Самостоятельный штрихкод: рисует JsBarcode в свой ref (без рассинхрона по id),
+// добавляет viewBox — масштабируется по контейнеру с сохранением пропорций.
+function BarcodeSvg({ value, format, height, width, displayValue, className }: {
+  value: string; format: string; height: number; width: number; displayValue?: boolean; className?: string;
+}) {
+  const ref = useRef<SVGSVGElement>(null);
+  useEffect(() => {
+    let alive = true;
+    loadJsBarcode().then(JsBarcode => {
+      const el = ref.current;
+      if (!alive || !el) return;
+      const opts = { displayValue: !!displayValue, margin: 0, height, width };
+      try { JsBarcode(el, value, { format, ...opts }); }
+      catch { try { JsBarcode(el, value, { format: 'CODE128', ...opts }); } catch { return; } }
+      const w = el.getAttribute('width'); const h = el.getAttribute('height');
+      if (w && h) { el.setAttribute('viewBox', `0 0 ${w} ${h}`); el.removeAttribute('width'); el.removeAttribute('height'); }
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [value, format, height, width, displayValue]);
+  return <svg ref={ref} className={className} preserveAspectRatio="xMidYMid meet" />;
+}
+
 function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
@@ -530,7 +524,7 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
 }
 
 // Один ценник (2 шт. на лист A4). Логотип, бейдж рассрочки, цена, описание, код + штрих-код.
-function PriceTag({ item, store, idx }: { item: PickedRow; store: StoreBrand; idx: number }) {
+function PriceTag({ item, store }: { item: PickedRow; store: StoreBrand }) {
   const [logoOk, setLogoOk] = useState(true);
   const title = `${item.group} ${item.producer}`.trim() || item.product_name;
   const monthly = monthlyInstallment(item.price);
@@ -568,7 +562,7 @@ function PriceTag({ item, store, idx }: { item: PickedRow; store: StoreBrand; id
           {item.product_name}
         </div>
         <div className="flex flex-col items-end">
-          <svg id={`tag-bc-${idx}`} className="h-9" />
+          <BarcodeSvg value={item.barcode} format={item.format} height={34} width={1.4} className="h-9 w-auto" />
           <div className="border border-black px-3 py-0.5 text-base font-bold mt-0.5">{item.product_code}</div>
         </div>
       </div>
