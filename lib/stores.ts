@@ -19,7 +19,7 @@ export function monthlyInstallment(price: number, pct: number): number {
 // Отредактируйте список под свои магазины. logo — положите файл в public/stores/.
 export const STORES: StoreBrand[] = [
   { id: 'arzonchi',  name: 'ARZONCHI',   keywords: ['arzonchi', 'арзончи'],              logo: '/stores/arzonchi.png',  footer: 'Arzonchi super narx · NASIYA ISHONCH' },
-  { id: 'chinnibaza', name: 'CHINNI BAZA', keywords: ['chinni', 'чинни'],                 logo: '/stores/chinnibaza.png', footer: 'Chinni baza · Eng arzon narx' },
+  { id: 'chinnibaza', name: 'CHINNI BAZA', keywords: ['chinni', 'чинни'],                 logo: '/stores/chinni_baza.png', footer: 'Chinni baza · Eng arzon narx' },
   { id: 'engarzon',  name: 'Eng ARZON',  keywords: ['eng arzon', 'engarzon', 'енг арзон'], logo: '/stores/eng_arzoni.png',  footer: 'Eng arzon · MUDDATLIK' },
   { id: 'abusaxiy',  name: 'ABU-SAXIY',  keywords: ['abu', 'saxiy', 'абу'],               logo: '/stores/abu_saxiy.png',  footer: 'Abu-Saxiy · NASIYA' },
 ];
