@@ -795,7 +795,7 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
       </div>
 
       {/* Низ: описание + код прижаты к низу; код делит низ с рамкой ценника, левую — с описанием */}
-      <div className="flex items-end justify-between" style={{ fontFamily: 'Arial, sans-serif' }}>
+      <div className="flex items-end" style={{ fontFamily: 'Arial, sans-serif' }}>
         <div className="flex items-end">
           <div className="border-t border-r border-black px-2 py-1 text-[13px] leading-snug flex items-center justify-center text-center min-h-[46px] max-w-[320px]">
             <span className="line-clamp-2">{item.product_name}</span>
@@ -804,8 +804,8 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
             {item.product_code}
           </div>
         </div>
-        <div className="flex flex-col items-center justify-center shrink-0">
-          <BarcodeSvg value={item.barcode} format={item.format} height={30} width={1.1} margin={2} className="h-9 w-auto" />
+        <div className="ml-auto flex flex-col items-center shrink-0 pb-1" style={{ width: 160 }}>
+          <BarcodeSvg value={item.barcode} format={item.format} height={36} width={1.4} margin={2} className="w-full h-9" />
           <span className="text-[8px] text-gray-500 leading-none mt-0.5">{item.barcode}</span>
         </div>
       </div>
