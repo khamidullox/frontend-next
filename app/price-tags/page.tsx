@@ -763,7 +763,7 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
   const monthly = monthlyInstallment(item.price, pct);
 
   return (
-    <div className="tag border-[7px] border-black bg-white flex flex-col overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
+    <div className="tag border-[14px] border-black bg-white flex flex-col overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
       {/* Верхняя часть с отступами */}
       <div className="flex-1 flex flex-col px-4 pt-3 min-h-0">
         {/* Шапка: крупный логотип по центру + бейдж рассрочки в правом верхнем углу */}
