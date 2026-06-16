@@ -763,7 +763,7 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
   const monthly = monthlyInstallment(item.price, pct);
 
   return (
-    <div className="tag border-[14px] border-black bg-white flex flex-col overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
+    <div className="tag border-[11px] border-black bg-white flex flex-col overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
       {/* Верхняя часть с отступами */}
       <div className="flex-1 flex flex-col px-4 pt-3 min-h-0">
         {/* Шапка: крупный логотип по центру + бейдж рассрочки в правом верхнем углу */}
@@ -804,9 +804,9 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
             {item.product_code}
           </div>
         </div>
-        <div className="flex flex-col items-center justify-center px-3 pb-2 shrink-0">
+        <div className="flex flex-col items-end justify-center pl-2 pb-2 shrink-0">
           <BarcodeSvg value={item.barcode} format={item.format} height={30} width={1.1} margin={4} className="h-9 w-auto" />
-          <span className="text-[8px] text-gray-500 leading-none mt-0.5">{item.barcode}</span>
+          <span className="text-[8px] text-gray-500 leading-none mt-0.5 self-center">{item.barcode}</span>
         </div>
       </div>
     </div>
