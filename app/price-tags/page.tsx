@@ -37,7 +37,7 @@ export default function PriceTagsPage() {
   const [tab, setTab] = useState<Tab>('tags');
 
   // Каталог нужен только чтобы достать штрих-коды по коду товара.
-  const { data: catalog } = useCachedList('cache:products_v2', listProducts, 30 * 60 * 1000);
+  const { data: catalog } = useCachedList('cache:products_v3', listProducts, 30 * 60 * 1000);
   const barcodeByCode = useMemo(() => {
     const m = new Map<string, string[]>();
     for (const c of catalog) m.set(c.code, c.barcodes);

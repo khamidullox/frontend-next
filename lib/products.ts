@@ -65,6 +65,7 @@ export interface CatalogItem {
   producer: string;   // бренд (producer_code; названия за стеной прав Smartup)
   group: string;      // продуктовая группа (первый group_code, без префикса PRDGR:)
   barcodes: string[];
+  price: number;      // оптовая цена продажи
 }
 
 const PRODUCT_GROUP_EXPORT_ENDPOINT = '/b/anor/mxsx/mr/product_group$export';
@@ -103,19 +104,24 @@ function groupTypeName(
 // Только активные (state=A). Бренд и вид — настоящими названиями.
 export async function getProductCatalog(): Promise<CatalogItem[]> {
   return cached('product:catalog', CATALOG_TTL_MS, async () => {
-    const [data, typeName] = await Promise.all([
+    const [data, typeName, priceMap] = await Promise.all([
       smartupRequest<{ inventory?: Record<string, unknown>[] }>(INVENTORY_EXPORT_ENDPOINT, {}),
       fetchTypeNameMap(),
+      getWholesalePriceMap(),
     ]);
     return (data.inventory || [])
       .filter((i) => normalizeCode(i.state) === 'A')
-      .map((i) => ({
-        code: normalizeCode(i.code),
-        name: String(i.name ?? ''),
-        producer: groupTypeName(i, 'PRDGR:5', typeName), // бренд / торговая марка
-        group: groupTypeName(i, 'PRDGR:3', typeName),    // вид
-        barcodes: buildBarcodes(i),
-      }))
+      .map((i) => {
+        const code = normalizeCode(i.code);
+        return {
+          code,
+          name: String(i.name ?? ''),
+          producer: groupTypeName(i, 'PRDGR:5', typeName), // бренд / торговая марка
+          group: groupTypeName(i, 'PRDGR:3', typeName),    // вид
+          barcodes: buildBarcodes(i),
+          price: priceMap.get(code) || 0,
+        };
+      })
       .filter((i) => i.code)
       .sort((a, b) => a.name.localeCompare(b.name));
   });
@@ -235,9 +241,9 @@ async function getWarehouseIdCodeMap(): Promise<Map<string, string>> {
 }
 
 // Каталог из Firestore-кэша (тот же, что у /api/products), без живого Smartup.
-// Ключ v2 — после добавления названий бренда/вида (старый кэш был с кодами).
+// Ключ v3 — после добавления цены продажи в каталог.
 function getCachedCatalog(): Promise<CatalogItem[]> {
-  return getCachedList('catalog_v2', getProductCatalog, REF_TTL_MS);
+  return getCachedList('catalog_v3', getProductCatalog, REF_TTL_MS);
 }
 
 // Когда снимок остатков последний раз обновлялся (для подписи «обновлено …»).
@@ -251,7 +257,7 @@ export async function refreshStockCache(): Promise<{ balance: number; warehouses
   const [balance, warehouses] = await Promise.all([
     refreshCachedList('balance_free', fetchSlimBalance, BALANCE_CHUNK),
     refreshCachedList('warehouse_ref_v2', fetchWarehouseRef),
-    refreshCachedList('catalog_v2', getProductCatalog),
+    refreshCachedList('catalog_v3', getProductCatalog),
   ]);
   return { balance, warehouses };
 }

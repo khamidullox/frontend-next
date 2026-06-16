@@ -367,6 +367,7 @@ export interface CatalogItem {
   producer: string;
   group: string;
   barcodes: string[];
+  price: number;   // оптовая цена продажи
 }
 
 export async function listProducts(): Promise<CatalogItem[]> {

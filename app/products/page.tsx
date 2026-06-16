@@ -12,7 +12,7 @@ const PAGE_SIZE = 50;
 export default function ProductsPage() {
   const router = useRouter();
   const { data: products, loading, error } = useCachedList(
-    'cache:products_v2',
+    'cache:products_v3',
     listProducts,
     30 * 60 * 1000
   );
@@ -172,7 +172,11 @@ export default function ProductsPage() {
                       {p.barcodes.length > 0 && ` · ШК ${p.barcodes.join(', ')}`}
                     </div>
                   </div>
-                  <span className="text-blue-400 text-base">📦</span>
+                  {p.price > 0 && (
+                    <span className="text-[13px] font-semibold text-emerald-700 whitespace-nowrap">
+                      {p.price.toLocaleString('ru-RU')}
+                    </span>
+                  )}
                 </Link>
               ))}
             </div>
