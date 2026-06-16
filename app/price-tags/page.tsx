@@ -711,51 +711,89 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
   );
 }
 
-// Один ценник (2 шт. на лист A4). Логотип, бейдж рассрочки, цена, описание, код + штрих-код.
+// Логотип ARZONCHI (генерируется, если нет картинки): «ARZ◉NCHI» со стиральной машиной вместо O.
+function ArzonchiLogo({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 380 84" className={className} fill="black">
+      <g fontFamily="'Arial Black', Arial, sans-serif" fontWeight={900} fontSize={64}>
+        <text x="0" y="62">ARZ</text>
+        <text x="206" y="62">NCHI</text>
+      </g>
+      {/* «O» — стиральная машина */}
+      <rect x="146" y="6" width="62" height="12" rx="2" fill="black" />
+      <circle cx="198" cy="12" r="3.2" fill="white" />
+      <circle cx="188" cy="12" r="3.2" fill="white" />
+      <circle cx="177" cy="46" r="32" fill="black" />
+      <circle cx="177" cy="46" r="22" fill="white" />
+      <circle cx="177" cy="46" r="14" fill="none" stroke="black" strokeWidth={4} />
+    </svg>
+  );
+}
+
+// Бейдж рассрочки — синяя зубчатая звезда-печать.
+function InstallmentBadge({ monthly, months }: { monthly: number; months: number }) {
+  const N = 18;
+  const pts: string[] = [];
+  for (let i = 0; i < N * 2; i++) {
+    const r = i % 2 === 0 ? 50 : 41;
+    const a = (Math.PI * i) / N - Math.PI / 2;
+    pts.push(`${(50 + r * Math.cos(a)).toFixed(1)},${(50 + r * Math.sin(a)).toFixed(1)}`);
+  }
+  return (
+    <div className="relative w-[112px] h-[112px] flex-shrink-0 text-white">
+      <svg viewBox="0 0 100 100" className="w-full h-full"><polygon points={pts.join(' ')} fill="#1d4ed8" /></svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center leading-none px-2">
+        <div className="text-[11px] font-bold">{months} OYIGA</div>
+        <div className="text-[17px] font-black my-0.5">{monthly.toLocaleString('ru-RU')}</div>
+        <div className="text-[8px] font-semibold leading-tight">RASMIY<br />DAROMADGA</div>
+      </div>
+    </div>
+  );
+}
+
+// Ценник ARZONCHI (2 шт. на лист A4): логотип, бейдж рассрочки, название, крупная цена, описание, штрих-код.
 function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pct: number }) {
   const [logoOk, setLogoOk] = useState(true);
   const title = `${item.group} ${item.producer}`.trim() || item.product_name;
   const monthly = monthlyInstallment(item.price, pct);
 
   return (
-    <div className="tag border-2 border-black bg-white flex flex-col p-3 overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
+    <div className="tag border-[3px] border-black bg-white flex flex-col p-4 overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
       {/* Шапка: логотип + бейдж рассрочки */}
-      <div className="flex items-start justify-between">
-        {logoOk ? (
+      <div className="flex items-start justify-between gap-2">
+        {logoOk && store.logo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={store.logo} alt={store.name} onError={() => setLogoOk(false)} className="h-12 object-contain" />
+          <img src={store.logo} alt={store.name} onError={() => setLogoOk(false)} className="h-16 object-contain" />
+        ) : store.id === 'arzonchi' ? (
+          <ArzonchiLogo className="h-16 w-auto" />
         ) : (
-          <div className="text-3xl font-extrabold tracking-tight">{store.name}</div>
+          <div className="text-5xl font-black tracking-tight">{store.name}</div>
         )}
-        {monthly > 0 && (
-          <div className="text-center leading-tight">
-            <div className="text-[11px] font-bold">{INSTALLMENT.months} OYIGA</div>
-            <div className="text-xl font-extrabold">{monthly.toLocaleString('ru-RU')}</div>
-            <div className="text-[10px] font-semibold">RASMIY DAROMADGA</div>
-          </div>
-        )}
+        {monthly > 0 && <InstallmentBadge monthly={monthly} months={INSTALLMENT.months} />}
       </div>
 
       {/* Название товара */}
-      <div className="text-center text-2xl font-bold mt-2">{title}</div>
+      <div className="text-center text-3xl font-black mt-1 leading-tight">{title}</div>
 
-      {/* Цена */}
+      {/* Цена — крупная и жирная */}
       <div className="flex-1 flex items-center justify-center">
-        <div className="text-[64px] font-extrabold leading-none">{item.price.toLocaleString('ru-RU')}</div>
+        <div className="font-black tracking-tighter leading-none" style={{ fontSize: '96px' }}>
+          {item.price.toLocaleString('ru-RU')}
+        </div>
       </div>
 
-      {/* Низ: описание (слева) + код и штрих-код (справа) */}
-      <div className="flex items-end gap-2">
-        <div className="flex-1 border border-black px-2 py-1 text-[12px] leading-tight min-h-[40px]">
+      {/* Низ: описание (слева) + штрих-код (справа) */}
+      <div className="flex items-end justify-between gap-3">
+        <div className="flex-1 border-2 border-black rounded px-2 py-1 text-[13px] font-semibold leading-tight max-w-[58%] min-h-[42px]">
           {item.product_name}
         </div>
-        <div className="flex flex-col items-end">
-          <BarcodeSvg value={item.barcode} format={item.format} height={34} width={1.4} className="h-9 w-auto" />
-          <div className="border border-black px-3 py-0.5 text-base font-bold mt-0.5">{item.product_code}</div>
+        <div className="flex flex-col items-center">
+          <BarcodeSvg value={item.barcode} format={item.format} height={40} width={1.6} margin={6} className="h-12 w-auto" />
+          <div className="text-[12px] font-bold font-mono mt-0.5">{item.barcode}</div>
         </div>
       </div>
 
-      <div className="text-center text-[11px] text-gray-600 mt-1">{store.footer}</div>
+      <div className="text-center text-[11px] font-semibold text-gray-700 mt-1">{store.footer}</div>
     </div>
   );
 }
