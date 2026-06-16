@@ -794,17 +794,17 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
         </div>
       </div>
 
-      {/* Низ: капсула [описание | код] + штрих-код справа */}
-      <div className="flex items-center gap-3 px-3 py-2">
-        <div className="flex items-stretch border border-black flex-1">
-          <div className="flex-1 px-2 py-1 text-[13px] leading-snug flex items-center justify-center text-center min-h-[40px]">
+      {/* Низ: капсула [описание | код] прижата к левому-нижнему углу + штрих-код справа */}
+      <div className="flex items-end justify-between">
+        <div className="flex items-end border-t border-r border-black">
+          <div className="px-2 py-1 text-[13px] leading-snug flex items-center justify-center text-center min-h-[46px] max-w-[320px]">
             <span className="line-clamp-2">{item.product_name}</span>
           </div>
-          <div className="border-l border-black px-3 flex items-center justify-center text-[13px] min-w-[88px]">
+          <div className="border-l border-t border-black px-3 flex items-center justify-center text-[13px] min-w-[64px] min-h-[32px]">
             {item.product_code}
           </div>
         </div>
-        <div className="flex flex-col items-center justify-center shrink-0">
+        <div className="flex flex-col items-center justify-center px-3 pb-2 shrink-0">
           <BarcodeSvg value={item.barcode} format={item.format} height={30} width={1.1} margin={4} className="h-9 w-auto" />
           <span className="text-[8px] text-gray-500 leading-none mt-0.5">{item.barcode}</span>
         </div>
