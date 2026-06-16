@@ -794,17 +794,17 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
         </div>
       </div>
 
-      {/* Низ: описание + код прижаты к низу; код делит низ с рамкой ценника, левую — с описанием */}
+      {/* Низ: описание + код (одинаковая фикс. высота) прижаты к низу; штрих-код справа с отступом */}
       <div className="flex items-end" style={{ fontFamily: 'Arial, sans-serif' }}>
-        <div className="flex items-end">
-          <div className="border-t border-r border-black px-2 py-1 text-[13px] leading-snug flex items-center justify-center text-center min-h-[46px] max-w-[320px]">
+        <div className="flex items-stretch">
+          <div className="border-t border-r border-black px-2 text-[12px] leading-tight flex items-center justify-center text-center w-[300px] h-[46px]">
             <span className="line-clamp-2">{item.product_name}</span>
           </div>
-          <div className="border-t border-r border-black px-3 flex items-center justify-center text-[13px] min-w-[64px] min-h-[32px]">
+          <div className="border-t border-r border-black px-2 flex items-center justify-center text-[13px] w-[68px] h-[46px]">
             {item.product_code}
           </div>
         </div>
-        <div className="ml-auto flex flex-col items-center shrink-0 pb-1" style={{ width: 160 }}>
+        <div className="ml-auto mr-1 flex flex-col items-center shrink-0 pb-1" style={{ width: 158 }}>
           <BarcodeSvg value={item.barcode} format={item.format} height={36} width={1.4} margin={2} className="w-full h-9" />
           <span className="text-[8px] text-gray-500 leading-none mt-0.5">{item.barcode}</span>
         </div>
