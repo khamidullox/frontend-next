@@ -206,11 +206,11 @@ export default function WarehouseDetailPage() {
                   {pageRows.map(r => (
                     <div
                       key={r.product_code}
-                      className="grid grid-cols-[minmax(0,1fr)_48px] sm:grid-cols-[minmax(0,1fr)_58px_84px_72px_48px] gap-2 items-center
+                      className="grid grid-cols-[minmax(0,1fr)_48px] sm:grid-cols-[minmax(0,1fr)_58px_84px_72px_48px] gap-2 items-start
                                  px-2 py-2 text-sm border-b border-gray-100 last:border-0"
                     >
                       <span className="min-w-0">
-                        <span className="block truncate">{r.product_name || '—'}</span>
+                        <span className="block break-words leading-snug">{r.product_name || '—'}</span>
                         <span className="block text-[11px] text-gray-400 truncate">
                           Код {r.product_code}
                           {r.producer && ` · ${r.producer}`}
