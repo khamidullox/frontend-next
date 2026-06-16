@@ -763,40 +763,43 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
   const monthly = monthlyInstallment(item.price, pct);
 
   return (
-    <div className="tag border-4 border-black bg-white flex flex-col p-4 overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
-      {/* Шапка: крупный логотип по центру + бейдж рассрочки в правом верхнем углу */}
-      <div className="relative flex items-center justify-center min-h-[88px]">
-        {logoOk && store.logo ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={store.logo} alt={store.name} onError={() => setLogoOk(false)} className="h-24 w-auto max-w-[80%] object-contain" />
-        ) : store.id === 'arzonchi' ? (
-          <ArzonchiLogo className="h-24 w-auto" />
-        ) : (
-          <div className="text-6xl font-black tracking-tight">{store.name}</div>
-        )}
-        {monthly > 0 && (
-          <div className="absolute top-0 right-0">
-            <InstallmentBadge monthly={monthly} months={INSTALLMENT.months} />
+    <div className="tag border-[7px] border-black bg-white flex flex-col overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
+      {/* Верхняя часть с отступами */}
+      <div className="flex-1 flex flex-col px-4 pt-3 min-h-0">
+        {/* Шапка: крупный логотип по центру + бейдж рассрочки в правом верхнем углу */}
+        <div className="relative flex items-center justify-center min-h-[88px]">
+          {logoOk && store.logo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={store.logo} alt={store.name} onError={() => setLogoOk(false)} className="h-24 w-auto max-w-[80%] object-contain" />
+          ) : store.id === 'arzonchi' ? (
+            <ArzonchiLogo className="h-24 w-auto" />
+          ) : (
+            <div className="text-6xl font-black tracking-tight">{store.name}</div>
+          )}
+          {monthly > 0 && (
+            <div className="absolute top-0 right-0">
+              <InstallmentBadge monthly={monthly} months={INSTALLMENT.months} />
+            </div>
+          )}
+        </div>
+
+        {/* Название товара */}
+        <div className="text-center text-3xl font-black mt-1 leading-tight">{title}</div>
+
+        {/* Цена — крупная и жирная */}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="font-black tracking-tighter leading-none" style={{ fontSize: '96px' }}>
+            {item.price.toLocaleString('ru-RU')}
           </div>
-        )}
-      </div>
-
-      {/* Название товара */}
-      <div className="text-center text-3xl font-black mt-1 leading-tight">{title}</div>
-
-      {/* Цена — крупная и жирная */}
-      <div className="flex-1 flex items-center justify-center">
-        <div className="font-black tracking-tighter leading-none" style={{ fontSize: '96px' }}>
-          {item.price.toLocaleString('ru-RU')}
         </div>
       </div>
 
-      {/* Низ: описание (слева) + код товара (справа) */}
-      <div className="flex items-stretch gap-3">
-        <div className="flex-1 border-2 border-black px-2 py-1 text-[13px] font-semibold leading-tight flex items-center min-h-[46px]">
+      {/* Низ: описание + код — вплотную к рамке (рамка ценника = их левая/нижняя/правая стороны) */}
+      <div className="flex items-stretch">
+        <div className="flex-1 border-t-[7px] border-r-[7px] border-black px-2 py-1.5 text-[16px] font-semibold leading-tight flex items-center min-h-[48px]">
           {item.product_name}
         </div>
-        <div className="border-2 border-black px-4 flex items-center justify-center text-2xl font-black min-w-[96px]">
+        <div className="border-t-[7px] border-black px-4 flex items-center justify-center text-[16px] font-black min-w-[90px]">
           {item.product_code}
         </div>
       </div>
