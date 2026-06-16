@@ -743,12 +743,14 @@ function InstallmentBadge({ monthly, months }: { monthly: number; months: number
     pts.push(`${(50 + r * Math.cos(a)).toFixed(1)},${(50 + r * Math.sin(a)).toFixed(1)}`);
   }
   return (
-    <div className="relative w-[112px] h-[112px] flex-shrink-0 text-white">
-      <svg viewBox="0 0 100 100" className="w-full h-full"><polygon points={pts.join(' ')} fill="#1d4ed8" /></svg>
+    <div className="relative w-[120px] h-[120px] flex-shrink-0 text-black">
+      <svg viewBox="0 0 100 100" className="w-full h-full">
+        <polygon points={pts.join(' ')} fill="#1ec8c8" stroke="#0e9a9a" strokeWidth="1.5" />
+      </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center leading-none px-2">
-        <div className="text-[11px] font-bold">{months} OYIGA</div>
-        <div className="text-[17px] font-black my-0.5">{monthly.toLocaleString('ru-RU')}</div>
-        <div className="text-[8px] font-semibold leading-tight">RASMIY<br />DAROMADGA</div>
+        <div className="text-[12px] font-extrabold">{months} OYIGA</div>
+        <div className="text-[19px] font-black my-0.5">{monthly.toLocaleString('ru-RU')}</div>
+        <div className="text-[9px] font-bold leading-tight">RASMIY<br />DAROMADGA</div>
       </div>
     </div>
   );
@@ -762,17 +764,21 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
 
   return (
     <div className="tag border-4 border-black bg-white flex flex-col p-4 overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
-      {/* Шапка: логотип + бейдж рассрочки */}
-      <div className="flex items-start justify-between gap-2">
+      {/* Шапка: крупный логотип по центру + бейдж рассрочки в правом верхнем углу */}
+      <div className="relative flex items-center justify-center min-h-[88px]">
         {logoOk && store.logo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={store.logo} alt={store.name} onError={() => setLogoOk(false)} className="h-16 object-contain" />
+          <img src={store.logo} alt={store.name} onError={() => setLogoOk(false)} className="h-24 w-auto max-w-[80%] object-contain" />
         ) : store.id === 'arzonchi' ? (
-          <ArzonchiLogo className="h-16 w-auto" />
+          <ArzonchiLogo className="h-24 w-auto" />
         ) : (
-          <div className="text-5xl font-black tracking-tight">{store.name}</div>
+          <div className="text-6xl font-black tracking-tight">{store.name}</div>
         )}
-        {monthly > 0 && <InstallmentBadge monthly={monthly} months={INSTALLMENT.months} />}
+        {monthly > 0 && (
+          <div className="absolute top-0 right-0">
+            <InstallmentBadge monthly={monthly} months={INSTALLMENT.months} />
+          </div>
+        )}
       </div>
 
       {/* Название товара */}
