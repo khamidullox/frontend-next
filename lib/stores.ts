@@ -8,13 +8,12 @@ export interface StoreBrand {
   footer: string;      // Слоган внизу ценника
 }
 
-// Параметры рассрочки: месячный платёж ≈ цена × factor / months.
-// Подбирали по образцам (3 015 000 → 389 438 ≈ ×1.55 / 12). Меняется здесь.
-export const INSTALLMENT = { factor: 1.55, months: 12 };
+// Параметры рассрочки: месячный платёж = цена × (1 + процент/100) / months.
+export const INSTALLMENT = { months: 12, defaultPct: 38 };
 
-export function monthlyInstallment(price: number): number {
+export function monthlyInstallment(price: number, pct: number): number {
   if (!price || price <= 0) return 0;
-  return Math.round((price * INSTALLMENT.factor) / INSTALLMENT.months);
+  return Math.round((price * (1 + pct / 100)) / INSTALLMENT.months);
 }
 
 // Отредактируйте список под свои магазины. logo — положите файл в public/stores/.

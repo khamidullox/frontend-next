@@ -88,6 +88,11 @@ export default function PriceTagsPage() {
     ? { label: 'Свой', w: `${customW}mm`, h: `${customH}mm` }
     : BC_SIZES[bcSize];
 
+  // Процент рассрочки на ценнике (38/40/55/свой)
+  const [pctMode, setPctMode] = useState<string>(String(INSTALLMENT.defaultPct));
+  const [customPct, setCustomPct] = useState(INSTALLMENT.defaultPct);
+  const installmentPct = pctMode === 'custom' ? customPct : Number(pctMode);
+
   // Шаблон магазина: по умолчанию подбираем по названию склада. Доступны все шаблоны.
   const [storeId, setStoreId] = useState<string>(STORES[0].id);
   useEffect(() => {
@@ -293,6 +298,25 @@ export default function PriceTagsPage() {
               >
                 {STORES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
+              <label className="block text-xs font-semibold text-gray-500 mb-1 mt-2">Рассрочка, %</label>
+              <select
+                value={pctMode}
+                onChange={e => setPctMode(e.target.value)}
+                className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400"
+              >
+                <option value="38">38%</option>
+                <option value="40">40%</option>
+                <option value="55">55%</option>
+                <option value="custom">Свой…</option>
+              </select>
+              {pctMode === 'custom' && (
+                <input
+                  type="number" min={0} max={300} value={customPct}
+                  onChange={e => setCustomPct(Math.max(0, Number(e.target.value) || 0))}
+                  title="Процент рассрочки"
+                  className="w-full mt-2 border-2 border-gray-200 rounded-lg px-3 py-1.5 text-sm text-right outline-none focus:border-blue-400"
+                />
+              )}
             </div>
           ) : (
             <div className="flex-1">
@@ -545,7 +569,7 @@ export default function PriceTagsPage() {
       {/* ── Область печати ── */}
       {printItems.length > 0 && tab === 'tags' && (
         <div className="flex flex-col items-center gap-2">
-          {visibleItems.map((it, idx) => <PriceTag key={idx} item={it} store={store} />)}
+          {visibleItems.map((it, idx) => <PriceTag key={idx} item={it} store={store} pct={installmentPct} />)}
         </div>
       )}
 
@@ -688,10 +712,10 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
 }
 
 // Один ценник (2 шт. на лист A4). Логотип, бейдж рассрочки, цена, описание, код + штрих-код.
-function PriceTag({ item, store }: { item: PickedRow; store: StoreBrand }) {
+function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pct: number }) {
   const [logoOk, setLogoOk] = useState(true);
   const title = `${item.group} ${item.producer}`.trim() || item.product_name;
-  const monthly = monthlyInstallment(item.price);
+  const monthly = monthlyInstallment(item.price, pct);
 
   return (
     <div className="tag border-2 border-black bg-white flex flex-col p-3 overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
