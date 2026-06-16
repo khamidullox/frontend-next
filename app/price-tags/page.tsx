@@ -794,13 +794,13 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
         </div>
       </div>
 
-      {/* Низ: описание (прижато к низу-лево) + отдельный бокс кода + штрих-код справа */}
+      {/* Низ: описание + код прижаты к низу; код делит низ с рамкой ценника, левую — с описанием */}
       <div className="flex items-end justify-between" style={{ fontFamily: 'Arial, sans-serif' }}>
-        <div className="flex items-end gap-2">
+        <div className="flex items-end">
           <div className="border-t border-r border-black px-2 py-1 text-[13px] leading-snug flex items-center justify-center text-center min-h-[46px] max-w-[320px]">
             <span className="line-clamp-2">{item.product_name}</span>
           </div>
-          <div className="border border-black px-3 flex items-center justify-center text-[13px] min-w-[64px] min-h-[32px] mb-1">
+          <div className="border-t border-r border-black px-3 flex items-center justify-center text-[13px] min-w-[64px] min-h-[32px]">
             {item.product_code}
           </div>
         </div>
