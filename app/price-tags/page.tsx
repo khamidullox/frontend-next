@@ -761,7 +761,7 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
   const monthly = monthlyInstallment(item.price, pct);
 
   return (
-    <div className="tag border-[3px] border-black bg-white flex flex-col p-4 overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
+    <div className="tag border-4 border-black bg-white flex flex-col p-4 overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
       {/* Шапка: логотип + бейдж рассрочки */}
       <div className="flex items-start justify-between gap-2">
         {logoOk && store.logo ? (
@@ -785,18 +785,15 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
         </div>
       </div>
 
-      {/* Низ: описание (слева) + штрих-код (справа) */}
-      <div className="flex items-end justify-between gap-3">
-        <div className="flex-1 border-2 border-black rounded px-2 py-1 text-[13px] font-semibold leading-tight max-w-[58%] min-h-[42px]">
+      {/* Низ: описание (слева) + код товара (справа) */}
+      <div className="flex items-stretch gap-3">
+        <div className="flex-1 border-2 border-black px-2 py-1 text-[13px] font-semibold leading-tight flex items-center min-h-[46px]">
           {item.product_name}
         </div>
-        <div className="flex flex-col items-center">
-          <BarcodeSvg value={item.barcode} format={item.format} height={40} width={1.6} margin={6} className="h-12 w-auto" />
-          <div className="text-[12px] font-bold font-mono mt-0.5">{item.barcode}</div>
+        <div className="border-2 border-black px-4 flex items-center justify-center text-2xl font-black min-w-[96px]">
+          {item.product_code}
         </div>
       </div>
-
-      <div className="text-center text-[11px] font-semibold text-gray-700 mt-1">{store.footer}</div>
     </div>
   );
 }
