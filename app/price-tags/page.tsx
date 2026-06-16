@@ -794,12 +794,15 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
         </div>
       </div>
 
-      {/* Низ: описание + код — вплотную к рамке (рамка ценника = их левая/нижняя/правая стороны) */}
-      <div className="flex items-stretch">
-        <div className="flex-1 border-t-[7px] border-r-[7px] border-black px-2 py-1.5 text-[16px] font-semibold leading-tight flex items-center min-h-[48px]">
-          {item.product_name}
+      {/* Низ: ШК (слева) + описание (2 строки) + код — тонкие рамки, текст обычный, вплотную к рамке */}
+      <div className="flex items-stretch border-t border-black">
+        <div className="flex items-center justify-center px-2 py-1">
+          <BarcodeSvg value={item.barcode} format={item.format} height={30} width={1.2} margin={4} className="h-9 w-auto" />
         </div>
-        <div className="border-t-[7px] border-black px-4 flex items-center justify-center text-[16px] font-black min-w-[90px]">
+        <div className="flex-1 border-l border-black px-2 py-1 text-[16px] leading-tight flex items-center min-h-[44px]">
+          <span className="line-clamp-2">{item.product_name}</span>
+        </div>
+        <div className="border-l border-black px-3 flex items-center justify-center text-[16px] min-w-[68px]">
           {item.product_code}
         </div>
       </div>
