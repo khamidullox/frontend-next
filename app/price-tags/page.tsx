@@ -794,16 +794,19 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
         </div>
       </div>
 
-      {/* Низ: описание + код (соединены рамкой, прижаты к краю) + ШК у правого края */}
-      <div className="flex items-stretch border-t border-black">
-        <div className="flex-1 border-r border-black px-2 py-1 text-[13px] leading-snug flex items-center min-h-[40px]">
-          <span className="line-clamp-2">{item.product_name}</span>
+      {/* Низ: капсула [описание | код] + штрих-код справа */}
+      <div className="flex items-center gap-3 px-3 py-2">
+        <div className="flex items-stretch border border-black flex-1">
+          <div className="flex-1 px-2 py-1 text-[13px] leading-snug flex items-center justify-center text-center min-h-[40px]">
+            <span className="line-clamp-2">{item.product_name}</span>
+          </div>
+          <div className="border-l border-black px-3 flex items-center justify-center text-[13px] min-w-[88px]">
+            {item.product_code}
+          </div>
         </div>
-        <div className="border-r border-black px-3 flex items-center justify-center text-[13px] min-w-[64px]">
-          {item.product_code}
-        </div>
-        <div className="flex items-center justify-center px-2">
-          <BarcodeSvg value={item.barcode} format={item.format} height={28} width={1.1} margin={4} className="h-8 w-auto" />
+        <div className="flex flex-col items-center justify-center shrink-0">
+          <BarcodeSvg value={item.barcode} format={item.format} height={30} width={1.1} margin={4} className="h-9 w-auto" />
+          <span className="text-[8px] text-gray-500 leading-none mt-0.5">{item.barcode}</span>
         </div>
       </div>
     </div>
