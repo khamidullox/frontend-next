@@ -796,11 +796,11 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
 
       {/* Низ: капсула [описание | код] прижата к левому-нижнему углу + штрих-код справа */}
       <div className="flex items-end justify-between">
-        <div className="flex items-end border-t border-r border-black">
+        <div className="flex items-stretch border-t border-r border-black">
           <div className="px-2 py-1 text-[13px] leading-snug flex items-center justify-center text-center min-h-[46px] max-w-[320px]">
             <span className="line-clamp-2">{item.product_name}</span>
           </div>
-          <div className="border-l border-t border-black px-3 flex items-center justify-center text-[13px] min-w-[64px] min-h-[32px]">
+          <div className="border-l border-black px-3 flex items-center justify-center text-[13px] min-w-[64px]">
             {item.product_code}
           </div>
         </div>
