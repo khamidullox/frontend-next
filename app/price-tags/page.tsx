@@ -804,9 +804,9 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
             {item.product_code}
           </div>
         </div>
-        <div className="flex flex-col items-end justify-center pl-2 pb-2 shrink-0">
-          <BarcodeSvg value={item.barcode} format={item.format} height={30} width={1.1} margin={4} className="h-9 w-auto" />
-          <span className="text-[8px] text-gray-500 leading-none mt-0.5 self-center">{item.barcode}</span>
+        <div className="flex flex-col items-center justify-center shrink-0">
+          <BarcodeSvg value={item.barcode} format={item.format} height={30} width={1.1} margin={2} className="h-9 w-auto" />
+          <span className="text-[8px] text-gray-500 leading-none mt-0.5">{item.barcode}</span>
         </div>
       </div>
     </div>
