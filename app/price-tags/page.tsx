@@ -711,21 +711,24 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
   );
 }
 
-// Логотип ARZONCHI (генерируется, если нет картинки): «ARZ◉NCHI» со стиральной машиной вместо O.
+// Логотип ARZONCHI (генерируется, если нет картинки arzonchi.png): «ARZ[🧺]NCHI».
 function ArzonchiLogo({ className }: { className?: string }) {
+  const g = '#6b7280'; // серый, как на логотипе
   return (
-    <svg viewBox="0 0 380 84" className={className} fill="black">
-      <g fontFamily="'Arial Black', Arial, sans-serif" fontWeight={900} fontSize={64}>
-        <text x="0" y="62">ARZ</text>
-        <text x="206" y="62">NCHI</text>
+    <svg viewBox="0 0 200 120" className={className}>
+      <g fontFamily="'Arial Black', Arial, sans-serif" fontWeight={900} fontSize={54} fill="black">
+        <text x="2" y="80">ARZ</text>
+        <text x="128" y="80">NCHI</text>
       </g>
       {/* «O» — стиральная машина */}
-      <rect x="146" y="6" width="62" height="12" rx="2" fill="black" />
-      <circle cx="198" cy="12" r="3.2" fill="white" />
-      <circle cx="188" cy="12" r="3.2" fill="white" />
-      <circle cx="177" cy="46" r="32" fill="black" />
-      <circle cx="177" cy="46" r="22" fill="white" />
-      <circle cx="177" cy="46" r="14" fill="none" stroke="black" strokeWidth={4} />
+      <rect x="73" y="30" width="54" height="74" rx="7" fill="white" stroke={g} strokeWidth="5" />
+      <line x1="73" y1="52" x2="127" y2="52" stroke={g} strokeWidth="5" />
+      <rect x="80" y="39" width="22" height="5" rx="2.5" fill={g} />
+      <circle cx="111" cy="41.5" r="2.6" fill={g} />
+      <circle cx="119" cy="41.5" r="2.6" fill={g} />
+      <circle cx="100" cy="78" r="20" fill="white" stroke={g} strokeWidth="5" />
+      <circle cx="100" cy="78" r="13" fill="white" stroke={g} strokeWidth="3.5" />
+      <path d="M93 86 a9 9 0 0 0 9 4" fill="none" stroke={g} strokeWidth="3.5" strokeLinecap="round" />
     </svg>
   );
 }
