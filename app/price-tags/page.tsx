@@ -794,7 +794,7 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
             const s = item.price.toLocaleString('ru-RU');
             const fs = Math.min(210, Math.floor(700 / Math.max(1, s.length * 0.5)));
             return (
-              <div className="leading-none whitespace-nowrap font-bold" style={{ fontFamily: 'var(--font-fjalla), sans-serif', fontSize: `${fs}px`, WebkitTextStroke: '2px black' }}>
+              <div className="leading-none whitespace-nowrap font-bold text-black" style={{ fontFamily: 'var(--font-fjalla), sans-serif', fontSize: `${fs}px`, color: '#000', WebkitTextStroke: '2px #000', paintOrder: 'stroke fill' }}>
                 {s}
               </div>
             );
