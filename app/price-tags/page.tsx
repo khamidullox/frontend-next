@@ -800,7 +800,7 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
           <div className="border-t border-r border-black px-2 text-[12px] leading-tight flex items-center justify-center text-center w-[300px] h-[46px]">
             <span className="line-clamp-2">{item.product_name}</span>
           </div>
-          <div className="border-t border-r border-black px-2 flex items-center justify-center text-[13px] w-[68px] h-[44px]">
+          <div className="border-t border-r border-black px-2 flex items-center justify-center text-[13px] w-[68px] h-[39px]">
             {item.product_code}
           </div>
         </div>
