@@ -769,14 +769,14 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
       {/* Верхняя часть с отступами */}
       <div className="flex-1 flex flex-col px-4 pt-3 min-h-0">
         {/* Шапка: крупный логотип по центру + бейдж рассрочки в правом верхнем углу */}
-        <div className="relative flex items-center justify-center min-h-[130px]">
+        <div className="relative flex items-center justify-center min-h-[170px]">
           {logoOk && store.logo ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={store.logo} alt={store.name} onError={() => setLogoOk(false)} className="h-32 w-auto max-w-[80%] object-contain" />
+            <img src={store.logo} alt={store.name} onError={() => setLogoOk(false)} className="h-44 w-auto max-w-[90%] object-contain" />
           ) : store.id === 'arzonchi' ? (
-            <ArzonchiLogo className="h-32 w-auto" />
+            <ArzonchiLogo className="h-44 w-auto" />
           ) : (
-            <div className="text-7xl font-black tracking-tight">{store.name}</div>
+            <div className="text-8xl font-black tracking-tight">{store.name}</div>
           )}
           {monthly > 0 && (
             <div className="absolute top-0 right-0">
