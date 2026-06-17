@@ -22,6 +22,11 @@ const LINKS: NavLink[] = [
   { href: '/users', label: '👤 Пользователи', min: 'admin' },
 ];
 
+// Водитель — особая роль: видит только свои доставки.
+const DRIVER_LINKS: NavLink[] = [
+  { href: '/logistics/my', label: '🚚 Мои доставки', min: 'driver' },
+];
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -35,7 +40,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const rank = session ? ROLE_RANK[session.role] : 0;
-  const links = LINKS.filter((l) => rank >= ROLE_RANK[l.min]);
+  const links = session?.role === 'driver'
+    ? DRIVER_LINKS
+    : LINKS.filter((l) => rank >= ROLE_RANK[l.min]);
 
   function isActive(href: string) {
     if (href === '/') return pathname === '/' || pathname.startsWith('/session');

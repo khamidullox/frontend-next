@@ -2,10 +2,10 @@
 const API_BASE = '/api/invoice-check';
 
 // ─── Авторизация ─────────────────────────────────────
-export type Role = 'worker' | 'manager' | 'admin';
-export const ROLE_RANK: Record<Role, number> = { worker: 1, manager: 2, admin: 3 };
+export type Role = 'driver' | 'worker' | 'manager' | 'admin';
+export const ROLE_RANK: Record<Role, number> = { driver: 1, worker: 1, manager: 2, admin: 3 };
 export const ROLE_LABEL: Record<Role, string> = {
-  worker: 'Магазин', manager: 'Менеджер', admin: 'Админ',
+  driver: 'Водитель', worker: 'Магазин', manager: 'Менеджер', admin: 'Админ',
 };
 
 export interface UserSession {
@@ -55,6 +55,8 @@ export interface UserInfo {
   role: Role;
   created_at: string;
   warehouses: string[];
+  car_number: string;
+  transport: string;
 }
 
 export async function listUsers(): Promise<UserInfo[]> {
@@ -66,6 +68,7 @@ export async function listUsers(): Promise<UserInfo[]> {
 
 export async function createUser(input: {
   username: string; name: string; role: Role; password: string; warehouses?: string[];
+  car_number?: string; transport?: string;
 }): Promise<void> {
   const res = await fetch('/api/users', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -455,6 +458,90 @@ export interface SmartupLimit {
 
 export async function getSmartupLimits(): Promise<SmartupLimit[]> {
   const res = await fetch('/api/smartup-limits', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
+// ─── Логистика: доставки ─────────────────────────────
+
+export type DeliveryStatus = 'new' | 'assigned' | 'on_way' | 'delivered' | 'returned';
+
+export const DELIVERY_STATUS_LABEL: Record<DeliveryStatus, string> = {
+  new: 'Новый',
+  assigned: 'Назначен',
+  on_way: 'В пути',
+  delivered: 'Доставлено',
+  returned: 'Возврат',
+};
+
+export type DeliverySource = 'document' | 'session' | 'manual';
+
+export interface Delivery {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  created_by: string;
+  source: DeliverySource;
+  doc_type: DocType | null;
+  doc_id: string | null;
+  doc_number: string | null;
+  client_name: string;
+  address: string;
+  note: string;
+  driver_username: string | null;
+  driver_name: string | null;
+  car_number: string | null;
+  transport: string | null;
+  status: DeliveryStatus;
+  history: { at: string; status: DeliveryStatus; by: string }[];
+}
+
+export async function listDeliveries(): Promise<Delivery[]> {
+  const res = await fetch('/api/deliveries', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
+export async function createDelivery(input: {
+  query?: string;
+  session_id?: string;
+  client_name?: string;
+  address?: string;
+  note?: string;
+  driver_username?: string;
+}): Promise<Delivery> {
+  const res = await fetch('/api/deliveries', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка создания доставки');
+  return data.data as Delivery;
+}
+
+export async function updateDelivery(
+  id: string,
+  patch: { status?: DeliveryStatus; driver_username?: string | null; client_name?: string; address?: string; note?: string }
+): Promise<Delivery> {
+  const res = await fetch(`/api/deliveries/${encodeURIComponent(id)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка изменения доставки');
+  return data.data as Delivery;
+}
+
+export async function deleteDeliveryApi(id: string): Promise<void> {
+  const res = await fetch(`/api/deliveries/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка удаления');
+}
+
+export async function listDrivers(): Promise<UserInfo[]> {
+  const res = await fetch('/api/drivers', { cache: 'no-store' });
   if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
   const data = await res.json();
   return data.data || [];

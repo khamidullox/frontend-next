@@ -2,9 +2,12 @@ import { cookies } from 'next/headers';
 import crypto from 'crypto';
 
 // ─── Роли ────────────────────────────────────────────────────────────────────
-export type Role = 'worker' | 'manager' | 'admin';
-export const ROLE_RANK: Record<Role, number> = { worker: 1, manager: 2, admin: 3 };
+export type Role = 'driver' | 'worker' | 'manager' | 'admin';
+// «Водитель» — особая роль вне управленческой лестницы: у него ранг 1 (как у
+// магазина для requireRole), но в навигации он видит только свои доставки.
+export const ROLE_RANK: Record<Role, number> = { driver: 1, worker: 1, manager: 2, admin: 3 };
 export const ROLE_LABEL: Record<Role, string> = {
+  driver: 'Водитель',
   worker: 'Магазин',
   manager: 'Менеджер',
   admin: 'Админ',

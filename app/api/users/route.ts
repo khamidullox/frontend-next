@@ -13,12 +13,16 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   return withRole('admin', async () => {
-    const { username, name, role, password } = await request.json().catch(() => ({}));
+    const { username, name, role, password, warehouses, car_number, transport } =
+      await request.json().catch(() => ({}));
     const res = await createUser({
       username: String(username || ''),
       name: String(name || ''),
       role: role as Role,
       password: String(password || ''),
+      warehouses,
+      car_number: car_number === undefined ? undefined : String(car_number),
+      transport: transport === undefined ? undefined : String(transport),
     });
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
     return Response.json({ ok: true });

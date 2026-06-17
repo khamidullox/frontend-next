@@ -40,6 +40,10 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     if (loading) return;
     if (!session && pathname !== '/login') router.replace('/login');
     if (session && pathname === '/login') router.replace('/');
+    // Водитель работает только в своём разделе — уводим его со всех остальных страниц.
+    if (session?.role === 'driver' && pathname !== '/login' && !pathname.startsWith('/logistics/my')) {
+      router.replace('/logistics/my');
+    }
   }, [loading, session, pathname, router]);
 
   if (loading) {

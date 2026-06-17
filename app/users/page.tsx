@@ -61,6 +61,7 @@ function parseRole(v: string): Role {
   const s = v.trim().toLowerCase();
   if (s.startsWith('адм') || s === 'admin') return 'admin';
   if (s.startsWith('менедж') || s === 'manager') return 'manager';
+  if (s.startsWith('водит') || s === 'driver') return 'driver';
   return 'worker';
 }
 
@@ -81,6 +82,8 @@ function UsersContent() {
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('worker');
   const [password, setPassword] = useState('');
+  const [carNumber, setCarNumber] = useState('');
+  const [transport, setTransport] = useState('');
   const [selectedWh, setSelectedWh] = useState<string[]>([]);
   const [whList, setWhList] = useState<WarehouseSummary[]>([]);
   const [busy, setBusy] = useState(false);
@@ -108,8 +111,14 @@ function UsersContent() {
     setBusy(true);
     setError('');
     try {
-      await createUser({ username: username.trim(), name: name.trim(), role, password, warehouses: selectedWh });
+      await createUser({
+        username: username.trim(), name: name.trim(), role, password,
+        warehouses: selectedWh,
+        car_number: role === 'driver' ? carNumber.trim() : undefined,
+        transport: role === 'driver' ? transport.trim() : undefined,
+      });
       setUsername(''); setName(''); setPassword(''); setRole('worker'); setSelectedWh([]);
+      setCarNumber(''); setTransport('');
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -238,6 +247,7 @@ function UsersContent() {
           <select value={role} onChange={(e) => setRole(e.target.value as Role)}
             className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
             <option value="worker">Магазин</option>
+            <option value="driver">Водитель</option>
             <option value="manager">Менеджер</option>
             <option value="admin">Админ</option>
           </select>
@@ -246,8 +256,20 @@ function UsersContent() {
             className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
         </div>
 
+        {/* Данные водителя */}
+        {role === 'driver' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input value={carNumber} onChange={(e) => setCarNumber(e.target.value)}
+              placeholder="Номер машины (напр. 01A123BC)"
+              className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            <input value={transport} onChange={(e) => setTransport(e.target.value)}
+              placeholder="Транспорт (Газель, Спринтер…)"
+              className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          </div>
+        )}
+
         {/* Прикреплённые склады */}
-        {whList.length > 0 && (
+        {role !== 'driver' && whList.length > 0 && (
           <div className="mt-1">
             <div className="text-xs text-gray-500 mb-1">Склады (пусто = все):</div>
             <div className="flex flex-wrap gap-1.5">
@@ -288,10 +310,20 @@ function UsersContent() {
                 <div className="font-medium text-sm">{u.name} <span className="text-gray-400">@{u.username}</span></div>
                 <div className="text-xs text-gray-400">
                   {ROLE_LABEL[u.role]}
-                  {' · '}
-                  <span className="text-teal-600">
-                    {u.warehouses.length ? `Склады: ${u.warehouses.join(', ')}` : 'Склады: все'}
-                  </span>
+                  {u.role === 'driver' ? (
+                    (u.car_number || u.transport) && (
+                      <span className="text-teal-600">
+                        {' · 🚗 '}{[u.car_number, u.transport].filter(Boolean).join(' · ')}
+                      </span>
+                    )
+                  ) : (
+                    <>
+                      {' · '}
+                      <span className="text-teal-600">
+                        {u.warehouses.length ? `Склады: ${u.warehouses.join(', ')}` : 'Склады: все'}
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
               <button onClick={() => editWh(u)}
