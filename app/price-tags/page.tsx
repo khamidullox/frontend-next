@@ -745,7 +745,7 @@ function InstallmentBadge({ monthly, months }: { monthly: number; months: number
   return (
     <div className="relative w-[120px] h-[120px] flex-shrink-0 text-black">
       <svg viewBox="0 0 100 100" className="w-full h-full">
-        <polygon points={pts.join(' ')} fill="#1ec8c8" stroke="#0e9a9a" strokeWidth="1.5" />
+        <polygon points={pts.join(' ')} fill="#7fdede" stroke="#3bc0c0" strokeWidth="1.5" />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center leading-none px-2">
         <div className="text-[12px] font-extrabold">{months} OYIGA</div>
