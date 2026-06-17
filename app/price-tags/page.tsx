@@ -759,7 +759,9 @@ function InstallmentBadge({ monthly, months }: { monthly: number; months: number
 // Ценник ARZONCHI (2 шт. на лист A4): логотип, бейдж рассрочки, название, крупная цена, описание, штрих-код.
 function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pct: number }) {
   const [logoOk, setLogoOk] = useState(true);
-  const title = `${item.group} ${item.producer}`.trim() || item.product_name;
+  // Убираем ведущий код группы (цифры в начале), например «1025 Obogrevatel» → «Obogrevatel».
+  const cleanGroup = item.group.replace(/^\d+\s*/, '');
+  const title = `${cleanGroup} ${item.producer}`.trim() || item.product_name;
   const monthly = monthlyInstallment(item.price, pct);
 
   return (
