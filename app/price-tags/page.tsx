@@ -786,7 +786,7 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
         </div>
 
         {/* Название товара */}
-        <div className="text-center text-3xl font-black mt-1 leading-tight">{title}</div>
+        <div className="text-center text-[42px] font-black mt-1 leading-tight">{title}</div>
 
         {/* Цена — Fjalla One, тянется к краям; короткие числа остаются по центру */}
         <div className="flex-1 flex items-center justify-center overflow-hidden px-2">
