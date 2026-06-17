@@ -765,11 +765,17 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
   const monthly = monthlyInstallment(item.price, pct);
 
   return (
-    <div className="tag border-[11px] border-black bg-white flex flex-col overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
+    <div className="tag relative border-[11px] border-black bg-white flex flex-col overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
+      {/* Бейдж рассрочки — в самый угол, чуть выходит на рамку */}
+      {monthly > 0 && (
+        <div className="absolute z-10" style={{ top: -4, right: -4 }}>
+          <InstallmentBadge monthly={monthly} months={INSTALLMENT.months} />
+        </div>
+      )}
       {/* Верхняя часть с отступами */}
       <div className="flex-1 flex flex-col px-4 pt-3 min-h-0">
-        {/* Шапка: крупный логотип по центру + бейдж рассрочки в правом верхнем углу */}
-        <div className="relative flex items-center justify-center min-h-[170px]">
+        {/* Шапка: крупный логотип, смещён левее (справа место под бейдж) */}
+        <div className="flex items-center justify-center pr-28 min-h-[170px]">
           {logoOk && store.logo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={store.logo} alt={store.name} onError={() => setLogoOk(false)} className="h-44 w-auto max-w-[90%] object-contain" />
@@ -777,11 +783,6 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
             <ArzonchiLogo className="h-44 w-auto" />
           ) : (
             <div className="text-8xl font-black tracking-tight">{store.name}</div>
-          )}
-          {monthly > 0 && (
-            <div className="absolute top-0 right-0">
-              <InstallmentBadge monthly={monthly} months={INSTALLMENT.months} />
-            </div>
           )}
         </div>
 
