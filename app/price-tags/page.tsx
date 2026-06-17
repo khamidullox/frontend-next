@@ -788,11 +788,17 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
         {/* Название товара */}
         <div className="text-center text-3xl font-black mt-1 leading-tight">{title}</div>
 
-        {/* Цена — крупная и жирная */}
-        <div className="flex-1 flex items-center justify-center">
-          <div className="font-black tracking-tighter leading-none" style={{ fontSize: '96px' }}>
-            {item.price.toLocaleString('ru-RU')}
-          </div>
+        {/* Цена — Fjalla One, тянется к краям; короткие числа остаются по центру */}
+        <div className="flex-1 flex items-center justify-center overflow-hidden px-2">
+          {(() => {
+            const s = item.price.toLocaleString('ru-RU');
+            const fs = Math.min(170, Math.floor(640 / Math.max(1, s.length * 0.5)));
+            return (
+              <div className="leading-none whitespace-nowrap" style={{ fontFamily: 'var(--font-fjalla), sans-serif', fontSize: `${fs}px` }}>
+                {s}
+              </div>
+            );
+          })()}
         </div>
       </div>
 
