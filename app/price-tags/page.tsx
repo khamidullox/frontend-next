@@ -769,14 +769,14 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
       {/* Верхняя часть с отступами */}
       <div className="flex-1 flex flex-col px-4 pt-3 min-h-0">
         {/* Шапка: крупный логотип по центру + бейдж рассрочки в правом верхнем углу */}
-        <div className="relative flex items-center justify-center min-h-[88px]">
+        <div className="relative flex items-center justify-center min-h-[130px]">
           {logoOk && store.logo ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={store.logo} alt={store.name} onError={() => setLogoOk(false)} className="h-24 w-auto max-w-[80%] object-contain" />
+            <img src={store.logo} alt={store.name} onError={() => setLogoOk(false)} className="h-32 w-auto max-w-[80%] object-contain" />
           ) : store.id === 'arzonchi' ? (
-            <ArzonchiLogo className="h-24 w-auto" />
+            <ArzonchiLogo className="h-32 w-auto" />
           ) : (
-            <div className="text-6xl font-black tracking-tight">{store.name}</div>
+            <div className="text-7xl font-black tracking-tight">{store.name}</div>
           )}
           {monthly > 0 && (
             <div className="absolute top-0 right-0">
@@ -786,10 +786,10 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
         </div>
 
         {/* Название товара */}
-        <div className="text-center text-[42px] font-black mt-1 leading-tight">{title}</div>
+        <div className="text-center text-[42px] font-black leading-tight">{title}</div>
 
-        {/* Цена — Fjalla One, тянется к краям; короткие числа остаются по центру */}
-        <div className="flex-1 flex items-center justify-center overflow-hidden px-2">
+        {/* Цена — тянется к краям; короткие числа остаются по центру. my-auto — компактнее по вертикали */}
+        <div className="flex-1 flex items-center justify-center overflow-hidden px-2 py-1">
           {(() => {
             const s = item.price.toLocaleString('ru-RU');
             const fs = Math.min(210, Math.floor(700 / Math.max(1, s.length * 0.5)));
