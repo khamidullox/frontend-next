@@ -792,7 +792,7 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
         <div className="flex-1 flex items-center justify-center overflow-hidden px-2">
           {(() => {
             const s = item.price.toLocaleString('ru-RU');
-            const fs = Math.min(170, Math.floor(640 / Math.max(1, s.length * 0.5)));
+            const fs = Math.min(210, Math.floor(700 / Math.max(1, s.length * 0.5)));
             return (
               <div className="leading-none whitespace-nowrap font-bold" style={{ fontFamily: 'var(--font-fjalla), sans-serif', fontSize: `${fs}px`, WebkitTextStroke: '2px black' }}>
                 {s}
