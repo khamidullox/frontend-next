@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { listUsers, createUser, deleteUserApi, setUserPassword, setUserWarehouses, listWarehouses, WarehouseSummary, UserInfo, Role, ROLE_LABEL } from '@/lib/api';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { listUsers, createUser, deleteUserApi, updateUser, listAllWarehouses, WarehouseSummary, UserInfo, Role, ROLE_LABEL } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
 import { loadXLSX } from '@/lib/xlsx';
 import Pager from '@/components/Pager';
@@ -73,10 +73,77 @@ export default function UsersPage() {
   );
 }
 
+// ─── Раскрывающийся выбор складов ──────────────────────────────────────────────
+function WarehousePicker({
+  all, selected, onChange,
+}: {
+  all: WarehouseSummary[];
+  selected: string[];
+  onChange: (codes: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return needle ? all.filter((w) => w.warehouse_name.toLowerCase().includes(needle)) : all;
+  }, [all, q]);
+
+  function toggle(code: string) {
+    onChange(selected.includes(code) ? selected.filter((c) => c !== code) : [...selected, code]);
+  }
+
+  return (
+    <div>
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between gap-2 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm
+                   bg-white hover:border-blue-300 transition-colors">
+        <span className="text-gray-700">
+          🏬 Склады: <b>{selected.length ? `выбрано ${selected.length}` : 'все'}</b>
+        </span>
+        <span className="text-gray-400">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="border-2 border-gray-100 rounded-lg p-2 mt-1 bg-gray-50/50">
+          <div className="flex items-center gap-2 mb-2">
+            <input value={q} onChange={(e) => setQ(e.target.value)}
+              placeholder="Поиск склада…"
+              className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-blue-400 bg-white" />
+            {selected.length > 0 && (
+              <button type="button" onClick={() => onChange([])}
+                className="text-xs px-2 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-600 whitespace-nowrap">
+                Очистить
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1.5 max-h-52 overflow-y-auto">
+            {filtered.map((w) => {
+              const code = whCode(w.warehouse_name);
+              const on = selected.includes(code);
+              return (
+                <button type="button" key={w.warehouse_id} onClick={() => toggle(code)}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                    on ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+                  }`}>
+                  {w.warehouse_name}
+                </button>
+              );
+            })}
+            {filtered.length === 0 && <span className="text-xs text-gray-400 px-1">Ничего не найдено</span>}
+          </div>
+          <div className="text-[11px] text-gray-400 mt-1.5">Пусто = доступны все склады</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UsersContent() {
   const [users, setUsers] = useState<UserInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
 
   const [username, setUsername] = useState('');
   const [name, setName] = useState('');
@@ -88,6 +155,7 @@ function UsersContent() {
   const [whList, setWhList] = useState<WarehouseSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const [page, setPage] = useState(1);
+  const [editUser, setEditUser] = useState<UserInfo | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -100,11 +168,7 @@ function UsersContent() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { listWarehouses().then(setWhList).catch(() => {}); }, []);
-
-  function toggleWh(code: string) {
-    setSelectedWh((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
-  }
+  useEffect(() => { listAllWarehouses().then(setWhList).catch(() => {}); }, []);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -124,30 +188,6 @@ function UsersContent() {
       setError((err as Error).message);
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function editWh(u: UserInfo) {
-    const cur = u.warehouses.join(', ');
-    const v = prompt(`Склады для ${u.username} (коды через запятую, напр. 001,002). Пусто = все:`, cur);
-    if (v === null) return;
-    setError('');
-    try {
-      await setUserWarehouses(u.username, parseWarehouses(v));
-      await load();
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
-
-  async function remove(u: string) {
-    if (!confirm(`Удалить пользователя ${u}?`)) return;
-    setError('');
-    try {
-      await deleteUserApi(u);
-      await load();
-    } catch (err) {
-      setError((err as Error).message);
     }
   }
 
@@ -191,21 +231,18 @@ function UsersContent() {
     }
   }
 
-  async function changePass(u: string) {
-    const pass = prompt(`Новый пароль для ${u} (минимум 4 символа):`);
-    if (!pass) return;
-    setError('');
-    try {
-      await setUserPassword(u, pass);
-      alert('Пароль изменён');
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
+  // Фильтр по поиску (логин/имя), затем пагинация.
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return users;
+    return users.filter((u) =>
+      u.username.toLowerCase().includes(needle) || u.name.toLowerCase().includes(needle)
+    );
+  }, [users, search]);
 
-  const totalPages = Math.max(1, Math.ceil(users.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const shownUsers = users.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const shownUsers = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
     <div>
@@ -270,23 +307,7 @@ function UsersContent() {
 
         {/* Прикреплённые склады */}
         {role !== 'driver' && whList.length > 0 && (
-          <div className="mt-1">
-            <div className="text-xs text-gray-500 mb-1">Склады (пусто = все):</div>
-            <div className="flex flex-wrap gap-1.5">
-              {whList.map((w) => {
-                const code = whCode(w.warehouse_name);
-                const on = selectedWh.includes(code);
-                return (
-                  <button type="button" key={w.warehouse_id} onClick={() => toggleWh(code)}
-                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                      on ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
-                    }`}>
-                    {w.warehouse_name}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <WarehousePicker all={whList} selected={selectedWh} onChange={setSelectedWh} />
         )}
 
         <button type="submit" disabled={busy}
@@ -295,11 +316,20 @@ function UsersContent() {
         </button>
       </form>
 
+      {/* Поиск */}
+      <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+        placeholder="🔍 Поиск по логину или имени…"
+        className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-3 outline-none focus:border-blue-400" />
+
       {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
 
       {/* Список */}
       {loading ? (
         <div className="text-gray-500 text-sm">Загрузка…</div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-white rounded-xl p-8 text-center text-gray-400">
+          {search ? 'Никого не найдено' : 'Пользователей пока нет'}
+        </div>
       ) : (
         <>
         <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
@@ -326,18 +356,154 @@ function UsersContent() {
                   )}
                 </div>
               </div>
-              <button onClick={() => editWh(u)}
-                className="text-teal-600 hover:text-teal-800 text-sm px-2 py-1">Склады</button>
-              <button onClick={() => changePass(u.username)}
-                className="text-blue-500 hover:text-blue-700 text-sm px-2 py-1">Пароль</button>
-              <button onClick={() => remove(u.username)}
-                className="text-red-400 hover:text-red-600 text-sm px-2 py-1">Удалить</button>
+              <button onClick={() => setEditUser(u)}
+                className="text-blue-600 hover:text-blue-800 text-sm font-medium px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors">
+                Изменить
+              </button>
             </div>
           ))}
         </div>
         <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
         </>
       )}
+
+      {editUser && (
+        <EditUserModal
+          user={editUser}
+          allWh={whList}
+          onClose={() => setEditUser(null)}
+          onSaved={() => { setEditUser(null); load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Модалка редактирования пользователя ───────────────────────────────────────
+function EditUserModal({
+  user, allWh, onClose, onSaved,
+}: {
+  user: UserInfo;
+  allWh: WarehouseSummary[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const isDriver = user.role === 'driver';
+  const [password, setPassword] = useState('');
+  const [wh, setWh] = useState<string[]>(user.warehouses);
+  const [car, setCar] = useState(user.car_number);
+  const [transport, setTransport] = useState(user.transport);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [confirmDel, setConfirmDel] = useState(false);
+
+  async function save() {
+    setBusy(true);
+    setErr('');
+    try {
+      const patch: { password?: string; warehouses?: string[]; car_number?: string; transport?: string } = {};
+      if (password.trim()) patch.password = password.trim();
+      if (isDriver) {
+        patch.car_number = car.trim();
+        patch.transport = transport.trim();
+      } else {
+        patch.warehouses = wh;
+      }
+      await updateUser(user.username, patch);
+      onSaved();
+    } catch (e) {
+      setErr((e as Error).message);
+      setBusy(false);
+    }
+  }
+
+  async function del() {
+    setBusy(true);
+    setErr('');
+    try {
+      await deleteUserApi(user.username);
+      onSaved();
+    } catch (e) {
+      setErr((e as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto p-5"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <div className="font-bold text-lg">{user.name}</div>
+            <div className="text-xs text-gray-400">@{user.username} · {ROLE_LABEL[user.role]}</div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          {/* Пароль */}
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Новый пароль (оставьте пустым — без изменений)</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              placeholder="Минимум 4 символа"
+              className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          </div>
+
+          {/* Профиль водителя / склады */}
+          {isDriver ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Номер машины</label>
+                <input value={car} onChange={(e) => setCar(e.target.value)}
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Транспорт</label>
+                <input value={transport} onChange={(e) => setTransport(e.target.value)}
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Склады</label>
+              <WarehousePicker all={allWh} selected={wh} onChange={setWh} />
+            </div>
+          )}
+
+          {err && <p className="text-red-500 text-sm">{err}</p>}
+
+          <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+            <button onClick={save} disabled={busy}
+              className="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg">
+              {busy ? '⏳…' : 'Сохранить'}
+            </button>
+            <button onClick={onClose} disabled={busy}
+              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg">
+              Отмена
+            </button>
+
+            {confirmDel ? (
+              <div className="ml-auto flex items-center gap-1.5">
+                <span className="text-xs text-gray-500">Удалить?</span>
+                <button onClick={del} disabled={busy}
+                  className="px-3 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold rounded-lg">
+                  Да
+                </button>
+                <button onClick={() => setConfirmDel(false)} disabled={busy}
+                  className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm rounded-lg">
+                  Нет
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmDel(true)} disabled={busy}
+                className="ml-auto px-3 py-2 text-red-500 hover:text-red-700 text-sm font-medium">
+                🗑️ Удалить
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

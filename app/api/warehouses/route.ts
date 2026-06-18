@@ -12,12 +12,17 @@ export const maxDuration = 60;
 export async function GET(req: Request) {
   return withRole('worker', async (user) => {
     try {
-      const forTags = new URL(req.url).searchParams.get('for') === 'tags';
+      const forParam = new URL(req.url).searchParams.get('for');
       let data;
-      if (forTags) {
+      if (forParam === 'tags') {
         data = ROLE_RANK[user.role] >= ROLE_RANK.manager
           ? await listWarehouseStock(undefined, { all: true })
           : await listWarehouseStock(user.warehouses, { excludeMain: true });
+      } else if (forParam === 'all') {
+        // Все склады (для выбора при настройке пользователя) — менеджер/админ.
+        data = ROLE_RANK[user.role] >= ROLE_RANK.manager
+          ? await listWarehouseStock(undefined, { all: true })
+          : await listWarehouseStock(user.warehouses);
       } else {
         data = await listWarehouseStock(user.warehouses);
       }

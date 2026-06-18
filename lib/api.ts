@@ -102,6 +102,18 @@ export async function setUserWarehouses(username: string, warehouses: string[]):
   if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка сохранения складов');
 }
 
+// Единое обновление пользователя из модалки (пароль / склады / профиль водителя).
+export async function updateUser(username: string, patch: {
+  password?: string; warehouses?: string[]; car_number?: string; transport?: string;
+}): Promise<void> {
+  const res = await fetch(`/api/users/${encodeURIComponent(username)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка сохранения');
+}
+
 // ─── Types ───────────────────────────────────────────
 
 export type ItemStatus = 'pending' | 'partial' | 'done';
@@ -415,6 +427,14 @@ export async function listWarehouses(): Promise<WarehouseSummary[]> {
 // Для ценников: менеджер/админ видят все склады, магазин — только свои без основных.
 export async function listWarehousesForTags(): Promise<WarehouseSummary[]> {
   const res = await fetch('/api/warehouses?for=tags', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
+// Все склады (для настройки пользователя): менеджер/админ — полный список.
+export async function listAllWarehouses(): Promise<WarehouseSummary[]> {
+  const res = await fetch('/api/warehouses?for=all', { cache: 'no-store' });
   if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
   const data = await res.json();
   return data.data || [];
