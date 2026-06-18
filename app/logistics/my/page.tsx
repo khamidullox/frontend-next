@@ -134,6 +134,18 @@ function DeliveryCard({
           <div className="font-bold text-base mt-1">{d.client_name || 'Без названия'}</div>
           {d.address && <div className="text-sm text-gray-600 mt-0.5">📍 {d.address}</div>}
           {d.note && <div className="text-xs text-gray-400 mt-0.5">📝 {d.note}</div>}
+          {d.address && (
+            <div className="flex gap-2 mt-2">
+              <a href={`https://yandex.ru/maps/?text=${encodeURIComponent(d.address)}`} target="_blank" rel="noopener noreferrer"
+                className="px-2.5 py-1.5 rounded-lg bg-red-50 text-red-600 text-xs font-semibold hover:bg-red-100">
+                🗺️ Яндекс.Карты
+              </a>
+              <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d.address)}`} target="_blank" rel="noopener noreferrer"
+                className="px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-600 text-xs font-semibold hover:bg-blue-100">
+                🗺️ Google Maps
+              </a>
+            </div>
+          )}
         </div>
         <span className={`text-xs font-semibold px-2 py-1 rounded-full ${statusClass(d.status)}`}>
           {DELIVERY_STATUS_LABEL[d.status]}

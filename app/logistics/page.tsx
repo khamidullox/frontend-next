@@ -391,6 +391,9 @@ function DeliveryRow({
   onRemove: (id: string) => void;
   compact?: boolean;
 }) {
+  const [editAddr, setEditAddr] = useState(false);
+  const [addr, setAddr] = useState(d.address);
+
   return (
     <div className={`rounded-lg ${compact ? 'bg-gray-50' : 'bg-white shadow-sm'} p-3 flex flex-col gap-2`}>
       <div className="flex items-start gap-3 flex-wrap">
@@ -411,7 +414,15 @@ function DeliveryRow({
           {d.from_name && d.to_name && d.client_name && d.client_name !== `${d.from_name} → ${d.to_name}` && (
             <div className="text-xs text-gray-500 mt-0.5">🚚 {d.client_name}</div>
           )}
-          {d.address && <div className="text-xs text-gray-500 mt-0.5">📍 {d.address}</div>}
+          {d.address && (
+            <div className="text-xs text-gray-500 mt-0.5">
+              📍 {d.address}
+              <a href={`https://yandex.ru/maps/?text=${encodeURIComponent(d.address)}`} target="_blank" rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()} className="ml-2 text-blue-600 hover:underline">🗺️ Яндекс</a>
+              <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d.address)}`} target="_blank" rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()} className="ml-2 text-blue-600 hover:underline">Google</a>
+            </div>
+          )}
           {d.note && <div className="text-xs text-gray-400 mt-0.5">📝 {d.note}</div>}
           <div className="text-xs text-gray-400 mt-0.5">создано {fmt(d.created_at)}{d.created_by ? ` · ${d.created_by}` : ''}</div>
         </div>
@@ -436,11 +447,27 @@ function DeliveryRow({
             <option key={s} value={s}>{DELIVERY_STATUS_LABEL[s]}</option>
           ))}
         </select>
+        <button onClick={() => setEditAddr((v) => !v)}
+          className="text-xs px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600">
+          📍 {d.address ? 'адрес' : '+ адрес'}
+        </button>
         <button onClick={() => onRemove(d.id)}
           className="ml-auto text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 hover:bg-red-200">
           🗑️
         </button>
       </div>
+
+      {editAddr && (
+        <div className="flex items-center gap-2">
+          <input value={addr} onChange={(e) => setAddr(e.target.value)} autoComplete="off"
+            placeholder="Адрес доставки"
+            className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-blue-400" />
+          <button onClick={() => { onPatch(d.id, { address: addr.trim() }); setEditAddr(false); }}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-500 hover:bg-blue-600 text-white">
+            OK
+          </button>
+        </div>
+      )}
     </div>
   );
 }
