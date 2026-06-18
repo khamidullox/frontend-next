@@ -448,12 +448,14 @@ function DeliveryRow({
 // ─── Модалка: выбор существующего документа для назначения ─────────────────────
 type AssignTab = 'movement' | 'order' | 'transfer';
 
+type DocRef = { movement_id?: string; deal_id?: string; transfer_id?: string };
+
 function AssignDocModal({
   driver, onClose, onPick,
 }: {
   driver: UserInfo;
   onClose: () => void;
-  onPick: (ref: { movement_id?: string; deal_id?: string; transfer_id?: string }, driverUsername: string) => Promise<void>;
+  onPick: (ref: DocRef, driverUsername: string) => Promise<void>;
 }) {
   const [tab, setTab] = useState<AssignTab>('movement');
   const [movements, setMovements] = useState<MovementListItem[]>([]);
@@ -461,8 +463,11 @@ function AssignDocModal({
   const [transfers, setTransfers] = useState<TransferListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
-  const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState('');
+  // Множественный выбор: id документа → ссылка на него.
+  const [selected, setSelected] = useState<Record<string, DocRef>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(0);
 
   useEffect(() => {
     Promise.all([
@@ -474,16 +479,37 @@ function AssignDocModal({
       .finally(() => setLoading(false));
   }, []);
 
-  async function pick(ref: { movement_id?: string; deal_id?: string; transfer_id?: string }, id: string) {
-    if (busyId) return;
-    setBusyId(id);
+  function toggle(id: string, ref: DocRef) {
+    if (submitting) return;
+    setSelected((prev) => {
+      const next = { ...prev };
+      if (next[id]) delete next[id];
+      else next[id] = ref;
+      return next;
+    });
+  }
+
+  const count = Object.keys(selected).length;
+
+  async function submit() {
+    if (!count || submitting) return;
+    setSubmitting(true);
     setErr('');
-    try {
-      await onPick(ref, driver.username);
+    setDone(0);
+    const errs: string[] = [];
+    for (const ref of Object.values(selected)) {
+      try {
+        await onPick(ref, driver.username);
+        setDone((d) => d + 1);
+      } catch (e) {
+        errs.push((e as Error).message);
+      }
+    }
+    if (errs.length) {
+      setErr(`Создано с ошибками (${errs.length}): ${errs[0]}`);
+      setSubmitting(false);
+    } else {
       onClose();
-    } catch (e) {
-      setErr((e as Error).message);
-      setBusyId(null);
     }
   }
 
@@ -496,9 +522,15 @@ function AssignDocModal({
     !needle || `${t.number} ${t.from_filial || ''} ${t.to_filial || ''}`.toLowerCase().includes(needle));
 
   const rowCls = (id: string) =>
-    `text-left border rounded-lg px-3 py-2 transition-colors cursor-pointer ${
-      busyId === id ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:bg-blue-50 hover:border-blue-300'
-    } ${busyId && busyId !== id ? 'opacity-40 pointer-events-none' : ''}`;
+    `w-full text-left border rounded-lg px-3 py-2 transition-colors flex items-start gap-2.5 ${
+      selected[id] ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:bg-gray-50 hover:border-blue-300'
+    } ${submitting ? 'pointer-events-none opacity-60' : 'cursor-pointer'}`;
+
+  const checkbox = (id: string) => (
+    <span className={`mt-0.5 w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[11px] ${
+      selected[id] ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-300 bg-white'
+    }`}>{selected[id] ? '✓' : ''}</span>
+  );
 
   const tabBtn = (t: AssignTab, label: string) => (
     <button onClick={() => setTab(t)}
@@ -539,40 +571,53 @@ function AssignDocModal({
             shownMovements.length === 0 ? (
               <div className="text-center text-gray-400 text-sm py-6">Накладных не найдено</div>
             ) : shownMovements.map((m) => (
-              <button key={m.movement_id} onClick={() => pick({ movement_id: m.movement_id }, m.movement_id)} className={rowCls(m.movement_id)}>
-                <div className="text-sm font-semibold">№ {m.movement_number}
-                  <span className="ml-2 text-[11px] font-normal text-gray-400">{MOVEMENT_STATUS_LABEL[m.status] || m.status}</span>
-                  {busyId === m.movement_id && <span className="ml-2 text-[11px] text-blue-500">⏳ создаю…</span>}
-                </div>
-                <div className="text-xs text-gray-500">🏬 {m.from_warehouse_name || m.from_warehouse_code || '—'} → {m.to_warehouse_name || m.to_warehouse_code || '—'}</div>
-                <div className="text-[11px] text-gray-400">{m.items_count} поз. · {m.total_quantity} шт · {m.from_movement_date}</div>
+              <button key={m.movement_id} onClick={() => toggle(m.movement_id, { movement_id: m.movement_id })} className={rowCls(m.movement_id)}>
+                {checkbox(m.movement_id)}
+                <span className="min-w-0">
+                  <span className="text-sm font-semibold block">№ {m.movement_number}
+                    <span className="ml-2 text-[11px] font-normal text-gray-400">{MOVEMENT_STATUS_LABEL[m.status] || m.status}</span>
+                  </span>
+                  <span className="text-xs text-gray-500 block">🏬 {m.from_warehouse_name || m.from_warehouse_code || '—'} → {m.to_warehouse_name || m.to_warehouse_code || '—'}</span>
+                  <span className="text-[11px] text-gray-400 block">{m.items_count} поз. · {m.total_quantity} шт · {m.from_movement_date}</span>
+                </span>
               </button>
             ))
           ) : tab === 'order' ? (
             shownOrders.length === 0 ? (
               <div className="text-center text-gray-400 text-sm py-6">Заказов не найдено</div>
             ) : shownOrders.map((o) => (
-              <button key={o.deal_id} onClick={() => pick({ deal_id: o.deal_id }, o.deal_id)} className={rowCls(o.deal_id)}>
-                <div className="text-sm font-semibold">№ {o.doc_number}
-                  {busyId === o.deal_id && <span className="ml-2 text-[11px] text-blue-500">⏳ создаю…</span>}
-                </div>
-                <div className="text-xs text-gray-500">🚚 {o.client_name || '—'}</div>
-                <div className="text-[11px] text-gray-400">{o.items_count} поз. · {o.total_quantity} шт · {o.date}</div>
+              <button key={o.deal_id} onClick={() => toggle(o.deal_id, { deal_id: o.deal_id })} className={rowCls(o.deal_id)}>
+                {checkbox(o.deal_id)}
+                <span className="min-w-0">
+                  <span className="text-sm font-semibold block">№ {o.doc_number}</span>
+                  <span className="text-xs text-gray-500 block">🚚 {o.client_name || '—'}</span>
+                  <span className="text-[11px] text-gray-400 block">{o.items_count} поз. · {o.total_quantity} шт · {o.date}</span>
+                </span>
               </button>
             ))
           ) : (
             shownTransfers.length === 0 ? (
               <div className="text-center text-gray-400 text-sm py-6">Перемещений не найдено</div>
             ) : shownTransfers.map((t) => (
-              <button key={t.transfer_id} onClick={() => pick({ transfer_id: t.transfer_id }, t.transfer_id)} className={rowCls(t.transfer_id)}>
-                <div className="text-sm font-semibold">№ {t.number}
-                  {busyId === t.transfer_id && <span className="ml-2 text-[11px] text-blue-500">⏳ создаю…</span>}
-                </div>
-                <div className="text-xs text-gray-500">🏬 {t.from_filial || '—'} → {t.to_filial || '—'}</div>
-                <div className="text-[11px] text-gray-400">{t.items_count} поз. · {t.total_quantity} шт · {t.date}</div>
+              <button key={t.transfer_id} onClick={() => toggle(t.transfer_id, { transfer_id: t.transfer_id })} className={rowCls(t.transfer_id)}>
+                {checkbox(t.transfer_id)}
+                <span className="min-w-0">
+                  <span className="text-sm font-semibold block">№ {t.number}</span>
+                  <span className="text-xs text-gray-500 block">🏬 {t.from_filial || '—'} → {t.to_filial || '—'}</span>
+                  <span className="text-[11px] text-gray-400 block">{t.items_count} поз. · {t.total_quantity} шт · {t.date}</span>
+                </span>
               </button>
             ))
           )}
+        </div>
+
+        {/* Подвал: назначить выбранные */}
+        <div className="p-3 border-t border-gray-100 flex items-center gap-3">
+          <span className="text-xs text-gray-500">Выбрано: <b>{count}</b></span>
+          <button onClick={submit} disabled={!count || submitting}
+            className="ml-auto px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-200 disabled:text-gray-400 text-white text-sm font-semibold rounded-lg">
+            {submitting ? `Создаю… ${done}/${count}` : `Назначить${count ? ` (${count})` : ''}`}
+          </button>
         </div>
       </div>
     </div>
