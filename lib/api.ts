@@ -528,6 +528,10 @@ export async function listDeliveries(): Promise<Delivery[]> {
 
 export async function createDelivery(input: {
   query?: string;
+  movement_id?: string;
+  deal_id?: string;
+  transfer_id?: string;
+  receipt_id?: string;
   session_id?: string;
   client_name?: string;
   address?: string;

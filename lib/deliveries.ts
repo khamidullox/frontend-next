@@ -67,7 +67,11 @@ function str(v: unknown): string {
 
 interface CreateInput {
   source?: DeliverySource;
-  query?: string;        // ID накладной/заказа — подтянем данные из Smartup
+  query?: string;        // ID накладной/заказа — подтянем данные из Smartup (авто-тип)
+  movement_id?: string;  // явная накладная
+  deal_id?: string;      // явный заказ
+  transfer_id?: string;  // явное перемещение
+  receipt_id?: string;   // явная приёмка
   session_id?: string;   // ID проверки — подтянем данные из неё
   client_name?: string;
   address?: string;
@@ -103,10 +107,16 @@ export async function createDelivery(
     base.note = base.note || str(s.document.note);
     fromCode = s.document.from_warehouse_code;
     toCode = s.document.to_warehouse_code;
-  } else if (input.query) {
+  } else if (input.query || input.movement_id || input.deal_id || input.transfer_id || input.receipt_id) {
     // Из документа Smartup (накладная/заказ/перемещение/приёмка).
-    const doc = await resolveDocument({ query: str(input.query) });
-    if (!doc) return { error: `Документ "${str(input.query)}" не найден в Smartup` };
+    const doc = await resolveDocument({
+      query: input.query ? str(input.query) : undefined,
+      movement_id: input.movement_id,
+      deal_id: input.deal_id,
+      transfer_id: input.transfer_id,
+      receipt_id: input.receipt_id,
+    });
+    if (!doc) return { error: 'Документ не найден в Smartup' };
     source = 'document';
     base.doc_type = doc.doc_type;
     base.doc_id = doc.doc_id;

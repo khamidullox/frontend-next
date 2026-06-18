@@ -26,6 +26,10 @@ export async function POST(request: NextRequest) {
     const res = await createDelivery({
       source: body.source,
       query: body.query,
+      movement_id: body.movement_id,
+      deal_id: body.deal_id,
+      transfer_id: body.transfer_id,
+      receipt_id: body.receipt_id,
       session_id: body.session_id,
       client_name: body.client_name,
       address: body.address,

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminGate from '@/components/AdminGate';
 import {
   listDeliveries, createDelivery, updateDelivery, deleteDeliveryApi, listDrivers,
-  listMovements, listOrders, MovementListItem, OrderListItem, MOVEMENT_STATUS_LABEL,
+  listMovements, listOrders, listTransfers, MovementListItem, OrderListItem, TransferListItem, MOVEMENT_STATUS_LABEL,
   Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL, UserInfo,
 } from '@/lib/api';
 
@@ -124,9 +124,12 @@ function LogisticsContent() {
     }
   }, []);
 
-  // Назначить водителю существующую накладную/заказ (из выбранного в модалке).
-  const assignDoc = useCallback(async (query: string, driver_username: string) => {
-    const created = await createDelivery({ query, driver_username });
+  // Назначить водителю существующий документ (накладная/заказ/перемещение) из модалки.
+  const assignDoc = useCallback(async (
+    ref: { movement_id?: string; deal_id?: string; transfer_id?: string },
+    driver_username: string
+  ) => {
+    const created = await createDelivery({ ...ref, driver_username });
     setItems((prev) => [created, ...prev]);
   }, []);
 
@@ -299,7 +302,6 @@ function LogisticsContent() {
         <AssignDocModal
           driver={assignTo}
           onClose={() => setAssignTo(null)}
-          onError={setError}
           onPick={assignDoc}
         />
       )}
@@ -443,45 +445,66 @@ function DeliveryRow({
   );
 }
 
-// ─── Модалка: выбор существующей накладной/заказа для назначения ───────────────
+// ─── Модалка: выбор существующего документа для назначения ─────────────────────
+type AssignTab = 'movement' | 'order' | 'transfer';
+
 function AssignDocModal({
-  driver, onClose, onError, onPick,
+  driver, onClose, onPick,
 }: {
   driver: UserInfo;
   onClose: () => void;
-  onError: (msg: string) => void;
-  onPick: (query: string, driverUsername: string) => Promise<void>;
+  onPick: (ref: { movement_id?: string; deal_id?: string; transfer_id?: string }, driverUsername: string) => Promise<void>;
 }) {
-  const [tab, setTab] = useState<'movement' | 'order'>('movement');
+  const [tab, setTab] = useState<AssignTab>('movement');
   const [movements, setMovements] = useState<MovementListItem[]>([]);
   const [orders, setOrders] = useState<OrderListItem[]>([]);
+  const [transfers, setTransfers] = useState<TransferListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [err, setErr] = useState('');
 
   useEffect(() => {
-    Promise.all([listMovements().catch(() => []), listOrders().catch(() => [])])
-      .then(([m, o]) => { setMovements(m); setOrders(o); })
+    Promise.all([
+      listMovements().catch(() => []),
+      listOrders().catch(() => []),
+      listTransfers().catch(() => []),
+    ])
+      .then(([m, o, t]) => { setMovements(m); setOrders(o); setTransfers(t); })
       .finally(() => setLoading(false));
   }, []);
 
-  async function pick(query: string, id: string) {
+  async function pick(ref: { movement_id?: string; deal_id?: string; transfer_id?: string }, id: string) {
+    if (busyId) return;
     setBusyId(id);
+    setErr('');
     try {
-      await onPick(query, driver.username);
+      await onPick(ref, driver.username);
       onClose();
     } catch (e) {
-      onError((e as Error).message);
+      setErr((e as Error).message);
       setBusyId(null);
     }
   }
 
   const needle = q.trim().toLowerCase();
   const shownMovements = movements.filter((m) =>
-    !needle || `${m.movement_number} ${m.from_warehouse_name || ''} ${m.to_warehouse_name || ''}`.toLowerCase().includes(needle)
-  );
+    !needle || `${m.movement_number} ${m.from_warehouse_name || ''} ${m.to_warehouse_name || ''}`.toLowerCase().includes(needle));
   const shownOrders = orders.filter((o) =>
-    !needle || `${o.doc_number} ${o.client_name}`.toLowerCase().includes(needle)
+    !needle || `${o.doc_number} ${o.client_name}`.toLowerCase().includes(needle));
+  const shownTransfers = transfers.filter((t) =>
+    !needle || `${t.number} ${t.from_filial || ''} ${t.to_filial || ''}`.toLowerCase().includes(needle));
+
+  const rowCls = (id: string) =>
+    `text-left border rounded-lg px-3 py-2 transition-colors cursor-pointer ${
+      busyId === id ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:bg-blue-50 hover:border-blue-300'
+    } ${busyId && busyId !== id ? 'opacity-40 pointer-events-none' : ''}`;
+
+  const tabBtn = (t: AssignTab, label: string) => (
+    <button onClick={() => setTab(t)}
+      className={`text-xs px-3 py-1.5 rounded-full font-semibold ${tab === t ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
+      {label}
+    </button>
   );
 
   return (
@@ -495,15 +518,10 @@ function AssignDocModal({
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
         </div>
 
-        <div className="px-4 flex items-center gap-2">
-          <button onClick={() => setTab('movement')}
-            className={`text-xs px-3 py-1.5 rounded-full font-semibold ${tab === 'movement' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
-            🗂️ Накладные ({movements.length})
-          </button>
-          <button onClick={() => setTab('order')}
-            className={`text-xs px-3 py-1.5 rounded-full font-semibold ${tab === 'order' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
-            🧾 Заказы ({orders.length})
-          </button>
+        <div className="px-4 flex items-center gap-2 flex-wrap">
+          {tabBtn('movement', `🗂️ Накладные (${movements.length})`)}
+          {tabBtn('order', `🧾 Заказы (${orders.length})`)}
+          {tabBtn('transfer', `🔄 Перемещения (${transfers.length})`)}
         </div>
 
         <div className="px-4 pt-2">
@@ -512,6 +530,8 @@ function AssignDocModal({
             className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
         </div>
 
+        {err && <div className="px-4 pt-2 text-red-500 text-sm">{err}</div>}
+
         <div className="flex-1 overflow-y-auto p-4 pt-2 flex flex-col gap-1.5">
           {loading ? (
             <div className="text-center text-gray-400 text-sm py-6">Загрузка из Smartup…</div>
@@ -519,26 +539,37 @@ function AssignDocModal({
             shownMovements.length === 0 ? (
               <div className="text-center text-gray-400 text-sm py-6">Накладных не найдено</div>
             ) : shownMovements.map((m) => (
-              <button key={m.movement_id} disabled={busyId === m.movement_id}
-                onClick={() => pick(m.movement_id, m.movement_id)}
-                className="text-left border border-gray-200 rounded-lg px-3 py-2 hover:bg-blue-50 hover:border-blue-300 disabled:opacity-50 transition-colors">
+              <button key={m.movement_id} onClick={() => pick({ movement_id: m.movement_id }, m.movement_id)} className={rowCls(m.movement_id)}>
                 <div className="text-sm font-semibold">№ {m.movement_number}
                   <span className="ml-2 text-[11px] font-normal text-gray-400">{MOVEMENT_STATUS_LABEL[m.status] || m.status}</span>
+                  {busyId === m.movement_id && <span className="ml-2 text-[11px] text-blue-500">⏳ создаю…</span>}
                 </div>
                 <div className="text-xs text-gray-500">🏬 {m.from_warehouse_name || m.from_warehouse_code || '—'} → {m.to_warehouse_name || m.to_warehouse_code || '—'}</div>
                 <div className="text-[11px] text-gray-400">{m.items_count} поз. · {m.total_quantity} шт · {m.from_movement_date}</div>
               </button>
             ))
-          ) : (
+          ) : tab === 'order' ? (
             shownOrders.length === 0 ? (
               <div className="text-center text-gray-400 text-sm py-6">Заказов не найдено</div>
             ) : shownOrders.map((o) => (
-              <button key={o.deal_id} disabled={busyId === o.deal_id}
-                onClick={() => pick(o.deal_id, o.deal_id)}
-                className="text-left border border-gray-200 rounded-lg px-3 py-2 hover:bg-blue-50 hover:border-blue-300 disabled:opacity-50 transition-colors">
-                <div className="text-sm font-semibold">№ {o.doc_number}</div>
+              <button key={o.deal_id} onClick={() => pick({ deal_id: o.deal_id }, o.deal_id)} className={rowCls(o.deal_id)}>
+                <div className="text-sm font-semibold">№ {o.doc_number}
+                  {busyId === o.deal_id && <span className="ml-2 text-[11px] text-blue-500">⏳ создаю…</span>}
+                </div>
                 <div className="text-xs text-gray-500">🚚 {o.client_name || '—'}</div>
                 <div className="text-[11px] text-gray-400">{o.items_count} поз. · {o.total_quantity} шт · {o.date}</div>
+              </button>
+            ))
+          ) : (
+            shownTransfers.length === 0 ? (
+              <div className="text-center text-gray-400 text-sm py-6">Перемещений не найдено</div>
+            ) : shownTransfers.map((t) => (
+              <button key={t.transfer_id} onClick={() => pick({ transfer_id: t.transfer_id }, t.transfer_id)} className={rowCls(t.transfer_id)}>
+                <div className="text-sm font-semibold">№ {t.number}
+                  {busyId === t.transfer_id && <span className="ml-2 text-[11px] text-blue-500">⏳ создаю…</span>}
+                </div>
+                <div className="text-xs text-gray-500">🏬 {t.from_filial || '—'} → {t.to_filial || '—'}</div>
+                <div className="text-[11px] text-gray-400">{t.items_count} поз. · {t.total_quantity} шт · {t.date}</div>
               </button>
             ))
           )}
