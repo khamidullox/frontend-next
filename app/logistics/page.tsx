@@ -34,6 +34,16 @@ function fmt(iso?: string | null) {
   } catch { return ''; }
 }
 
+// Категория транспорта для фильтра. LABO/Газель — доставочные, остальное — служебные.
+function vehicleCategory(transport: string | null | undefined): string {
+  const t = (transport || '').toLowerCase();
+  if (t.includes('labo')) return 'LABO';
+  if (t.includes('gaz') || t.includes('газел') || t.includes('33021')) return 'Газель';
+  if (!t.trim()) return 'Без типа';
+  return 'Служебная';
+}
+const DELIVERY_CATS = ['LABO', 'Газель'];
+
 export default function LogisticsPage() {
   return (
     <AdminGate min="manager">
@@ -50,6 +60,8 @@ function LogisticsContent() {
   const [hideDone, setHideDone] = useState(true);
   const [driverSearch, setDriverSearch] = useState('');
   const [assignTo, setAssignTo] = useState<UserInfo | null>(null);
+  // null = режим по умолчанию (только доставочные: LABO + Газель).
+  const [vehSel, setVehSel] = useState<string[] | null>(null);
 
   // Форма создания.
   const [mode, setMode] = useState<'document' | 'manual'>('document');
@@ -131,12 +143,34 @@ function LogisticsContent() {
     return { byDriver: map, unassigned: none };
   }, [items]);
 
+  // Категории транспорта среди водителей: [категория, кол-во].
+  const categories = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const d of drivers) {
+      const c = vehicleCategory(d.transport);
+      m.set(c, (m.get(c) || 0) + 1);
+    }
+    return [...m.entries()];
+  }, [drivers]);
+
+  const allCats = categories.map(([c]) => c);
+  const defaultCats = allCats.filter((c) => DELIVERY_CATS.includes(c));
+  // Активные категории фильтра: явный выбор пользователя, иначе доставочные по умолчанию.
+  const selCats = vehSel ?? (defaultCats.length ? defaultCats : allCats);
+
+  function toggleCat(c: string) {
+    const base = vehSel ?? (defaultCats.length ? defaultCats : allCats);
+    setVehSel(base.includes(c) ? base.filter((x) => x !== c) : [...base, c]);
+  }
+
   const shownDrivers = useMemo(() => {
     const needle = driverSearch.trim().toLowerCase();
+    const cats = selCats.length ? selCats : allCats; // пустой выбор = показать всех
     return drivers.filter((d) =>
-      !needle || d.name.toLowerCase().includes(needle) || (d.car_number || '').toLowerCase().includes(needle)
+      cats.includes(vehicleCategory(d.transport)) &&
+      (!needle || d.name.toLowerCase().includes(needle) || (d.car_number || '').toLowerCase().includes(needle))
     );
-  }, [drivers, driverSearch]);
+  }, [drivers, driverSearch, selCats, allCats]);
 
   const visibleUnassigned = hideDone ? unassigned.filter((d) => !isDone(d.status)) : unassigned;
 
@@ -212,7 +246,7 @@ function LogisticsContent() {
           {/* Водители */}
           <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              Водители ({drivers.length})
+              Водители ({shownDrivers.length}{shownDrivers.length !== drivers.length ? ` из ${drivers.length}` : ''})
             </div>
             {drivers.length > 6 && (
               <input value={driverSearch} onChange={(e) => setDriverSearch(e.target.value)}
@@ -220,6 +254,23 @@ function LogisticsContent() {
                 className="border border-gray-200 rounded-lg px-2.5 py-1 text-xs outline-none focus:border-blue-400" />
             )}
           </div>
+
+          {/* Фильтр по типу машины (по умолчанию — только доставочные: LABO, Газель) */}
+          {categories.length > 1 && (
+            <div className="flex flex-wrap gap-1.5 mb-2.5">
+              {categories.map(([cat, n]) => {
+                const on = selCats.includes(cat);
+                return (
+                  <button key={cat} onClick={() => toggleCat(cat)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                      on ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-gray-500 border-gray-200 hover:border-slate-300'
+                    }`}>
+                    {cat} <span className={on ? 'text-gray-300' : 'text-gray-400'}>{n}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {drivers.length === 0 ? (
             <div className="bg-white rounded-xl p-6 text-center text-gray-400 text-sm">
