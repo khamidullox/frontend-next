@@ -1,15 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminGate from '@/components/AdminGate';
 import {
   listDeliveries, createDelivery, updateDelivery, deleteDeliveryApi, listDrivers,
   Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL, UserInfo,
 } from '@/lib/api';
-import Pager from '@/components/Pager';
 
-const PAGE_SIZE = 50;
 const STATUSES: DeliveryStatus[] = ['new', 'assigned', 'on_way', 'delivered', 'returned'];
+const ACTIVE: DeliveryStatus[] = ['new', 'assigned', 'on_way'];
+
+function isDone(s: DeliveryStatus) {
+  return s === 'delivered' || s === 'returned';
+}
 
 function statusClass(s: DeliveryStatus): string {
   switch (s) {
@@ -43,8 +46,8 @@ function LogisticsContent() {
   const [drivers, setDrivers] = useState<UserInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [page, setPage] = useState(1);
-  const [filter, setFilter] = useState<'all' | DeliveryStatus>('all');
+  const [hideDone, setHideDone] = useState(true);
+  const [driverSearch, setDriverSearch] = useState('');
 
   // Форма создания.
   const [mode, setMode] = useState<'document' | 'manual'>('document');
@@ -52,7 +55,6 @@ function LogisticsContent() {
   const [client, setClient] = useState('');
   const [address, setAddress] = useState('');
   const [note, setNote] = useState('');
-  const [driverUser, setDriverUser] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -75,10 +77,10 @@ function LogisticsContent() {
     try {
       await createDelivery(
         mode === 'document'
-          ? { query: query.trim(), client_name: client.trim(), address: address.trim(), note: note.trim(), driver_username: driverUser || undefined }
-          : { client_name: client.trim(), address: address.trim(), note: note.trim(), driver_username: driverUser || undefined }
+          ? { query: query.trim(), client_name: client.trim(), address: address.trim(), note: note.trim() }
+          : { client_name: client.trim(), address: address.trim(), note: note.trim() }
       );
-      setQuery(''); setClient(''); setAddress(''); setNote(''); setDriverUser('');
+      setQuery(''); setClient(''); setAddress(''); setNote('');
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -87,7 +89,7 @@ function LogisticsContent() {
     }
   }
 
-  async function patch(id: string, p: Parameters<typeof updateDelivery>[1]) {
+  const patch = useCallback(async (id: string, p: Parameters<typeof updateDelivery>[1]) => {
     setError('');
     try {
       const updated = await updateDelivery(id, p);
@@ -95,9 +97,9 @@ function LogisticsContent() {
     } catch (err) {
       setError((err as Error).message);
     }
-  }
+  }, []);
 
-  async function remove(id: string) {
+  const remove = useCallback(async (id: string) => {
     if (!confirm('Удалить доставку?')) return;
     setError('');
     try {
@@ -106,17 +108,38 @@ function LogisticsContent() {
     } catch (err) {
       setError((err as Error).message);
     }
-  }
+  }, []);
 
-  const shown = items.filter((d) => filter === 'all' || d.status === filter);
-  const totalPages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const pageItems = shown.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  // Группировка доставок по водителю.
+  const { byDriver, unassigned } = useMemo(() => {
+    const map = new Map<string, Delivery[]>();
+    const none: Delivery[] = [];
+    for (const d of items) {
+      if (!d.driver_username) { none.push(d); continue; }
+      const arr = map.get(d.driver_username) || [];
+      arr.push(d);
+      map.set(d.driver_username, arr);
+    }
+    return { byDriver: map, unassigned: none };
+  }, [items]);
+
+  const shownDrivers = useMemo(() => {
+    const needle = driverSearch.trim().toLowerCase();
+    return drivers.filter((d) =>
+      !needle || d.name.toLowerCase().includes(needle) || (d.car_number || '').toLowerCase().includes(needle)
+    );
+  }, [drivers, driverSearch]);
+
+  const visibleUnassigned = hideDone ? unassigned.filter((d) => !isDone(d.status)) : unassigned;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h2 className="text-xl font-bold">🚚 Логистика <span className="text-sm text-gray-400 font-normal">({items.length})</span></h2>
+        <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+          <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} />
+          Скрывать завершённые
+        </label>
       </div>
 
       {/* Создание доставки */}
@@ -151,97 +174,189 @@ function LogisticsContent() {
           placeholder="Примечание (необязательно)"
           className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <select value={driverUser} onChange={(e) => setDriverUser(e.target.value)}
-            className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
-            <option value="">Водитель — назначить позже</option>
-            {drivers.map((d) => (
-              <option key={d.username} value={d.username}>
-                {d.name}{d.car_number ? ` · ${d.car_number}` : ''}
-              </option>
-            ))}
-          </select>
-          <button type="submit" disabled={busy || (mode === 'document' && !query.trim() && !client.trim())}
-            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg">
-            {busy ? '⏳…' : '+ Создать доставку'}
-          </button>
-        </div>
-        {drivers.length === 0 && (
-          <p className="text-xs text-amber-600">Водителей пока нет — добавьте их в разделе «Пользователи» (роль «Водитель»).</p>
-        )}
+        <button type="submit" disabled={busy || (mode === 'document' && !query.trim() && !client.trim())}
+          className="self-start px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg">
+          {busy ? '⏳…' : '+ Создать доставку'}
+        </button>
+        <p className="text-xs text-gray-400">Новая доставка появится в «Без водителя» — назначьте её водителю ниже.</p>
       </form>
-
-      {/* Фильтр по статусу */}
-      <div className="flex flex-wrap gap-1.5 mb-3">
-        {(['all', ...STATUSES] as const).map((s) => (
-          <button key={s} onClick={() => { setFilter(s); setPage(1); }}
-            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-              filter === s ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-gray-600 border-gray-200 hover:border-slate-300'
-            }`}>
-            {s === 'all' ? 'Все' : DELIVERY_STATUS_LABEL[s]}
-          </button>
-        ))}
-      </div>
 
       {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
 
       {loading ? (
         <div className="text-gray-500 text-sm">Загрузка…</div>
-      ) : shown.length === 0 ? (
-        <div className="bg-white rounded-xl p-8 text-center text-gray-400">Доставок нет</div>
       ) : (
         <>
-          <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
-          <div className="flex flex-col gap-2.5">
-            {pageItems.map((d) => (
-              <div key={d.id} className="bg-white rounded-xl shadow-sm p-4 flex flex-col gap-2">
-                <div className="flex items-start gap-3 flex-wrap">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold text-base flex items-center gap-2 flex-wrap">
-                      {d.doc_type && (
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
-                          {DOC_TYPE_LABEL[d.doc_type]} № {d.doc_number || d.doc_id}
-                        </span>
-                      )}
-                      <span className="truncate">{d.client_name || 'Без названия'}</span>
-                    </div>
-                    {d.address && <div className="text-xs text-gray-500 mt-0.5">📍 {d.address}</div>}
-                    {d.note && <div className="text-xs text-gray-400 mt-0.5">📝 {d.note}</div>}
-                    <div className="text-xs text-gray-400 mt-0.5">создано {fmt(d.created_at)}{d.created_by ? ` · ${d.created_by}` : ''}</div>
-                  </div>
-                  <span className={`text-xs font-semibold px-2 py-1 rounded-full ${statusClass(d.status)}`}>
-                    {DELIVERY_STATUS_LABEL[d.status]}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-gray-100">
-                  <select value={d.driver_username || ''} onChange={(e) => patch(d.id, { driver_username: e.target.value || null })}
-                    className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:border-blue-400">
-                    <option value="">— водитель —</option>
-                    {drivers.map((dr) => (
-                      <option key={dr.username} value={dr.username}>
-                        {dr.name}{dr.car_number ? ` · ${dr.car_number}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <select value={d.status} onChange={(e) => patch(d.id, { status: e.target.value as DeliveryStatus })}
-                    className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:border-blue-400">
-                    {STATUSES.map((s) => (
-                      <option key={s} value={s}>{DELIVERY_STATUS_LABEL[s]}</option>
-                    ))}
-                  </select>
-                  {d.car_number && <span className="text-xs text-gray-500">🚗 {d.car_number}{d.transport ? ` (${d.transport})` : ''}</span>}
-                  <button onClick={() => remove(d.id)}
-                    className="ml-auto text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 hover:bg-red-200">
-                    🗑️
-                  </button>
-                </div>
+          {/* Без водителя */}
+          {visibleUnassigned.length > 0 && (
+            <div className="mb-5">
+              <div className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2">
+                Без водителя ({visibleUnassigned.length})
               </div>
-            ))}
+              <div className="flex flex-col gap-2">
+                {visibleUnassigned.map((d) => (
+                  <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Водители */}
+          <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              Водители ({drivers.length})
+            </div>
+            {drivers.length > 6 && (
+              <input value={driverSearch} onChange={(e) => setDriverSearch(e.target.value)}
+                placeholder="🔍 водитель / машина"
+                className="border border-gray-200 rounded-lg px-2.5 py-1 text-xs outline-none focus:border-blue-400" />
+            )}
           </div>
-          <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
+
+          {drivers.length === 0 ? (
+            <div className="bg-white rounded-xl p-6 text-center text-gray-400 text-sm">
+              Водителей нет. Добавьте их в разделе «Пользователи» (роль «Водитель») или загрузите из Excel.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {shownDrivers.map((dr) => (
+                <DriverCard
+                  key={dr.username}
+                  driver={dr}
+                  deliveries={byDriver.get(dr.username) || []}
+                  allDrivers={drivers}
+                  hideDone={hideDone}
+                  onPatch={patch}
+                  onRemove={remove}
+                />
+              ))}
+            </div>
+          )}
         </>
       )}
+    </div>
+  );
+}
+
+// ─── Карточка водителя ──────────────────────────────────────────────────────
+function DriverCard({
+  driver, deliveries, allDrivers, hideDone, onPatch, onRemove,
+}: {
+  driver: UserInfo;
+  deliveries: Delivery[];
+  allDrivers: UserInfo[];
+  hideDone: boolean;
+  onPatch: (id: string, p: Parameters<typeof updateDelivery>[1]) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const counts = useMemo(() => {
+    const c: Record<DeliveryStatus, number> = { new: 0, assigned: 0, on_way: 0, delivered: 0, returned: 0 };
+    for (const d of deliveries) c[d.status] += 1;
+    return c;
+  }, [deliveries]);
+
+  const activeCount = ACTIVE.reduce((s, st) => s + counts[st], 0);
+  const doneCount = counts.delivered + counts.returned;
+  const shown = hideDone ? deliveries.filter((d) => !isDone(d.status)) : deliveries;
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm">
+      <button onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-3 p-3.5 text-left">
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-sm truncate">{driver.name}</div>
+          <div className="text-xs text-gray-400 truncate">
+            {driver.car_number && <>🚗 {driver.car_number}</>}
+            {driver.transport && <span className="text-gray-400"> · {driver.transport}</span>}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+          {ACTIVE.map((st) => counts[st] > 0 && (
+            <span key={st} className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${statusClass(st)}`}>
+              {DELIVERY_STATUS_LABEL[st]} {counts[st]}
+            </span>
+          ))}
+          {doneCount > 0 && (
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">✓ {doneCount}</span>
+          )}
+          {activeCount === 0 && doneCount === 0 && (
+            <span className="text-[11px] text-gray-300">нет доставок</span>
+          )}
+          <span className="text-gray-300 ml-1">{open ? '▲' : '▼'}</span>
+        </div>
+      </button>
+
+      {open && (
+        <div className="px-3.5 pb-3.5 border-t border-gray-100 pt-2.5">
+          {shown.length === 0 ? (
+            <div className="text-xs text-gray-400 py-2">Нет {hideDone ? 'активных ' : ''}доставок</div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {shown.map((d) => (
+                <DeliveryRow key={d.id} d={d} drivers={allDrivers} onPatch={onPatch} onRemove={onRemove} compact />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Строка доставки ──────────────────────────────────────────────────────────
+function DeliveryRow({
+  d, drivers, onPatch, onRemove, compact,
+}: {
+  d: Delivery;
+  drivers: UserInfo[];
+  onPatch: (id: string, p: Parameters<typeof updateDelivery>[1]) => void;
+  onRemove: (id: string) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`rounded-lg ${compact ? 'bg-gray-50' : 'bg-white shadow-sm'} p-3 flex flex-col gap-2`}>
+      <div className="flex items-start gap-3 flex-wrap">
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-sm flex items-center gap-2 flex-wrap">
+            {d.doc_type && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
+                {DOC_TYPE_LABEL[d.doc_type]} № {d.doc_number || d.doc_id}
+              </span>
+            )}
+            <span className="truncate">{d.client_name || 'Без названия'}</span>
+          </div>
+          {d.address && <div className="text-xs text-gray-500 mt-0.5">📍 {d.address}</div>}
+          {d.note && <div className="text-xs text-gray-400 mt-0.5">📝 {d.note}</div>}
+          <div className="text-xs text-gray-400 mt-0.5">создано {fmt(d.created_at)}{d.created_by ? ` · ${d.created_by}` : ''}</div>
+        </div>
+        <span className={`text-xs font-semibold px-2 py-1 rounded-full ${statusClass(d.status)}`}>
+          {DELIVERY_STATUS_LABEL[d.status]}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <select value={d.driver_username || ''} onChange={(e) => onPatch(d.id, { driver_username: e.target.value || null })}
+          className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:border-blue-400">
+          <option value="">— назначить водителя —</option>
+          {drivers.map((dr) => (
+            <option key={dr.username} value={dr.username}>
+              {dr.name}{dr.car_number ? ` · ${dr.car_number}` : ''}
+            </option>
+          ))}
+        </select>
+        <select value={d.status} onChange={(e) => onPatch(d.id, { status: e.target.value as DeliveryStatus })}
+          className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:border-blue-400">
+          {STATUSES.map((s) => (
+            <option key={s} value={s}>{DELIVERY_STATUS_LABEL[s]}</option>
+          ))}
+        </select>
+        <button onClick={() => onRemove(d.id)}
+          className="ml-auto text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 hover:bg-red-200">
+          🗑️
+        </button>
+      </div>
     </div>
   );
 }
