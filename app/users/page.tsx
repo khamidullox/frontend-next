@@ -25,10 +25,12 @@ async function exportUsersExcel(users: UserInfo[]) {
     'Имя': u.name,
     'Роль': ROLE_LABEL[u.role],
     'Склады': u.warehouses.join(', '),
+    'Машина': u.car_number,
+    'Транспорт': u.transport,
     'Создан': u.created_at ? new Date(u.created_at).toLocaleString('ru-RU') : '',
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{ wch: 5 }, { wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 20 }];
+  ws['!cols'] = [{ wch: 5 }, { wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 20 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Пользователи');
   XLSX.writeFile(wb, 'polzovateli.xlsx');
@@ -39,10 +41,11 @@ async function downloadTemplate() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const XLSX: any = await loadXLSX();
   const ws = XLSX.utils.json_to_sheet([
-    { 'Логин': 'ivan', 'Имя': 'Иван', 'Роль': 'Кладовщик', 'Пароль': '1234', 'Склады': '001,002' },
-    { 'Логин': 'manager1', 'Имя': 'Менеджер', 'Роль': 'Менеджер', 'Пароль': '1234', 'Склады': '' },
+    { 'Логин': 'ivan', 'Имя': 'Иван', 'Роль': 'Кладовщик', 'Пароль': '1234', 'Склады': '001,002', 'Машина': '', 'Транспорт': '' },
+    { 'Логин': 'manager1', 'Имя': 'Менеджер', 'Роль': 'Менеджер', 'Пароль': '1234', 'Склады': '', 'Машина': '', 'Транспорт': '' },
+    { 'Логин': '40100uaa', 'Имя': 'Зулфиқоров Шарифжон', 'Роль': 'Водитель', 'Пароль': '1234', 'Склады': '', 'Машина': '40 100 UAA', 'Транспорт': 'Chevrolet COBALT' },
   ]);
-  ws['!cols'] = [{ wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 16 }];
+  ws['!cols'] = [{ wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 18 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Шаблон');
   XLSX.writeFile(wb, 'shablon_polzovateli.xlsx');
@@ -212,11 +215,13 @@ function UsersContent() {
         const username = pick(r, ['логин', 'login', 'username']).trim();
         const password = pick(r, ['пароль', 'password']).trim();
         if (!username && !password) continue;
-        const name = pick(r, ['имя', 'name', 'фио']).trim();
+        const name = pick(r, ['имя', 'name', 'фио', "ma'sul xodim", 'masul xodim']).trim();
         const role = parseRole(pick(r, ['роль', 'role']));
         const warehouses = parseWarehouses(pick(r, ['склады', 'склад', 'warehouses', 'warehouse']));
+        const car_number = pick(r, ['машина', 'номер машины', 'гос номер', 'госномер', 'номер', 'davlat raqami', 'car', 'car_number']).trim();
+        const transport = pick(r, ['транспорт', 'transport', 'rusumi', 'тип транспорта', 'модель']).trim();
         try {
-          await createUser({ username, name, role, password, warehouses });
+          await createUser({ username, name, role, password, warehouses, car_number, transport });
           ok++;
         } catch (err) {
           errs.push(`${username || '—'}: ${(err as Error).message}`);
@@ -267,7 +272,7 @@ function UsersContent() {
       </div>
 
       <p className="text-xs text-gray-400 mb-3">
-        Колонки в Excel: <b>Логин</b>, <b>Имя</b>, <b>Роль</b> (Кладовщик/Менеджер/Админ), <b>Пароль</b>, <b>Склады</b> (коды через запятую, напр. 001,002). Нажми «Шаблон» для примера.
+        Колонки в Excel: <b>Логин</b>, <b>Имя</b>, <b>Роль</b> (Магазин/Водитель/Менеджер/Админ), <b>Пароль</b>, <b>Склады</b> (коды через запятую, напр. 001,002), для водителей — <b>Машина</b> и <b>Транспорт</b>. Нажми «Шаблон» для примера.
       </p>
       {importMsg && <p className="text-sm text-blue-600 mb-3">{importMsg}</p>}
 
