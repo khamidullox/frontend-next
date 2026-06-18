@@ -276,10 +276,10 @@ function UsersContent() {
         <div className="font-semibold text-sm mb-1">Добавить пользователя</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <input value={username} onChange={(e) => setUsername(e.target.value)}
-            placeholder="Логин (латиница)" autoCapitalize="none"
+            placeholder="Логин (латиница)" autoCapitalize="none" autoComplete="off"
             className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
           <input value={name} onChange={(e) => setName(e.target.value)}
-            placeholder="Имя"
+            placeholder="Имя" autoComplete="off"
             className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
           <select value={role} onChange={(e) => setRole(e.target.value as Role)}
             className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
@@ -289,7 +289,7 @@ function UsersContent() {
             <option value="admin">Админ</option>
           </select>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-            placeholder="Пароль"
+            placeholder="Пароль" autoComplete="new-password"
             className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
         </div>
 
@@ -318,7 +318,7 @@ function UsersContent() {
 
       {/* Поиск */}
       <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-        placeholder="🔍 Поиск по логину или имени…"
+        placeholder="🔍 Поиск по логину или имени…" autoComplete="off"
         className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-3 outline-none focus:border-blue-400" />
 
       {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
@@ -446,7 +446,7 @@ function EditUserModal({
           <div>
             <label className="text-xs text-gray-500 mb-1 block">Новый пароль (оставьте пустым — без изменений)</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-              placeholder="Минимум 4 символа"
+              placeholder="Минимум 4 символа" autoComplete="new-password"
               className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
           </div>
 
