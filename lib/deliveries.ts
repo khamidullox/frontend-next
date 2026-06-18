@@ -76,7 +76,9 @@ interface CreateInput {
   client_name?: string;
   address?: string;
   note?: string;
-  driver_username?: string;
+  driver_username?: string;      // штатный водитель (есть аккаунт)
+  external_driver?: string;      // внешний водитель «со стороны» — имя
+  external_car?: string;         // его машина
   created_by?: string;
 }
 
@@ -162,6 +164,13 @@ export async function createDelivery(
   // Если водителя указали сразу — назначаем.
   if (input.driver_username) {
     await applyDriver(delivery, str(input.driver_username));
+  } else if (str(input.external_driver)) {
+    // Внешний водитель «со стороны» — без аккаунта, только имя/машина.
+    delivery.driver_username = null;
+    delivery.driver_name = str(input.external_driver);
+    delivery.car_number = str(input.external_car) || null;
+    delivery.transport = null;
+    delivery.status = 'assigned';
   }
 
   await getDb().collection(COLLECTION).doc(delivery.id).set(delivery);

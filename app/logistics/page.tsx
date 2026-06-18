@@ -63,12 +63,16 @@ function LogisticsContent() {
   // null = режим по умолчанию (только доставочные: LABO + Газель).
   const [vehSel, setVehSel] = useState<string[] | null>(null);
 
-  // Форма создания.
+  // Форма создания (свёрнута по умолчанию — основной поток через карточку водителя).
+  const [showForm, setShowForm] = useState(false);
   const [mode, setMode] = useState<'document' | 'manual'>('document');
   const [query, setQuery] = useState('');
   const [client, setClient] = useState('');
   const [address, setAddress] = useState('');
   const [note, setNote] = useState('');
+  const [formDriver, setFormDriver] = useState(''); // '' | username | '__ext__'
+  const [extName, setExtName] = useState('');
+  const [extCar, setExtCar] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -89,12 +93,21 @@ function LogisticsContent() {
     setBusy(true);
     setError('');
     try {
-      await createDelivery(
-        mode === 'document'
-          ? { query: query.trim(), client_name: client.trim(), address: address.trim(), note: note.trim() }
-          : { client_name: client.trim(), address: address.trim(), note: note.trim() }
-      );
+      const driverPart =
+        formDriver === '__ext__'
+          ? { external_driver: extName.trim(), external_car: extCar.trim() }
+          : formDriver
+          ? { driver_username: formDriver }
+          : {};
+      await createDelivery({
+        ...(mode === 'document' ? { query: query.trim() } : {}),
+        client_name: client.trim(),
+        address: address.trim(),
+        note: note.trim(),
+        ...driverPart,
+      });
       setQuery(''); setClient(''); setAddress(''); setNote('');
+      setFormDriver(''); setExtName(''); setExtCar('');
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -133,17 +146,23 @@ function LogisticsContent() {
     setItems((prev) => [created, ...prev]);
   }, []);
 
-  // Группировка доставок по водителю.
-  const { byDriver, unassigned } = useMemo(() => {
+  // Группировка доставок: штатные водители (по username), внешние (по имени), без водителя.
+  const { byDriver, external, unassigned } = useMemo(() => {
     const map = new Map<string, Delivery[]>();
+    const ext = new Map<string, Delivery[]>();
     const none: Delivery[] = [];
     for (const d of items) {
-      if (!d.driver_username) { none.push(d); continue; }
-      const arr = map.get(d.driver_username) || [];
-      arr.push(d);
-      map.set(d.driver_username, arr);
+      if (d.driver_username) {
+        const arr = map.get(d.driver_username) || [];
+        arr.push(d); map.set(d.driver_username, arr);
+      } else if (d.driver_name) {
+        const arr = ext.get(d.driver_name) || [];
+        arr.push(d); ext.set(d.driver_name, arr);
+      } else {
+        none.push(d);
+      }
     }
-    return { byDriver: map, unassigned: none };
+    return { byDriver: map, external: ext, unassigned: none };
   }, [items]);
 
   // Категории транспорта среди водителей: [категория, кол-во].
@@ -187,7 +206,13 @@ function LogisticsContent() {
         </label>
       </div>
 
-      {/* Создание доставки */}
+      {/* Создание доставки — свёрнуто (основной поток: назначение из карточки водителя) */}
+      <button onClick={() => setShowForm((v) => !v)}
+        className="mb-3 text-sm font-semibold px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700">
+        {showForm ? '× Скрыть форму' : '+ Создать доставку вручную'}
+      </button>
+
+      {showForm && (
       <form onSubmit={add} className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-col gap-2">
         <div className="flex items-center gap-2 mb-1">
           <button type="button" onClick={() => setMode('document')}
@@ -219,12 +244,34 @@ function LogisticsContent() {
           placeholder="Примечание (необязательно)"
           className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
 
-        <button type="submit" disabled={busy || (mode === 'document' && !query.trim() && !client.trim())}
+        {/* Водитель: штатный из списка или внешний «со стороны» */}
+        <select value={formDriver} onChange={(e) => setFormDriver(e.target.value)}
+          className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
+          <option value="">Без водителя (назначить позже)</option>
+          {drivers.map((dr) => (
+            <option key={dr.username} value={dr.username}>{dr.name}{dr.car_number ? ` · ${dr.car_number}` : ''}</option>
+          ))}
+          <option value="__ext__">➕ Внешний водитель…</option>
+        </select>
+
+        {formDriver === '__ext__' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input value={extName} onChange={(e) => setExtName(e.target.value)} autoComplete="off"
+              placeholder="Имя внешнего водителя"
+              className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            <input value={extCar} onChange={(e) => setExtCar(e.target.value)} autoComplete="off"
+              placeholder="Машина (необязательно)"
+              className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          </div>
+        )}
+
+        <button type="submit" disabled={busy || (mode === 'document' && !query.trim() && !client.trim()) || (formDriver === '__ext__' && !extName.trim())}
           className="self-start px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg">
           {busy ? '⏳…' : '+ Создать доставку'}
         </button>
-        <p className="text-xs text-gray-400">Новая доставка появится в «Без водителя» — назначьте её водителю ниже.</p>
+        <p className="text-xs text-gray-400">Без водителя — появится в «Без водителя». Со штатным/внешним — сразу назначится.</p>
       </form>
+      )}
 
       {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
 
@@ -242,6 +289,35 @@ function LogisticsContent() {
                 {visibleUnassigned.map((d) => (
                   <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} />
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Внешние водители (со стороны, без аккаунта) */}
+          {external.size > 0 && (
+            <div className="mb-5">
+              <div className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-2">
+                Внешние водители ({external.size})
+              </div>
+              <div className="flex flex-col gap-2">
+                {[...external.entries()].map(([name, ds]) => {
+                  const shown = hideDone ? ds.filter((d) => !isDone(d.status)) : ds;
+                  if (!shown.length) return null;
+                  const car = ds.find((d) => d.car_number)?.car_number;
+                  return (
+                    <div key={name} className="bg-white rounded-xl shadow-sm p-3">
+                      <div className="font-semibold text-sm mb-2">
+                        🧑‍✈️ {name}
+                        {car && <span className="text-xs text-gray-400 font-normal"> · 🚗 {car}</span>}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {shown.map((d) => (
+                          <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} compact />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

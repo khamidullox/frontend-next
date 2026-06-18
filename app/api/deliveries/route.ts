@@ -35,6 +35,8 @@ export async function POST(request: NextRequest) {
       address: body.address,
       note: body.note,
       driver_username: body.driver_username,
+      external_driver: body.external_driver,
+      external_car: body.external_car,
       created_by: session.name || session.username,
     });
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });

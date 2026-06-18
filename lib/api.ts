@@ -537,6 +537,8 @@ export async function createDelivery(input: {
   address?: string;
   note?: string;
   driver_username?: string;
+  external_driver?: string;
+  external_car?: string;
 }): Promise<Delivery> {
   const res = await fetch('/api/deliveries', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
