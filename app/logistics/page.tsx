@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminGate from '@/components/AdminGate';
 import {
   listDeliveries, createDelivery, updateDelivery, deleteDeliveryApi, listDrivers,
+  listMovements, listOrders, MovementListItem, OrderListItem, MOVEMENT_STATUS_LABEL,
   Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL, UserInfo,
 } from '@/lib/api';
 
@@ -48,6 +49,7 @@ function LogisticsContent() {
   const [error, setError] = useState('');
   const [hideDone, setHideDone] = useState(true);
   const [driverSearch, setDriverSearch] = useState('');
+  const [assignTo, setAssignTo] = useState<UserInfo | null>(null);
 
   // Форма создания.
   const [mode, setMode] = useState<'document' | 'manual'>('document');
@@ -108,6 +110,12 @@ function LogisticsContent() {
     } catch (err) {
       setError((err as Error).message);
     }
+  }, []);
+
+  // Назначить водителю существующую накладную/заказ (из выбранного в модалке).
+  const assignDoc = useCallback(async (query: string, driver_username: string) => {
+    const created = await createDelivery({ query, driver_username });
+    setItems((prev) => [created, ...prev]);
   }, []);
 
   // Группировка доставок по водителю.
@@ -228,11 +236,21 @@ function LogisticsContent() {
                   hideDone={hideDone}
                   onPatch={patch}
                   onRemove={remove}
+                  onAssign={() => setAssignTo(dr)}
                 />
               ))}
             </div>
           )}
         </>
+      )}
+
+      {assignTo && (
+        <AssignDocModal
+          driver={assignTo}
+          onClose={() => setAssignTo(null)}
+          onError={setError}
+          onPick={assignDoc}
+        />
       )}
     </div>
   );
@@ -240,7 +258,7 @@ function LogisticsContent() {
 
 // ─── Карточка водителя ──────────────────────────────────────────────────────
 function DriverCard({
-  driver, deliveries, allDrivers, hideDone, onPatch, onRemove,
+  driver, deliveries, allDrivers, hideDone, onPatch, onRemove, onAssign,
 }: {
   driver: UserInfo;
   deliveries: Delivery[];
@@ -248,6 +266,7 @@ function DriverCard({
   hideDone: boolean;
   onPatch: (id: string, p: Parameters<typeof updateDelivery>[1]) => void;
   onRemove: (id: string) => void;
+  onAssign: () => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -290,8 +309,12 @@ function DriverCard({
 
       {open && (
         <div className="px-3.5 pb-3.5 border-t border-gray-100 pt-2.5">
+          <button onClick={onAssign}
+            className="mb-2.5 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold rounded-lg">
+            + Назначить накладную / заказ
+          </button>
           {shown.length === 0 ? (
-            <div className="text-xs text-gray-400 py-2">Нет {hideDone ? 'активных ' : ''}доставок</div>
+            <div className="text-xs text-gray-400 py-1">Нет {hideDone ? 'активных ' : ''}доставок</div>
           ) : (
             <div className="flex flex-col gap-2">
               {shown.map((d) => (
@@ -325,8 +348,16 @@ function DeliveryRow({
                 {DOC_TYPE_LABEL[d.doc_type]} № {d.doc_number || d.doc_id}
               </span>
             )}
-            <span className="truncate">{d.client_name || 'Без названия'}</span>
+            {d.from_name && d.to_name ? (
+              <span className="truncate">🏬 {d.from_name} <span className="text-gray-400">→</span> {d.to_name}</span>
+            ) : (
+              <span className="truncate">🚚 {d.client_name || 'Без названия'}</span>
+            )}
           </div>
+          {/* Если есть и маршрут, и клиент — клиента покажем отдельной строкой */}
+          {d.from_name && d.to_name && d.client_name && d.client_name !== `${d.from_name} → ${d.to_name}` && (
+            <div className="text-xs text-gray-500 mt-0.5">🚚 {d.client_name}</div>
+          )}
           {d.address && <div className="text-xs text-gray-500 mt-0.5">📍 {d.address}</div>}
           {d.note && <div className="text-xs text-gray-400 mt-0.5">📝 {d.note}</div>}
           <div className="text-xs text-gray-400 mt-0.5">создано {fmt(d.created_at)}{d.created_by ? ` · ${d.created_by}` : ''}</div>
@@ -356,6 +387,111 @@ function DeliveryRow({
           className="ml-auto text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 hover:bg-red-200">
           🗑️
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Модалка: выбор существующей накладной/заказа для назначения ───────────────
+function AssignDocModal({
+  driver, onClose, onError, onPick,
+}: {
+  driver: UserInfo;
+  onClose: () => void;
+  onError: (msg: string) => void;
+  onPick: (query: string, driverUsername: string) => Promise<void>;
+}) {
+  const [tab, setTab] = useState<'movement' | 'order'>('movement');
+  const [movements, setMovements] = useState<MovementListItem[]>([]);
+  const [orders, setOrders] = useState<OrderListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    Promise.all([listMovements().catch(() => []), listOrders().catch(() => [])])
+      .then(([m, o]) => { setMovements(m); setOrders(o); })
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function pick(query: string, id: string) {
+    setBusyId(id);
+    try {
+      await onPick(query, driver.username);
+      onClose();
+    } catch (e) {
+      onError((e as Error).message);
+      setBusyId(null);
+    }
+  }
+
+  const needle = q.trim().toLowerCase();
+  const shownMovements = movements.filter((m) =>
+    !needle || `${m.movement_number} ${m.from_warehouse_name || ''} ${m.to_warehouse_name || ''}`.toLowerCase().includes(needle)
+  );
+  const shownOrders = orders.filter((o) =>
+    !needle || `${o.doc_number} ${o.client_name}`.toLowerCase().includes(needle)
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between p-4 pb-2">
+          <div>
+            <div className="font-bold text-base">Назначить водителю</div>
+            <div className="text-xs text-gray-400">{driver.name}{driver.car_number ? ` · 🚗 ${driver.car_number}` : ''}</div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+        </div>
+
+        <div className="px-4 flex items-center gap-2">
+          <button onClick={() => setTab('movement')}
+            className={`text-xs px-3 py-1.5 rounded-full font-semibold ${tab === 'movement' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
+            🗂️ Накладные ({movements.length})
+          </button>
+          <button onClick={() => setTab('order')}
+            className={`text-xs px-3 py-1.5 rounded-full font-semibold ${tab === 'order' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
+            🧾 Заказы ({orders.length})
+          </button>
+        </div>
+
+        <div className="px-4 pt-2">
+          <input value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off"
+            placeholder="🔍 поиск по номеру / складу / клиенту"
+            className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 pt-2 flex flex-col gap-1.5">
+          {loading ? (
+            <div className="text-center text-gray-400 text-sm py-6">Загрузка из Smartup…</div>
+          ) : tab === 'movement' ? (
+            shownMovements.length === 0 ? (
+              <div className="text-center text-gray-400 text-sm py-6">Накладных не найдено</div>
+            ) : shownMovements.map((m) => (
+              <button key={m.movement_id} disabled={busyId === m.movement_id}
+                onClick={() => pick(m.movement_id, m.movement_id)}
+                className="text-left border border-gray-200 rounded-lg px-3 py-2 hover:bg-blue-50 hover:border-blue-300 disabled:opacity-50 transition-colors">
+                <div className="text-sm font-semibold">№ {m.movement_number}
+                  <span className="ml-2 text-[11px] font-normal text-gray-400">{MOVEMENT_STATUS_LABEL[m.status] || m.status}</span>
+                </div>
+                <div className="text-xs text-gray-500">🏬 {m.from_warehouse_name || m.from_warehouse_code || '—'} → {m.to_warehouse_name || m.to_warehouse_code || '—'}</div>
+                <div className="text-[11px] text-gray-400">{m.items_count} поз. · {m.total_quantity} шт · {m.from_movement_date}</div>
+              </button>
+            ))
+          ) : (
+            shownOrders.length === 0 ? (
+              <div className="text-center text-gray-400 text-sm py-6">Заказов не найдено</div>
+            ) : shownOrders.map((o) => (
+              <button key={o.deal_id} disabled={busyId === o.deal_id}
+                onClick={() => pick(o.deal_id, o.deal_id)}
+                className="text-left border border-gray-200 rounded-lg px-3 py-2 hover:bg-blue-50 hover:border-blue-300 disabled:opacity-50 transition-colors">
+                <div className="text-sm font-semibold">№ {o.doc_number}</div>
+                <div className="text-xs text-gray-500">🚚 {o.client_name || '—'}</div>
+                <div className="text-[11px] text-gray-400">{o.items_count} поз. · {o.total_quantity} шт · {o.date}</div>
+              </button>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

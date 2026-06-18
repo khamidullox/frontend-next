@@ -509,6 +509,8 @@ export interface Delivery {
   client_name: string;
   address: string;
   note: string;
+  from_name: string | null;
+  to_name: string | null;
   driver_username: string | null;
   driver_name: string | null;
   car_number: string | null;

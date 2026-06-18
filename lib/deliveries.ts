@@ -3,6 +3,7 @@ import { getDb } from './firebase';
 import { resolveDocument } from './resolve';
 import { getUserRaw } from './users';
 import { getSession as getCheckSession } from './sessions';
+import { getWarehouseCodeMap } from './products';
 import { DocType } from './document';
 
 const COLLECTION = 'deliveries';
@@ -44,6 +45,10 @@ export interface Delivery {
   address: string;
   note: string;
 
+  // Маршрут склад → склад (для накладных/перемещений; у заказов — пусто).
+  from_name: string | null;
+  to_name: string | null;
+
   // Назначенный водитель (снимок данных на момент назначения).
   driver_username: string | null;
   driver_name: string | null;
@@ -83,6 +88,8 @@ export async function createDelivery(
     note: str(input.note),
   };
   let source: DeliverySource = input.source || 'manual';
+  let fromCode: string | null = null;
+  let toCode: string | null = null;
 
   // Из проверки (сессии сканирования).
   if (input.session_id) {
@@ -94,6 +101,8 @@ export async function createDelivery(
     base.doc_number = s.document.doc_number;
     base.client_name = base.client_name || str(s.document.client_name);
     base.note = base.note || str(s.document.note);
+    fromCode = s.document.from_warehouse_code;
+    toCode = s.document.to_warehouse_code;
   } else if (input.query) {
     // Из документа Smartup (накладная/заказ/перемещение/приёмка).
     const doc = await resolveDocument({ query: str(input.query) });
@@ -104,6 +113,17 @@ export async function createDelivery(
     base.doc_number = doc.doc_number;
     base.client_name = base.client_name || str(doc.client_name);
     base.note = base.note || str(doc.note);
+    fromCode = doc.from_warehouse_code;
+    toCode = doc.to_warehouse_code;
+  }
+
+  // Названия складов «откуда → куда» (если документ — накладная/перемещение).
+  let from_name: string | null = null;
+  let to_name: string | null = null;
+  if (fromCode || toCode) {
+    const whMap = await getWarehouseCodeMap();
+    from_name = fromCode ? whMap.get(fromCode) || fromCode : null;
+    to_name = toCode ? whMap.get(toCode) || toCode : null;
   }
 
   const now = new Date().toISOString();
@@ -119,6 +139,8 @@ export async function createDelivery(
     client_name: base.client_name ?? '',
     address: base.address ?? '',
     note: base.note ?? '',
+    from_name,
+    to_name,
     driver_username: null,
     driver_name: null,
     car_number: null,
