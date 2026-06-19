@@ -19,7 +19,7 @@ interface PickedRow extends WarehouseProduct {
   fromCatalog?: boolean; // добавлен через поиск по справочнику
 }
 
-const A4_TAG = { width: '190mm', height: '136mm' };          // 2 ценника на лист A4
+const A4_TAG = { width: '190mm', height: '145mm' };          // 2 ценника на лист A4
 
 // Размеры термоэтикеток (по одной на «страницу» термопринтера).
 const BC_SIZES: Record<string, { label: string; w: string; h: string }> = {
