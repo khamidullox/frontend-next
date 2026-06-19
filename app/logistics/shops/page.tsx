@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
 import { listShops, createShop, deleteShopApi, Shop, DIRECTIONS, ShopType } from '@/lib/api';
+import ConfirmModal from '@/components/ConfirmModal';
 
 const DIR_COLOR: Record<string, string> = {
   'Север': 'bg-blue-100 text-blue-700',
@@ -26,6 +27,7 @@ function ShopsContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [confirmState, setConfirmState] = useState<{ msg: string; onOk: () => void } | null>(null);
 
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
@@ -56,10 +58,15 @@ function ShopsContent() {
     finally { setBusy(false); }
   }
 
-  async function remove(id: string) {
-    if (!confirm('Удалить точку?')) return;
-    try { await deleteShopApi(id); setItems(prev => prev.filter(s => s.id !== id)); }
-    catch (e) { setError((e as Error).message); }
+  function remove(id: string) {
+    setConfirmState({
+      msg: 'Удалить точку?',
+      onOk: async () => {
+        setConfirmState(null);
+        try { await deleteShopApi(id); setItems(prev => prev.filter(s => s.id !== id)); }
+        catch (e) { setError((e as Error).message); }
+      },
+    });
   }
 
   return (
@@ -133,6 +140,14 @@ function ShopsContent() {
             </div>
           ))}
         </div>
+      )}
+
+      {confirmState && (
+        <ConfirmModal
+          message={confirmState.msg}
+          onOk={confirmState.onOk}
+          onCancel={() => setConfirmState(null)}
+        />
       )}
     </div>
   );

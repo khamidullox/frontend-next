@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
+import ConfirmModal from '@/components/ConfirmModal';
 import {
   listDeliveries, createDelivery, updateDelivery, deleteDeliveryApi, listDrivers,
   listMovements, listOrders, listTransfers, MovementListItem, OrderListItem, TransferListItem, MOVEMENT_STATUS_LABEL,
@@ -80,6 +81,7 @@ function LogisticsContent() {
   const [extName, setExtName] = useState('');
   const [extCar, setExtCar] = useState('');
   const [busy, setBusy] = useState(false);
+  const [confirmState, setConfirmState] = useState<{ msg: string; onOk: () => void } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -154,15 +156,20 @@ function LogisticsContent() {
     }
   }, []);
 
-  const remove = useCallback(async (id: string) => {
-    if (!confirm('Удалить доставку?')) return;
-    setError('');
-    try {
-      await deleteDeliveryApi(id);
-      setItems((prev) => prev.filter((d) => d.id !== id));
-    } catch (err) {
-      setError((err as Error).message);
-    }
+  const remove = useCallback((id: string) => {
+    setConfirmState({
+      msg: 'Удалить доставку?',
+      onOk: async () => {
+        setConfirmState(null);
+        setError('');
+        try {
+          await deleteDeliveryApi(id);
+          setItems((prev) => prev.filter((d) => d.id !== id));
+        } catch (err) {
+          setError((err as Error).message);
+        }
+      },
+    });
   }, []);
 
   // Назначить водителю существующий документ (накладная/заказ/перемещение) из модалки.
@@ -437,6 +444,14 @@ function LogisticsContent() {
           driver={assignTo}
           onClose={() => setAssignTo(null)}
           onPick={assignDoc}
+        />
+      )}
+
+      {confirmState && (
+        <ConfirmModal
+          message={confirmState.msg}
+          onOk={confirmState.onOk}
+          onCancel={() => setConfirmState(null)}
         />
       )}
     </div>

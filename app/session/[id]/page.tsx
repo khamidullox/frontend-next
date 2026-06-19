@@ -16,6 +16,7 @@ import {
 } from '@/lib/api';
 import { feedbackForScan } from '@/lib/feedback';
 import CameraScanner, { isCameraScanSupported } from '@/components/CameraScanner';
+import ConfirmModal from '@/components/ConfirmModal';
 
 // SheetJS грузим по требованию из CDN (без npm-зависимости).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -371,6 +372,7 @@ export default function SessionPage() {
   const [finishing, setFinishing]       = useState(false);
   const [exporting, setExporting]       = useState(false);
   const [camera, setCamera]             = useState(false);
+  const [confirmState, setConfirmState] = useState<{ msg: string; onOk: () => void } | null>(null);
 
   const scanInputRef = useRef<HTMLInputElement>(null);
 
@@ -449,18 +451,23 @@ export default function SessionPage() {
     }
   }
 
-  async function handleFinish() {
-    if (!confirm('Завершить проверку? Сессия станет только для чтения.')) return;
-    setFinishing(true);
-    setScanError('');
-    try {
-      const s = await finishSession(id);
-      setSession(s);
-    } catch (err) {
-      setScanError((err as Error).message || 'Ошибка завершения');
-    } finally {
-      setFinishing(false);
-    }
+  function handleFinish() {
+    setConfirmState({
+      msg: 'Завершить проверку? Сессия станет только для чтения.',
+      onOk: async () => {
+        setConfirmState(null);
+        setFinishing(true);
+        setScanError('');
+        try {
+          const s = await finishSession(id);
+          setSession(s);
+        } catch (err) {
+          setScanError((err as Error).message || 'Ошибка завершения');
+        } finally {
+          setFinishing(false);
+        }
+      },
+    });
   }
 
   async function handleExport() {
@@ -698,6 +705,15 @@ export default function SessionPage() {
           continuous
           onDetected={handleCameraDetected}
           onClose={() => { setCamera(false); refocusScan(); }}
+        />
+      )}
+
+      {confirmState && (
+        <ConfirmModal
+          message={confirmState.msg}
+          onOk={confirmState.onOk}
+          onCancel={() => setConfirmState(null)}
+          okLabel="Завершить"
         />
       )}
     </div>

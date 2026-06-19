@@ -7,6 +7,7 @@ import AdminGate from '@/components/AdminGate';
 import { useAuth } from '@/components/AuthProvider';
 import { useCachedList } from '@/lib/useCachedList';
 import Pager from '@/components/Pager';
+import ConfirmModal from '@/components/ConfirmModal';
 
 const PAGE_SIZE = 50;
 
@@ -154,6 +155,7 @@ function HistoryContent() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
+  const [confirmState, setConfirmState] = useState<{ msg: string; onOk: () => void } | null>(null);
 
   useEffect(() => { setSessions(cachedSessions); }, [cachedSessions]);
 
@@ -166,18 +168,23 @@ function HistoryContent() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('Удалить эту запись проверки из истории?')) return;
-    setBusyId(id);
-    setActionError('');
-    try {
-      await deleteSessionApi(id);
-      syncCache(sessions.filter(s => s.id !== id));
-    } catch (e) {
-      setActionError((e as Error).message);
-    } finally {
-      setBusyId(null);
-    }
+  function handleDelete(id: string) {
+    setConfirmState({
+      msg: 'Удалить эту запись проверки из истории?',
+      onOk: async () => {
+        setConfirmState(null);
+        setBusyId(id);
+        setActionError('');
+        try {
+          await deleteSessionApi(id);
+          syncCache(sessions.filter(s => s.id !== id));
+        } catch (e) {
+          setActionError((e as Error).message);
+        } finally {
+          setBusyId(null);
+        }
+      },
+    });
   }
 
   async function handleToggleStatus(s: SessionListItem) {
@@ -291,6 +298,14 @@ function HistoryContent() {
         </div>
         <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
         </>
+      )}
+
+      {confirmState && (
+        <ConfirmModal
+          message={confirmState.msg}
+          onOk={confirmState.onOk}
+          onCancel={() => setConfirmState(null)}
+        />
       )}
     </div>
   );
