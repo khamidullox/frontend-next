@@ -247,7 +247,7 @@ async function getWarehouseIdCodeMap(): Promise<Map<string, string>> {
 
 // Каталог из Firestore-кэша (тот же, что у /api/products), без живого Smartup.
 // Ключ v3 — после добавления цены продажи в каталог.
-function getCachedCatalog(): Promise<CatalogItem[]> {
+export function getCachedCatalog(): Promise<CatalogItem[]> {
   return getCachedList('catalog_v4', getProductCatalog, REF_TTL_MS);
 }
 

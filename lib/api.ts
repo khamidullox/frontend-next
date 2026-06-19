@@ -517,6 +517,9 @@ export interface Delivery {
   note: string;
   from_name: string | null;
   to_name: string | null;
+  total_weight: number;
+  total_volume_l: number;
+  total_qty: number;
   driver_username: string | null;
   driver_name: string | null;
   car_number: string | null;

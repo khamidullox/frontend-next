@@ -3,7 +3,7 @@ import { getDb } from './firebase';
 import { resolveDocument } from './resolve';
 import { getUserRaw } from './users';
 import { getSession as getCheckSession } from './sessions';
-import { getWarehouseCodeMap } from './products';
+import { getWarehouseCodeMap, getCachedCatalog } from './products';
 import { DocType } from './document';
 
 const COLLECTION = 'deliveries';
@@ -55,12 +55,35 @@ export interface Delivery {
   car_number: string | null;
   transport: string | null;
 
+  // Габариты груза (из позиций документа × вес/объём товара из Smartup).
+  total_weight: number;   // кг
+  total_volume_l: number; // л
+  total_qty: number;      // суммарное количество позиций
+
   status: DeliveryStatus;
   history: StatusEvent[];
 }
 
 function str(v: unknown): string {
   return String(v ?? '').trim();
+}
+
+// Считает вес/объём/количество груза по позициям документа и каталогу Smartup.
+async function computeDims(
+  items: { product_code: string; quantity: number | string }[]
+): Promise<{ weight: number; volume_l: number; qty: number }> {
+  let weight = 0, volume_l = 0, qty = 0;
+  if (items.length) {
+    const catalog = await getCachedCatalog();
+    const m = new Map(catalog.map((c) => [c.code, c]));
+    for (const it of items) {
+      const q = Number(it.quantity) || 0;
+      qty += q;
+      const c = m.get(str(it.product_code));
+      if (c) { weight += q * c.weight; volume_l += q * c.volume_l; }
+    }
+  }
+  return { weight: Math.round(weight * 100) / 100, volume_l: Math.round(volume_l * 100) / 100, qty };
 }
 
 // ─── Создание ────────────────────────────────────────────────────────────────
@@ -96,6 +119,7 @@ export async function createDelivery(
   let source: DeliverySource = input.source || 'manual';
   let fromCode: string | null = null;
   let toCode: string | null = null;
+  let docItems: { product_code: string; quantity: number | string }[] = [];
 
   // Из проверки (сессии сканирования).
   if (input.session_id) {
@@ -109,6 +133,7 @@ export async function createDelivery(
     base.note = base.note || str(s.document.note);
     fromCode = s.document.from_warehouse_code;
     toCode = s.document.to_warehouse_code;
+    docItems = s.items.map((it) => ({ product_code: it.product_code, quantity: it.quantity }));
   } else if (input.query || input.movement_id || input.deal_id || input.transfer_id || input.receipt_id) {
     // Из документа Smartup (накладная/заказ/перемещение/приёмка).
     const doc = await resolveDocument({
@@ -127,7 +152,10 @@ export async function createDelivery(
     base.note = base.note || str(doc.note);
     fromCode = doc.from_warehouse_code;
     toCode = doc.to_warehouse_code;
+    docItems = doc.items.map((it) => ({ product_code: it.product_code, quantity: it.quantity }));
   }
+
+  const dims = await computeDims(docItems);
 
   // Названия складов «откуда → куда» (если документ — накладная/перемещение).
   let from_name: string | null = null;
@@ -153,6 +181,9 @@ export async function createDelivery(
     note: base.note ?? '',
     from_name,
     to_name,
+    total_weight: dims.weight,
+    total_volume_l: dims.volume_l,
+    total_qty: dims.qty,
     driver_username: null,
     driver_name: null,
     car_number: null,
