@@ -247,7 +247,7 @@ export default function PriceTagsPage() {
     let el = document.getElementById(id) as HTMLStyleElement | null;
     if (!el) { el = document.createElement('style'); el.id = id; document.head.appendChild(el); }
     el.textContent = tab === 'tags'
-      ? `@page { size: A4 portrait; margin: 3mm; }
+      ? `@page { size: A4 portrait; margin: 2mm; }
          @media print { .tag { page-break-inside: avoid; margin: 0 !important; } .tag:nth-child(2n) { page-break-after: always; } .tag-print-wrap { gap: 0 !important; } }`
       : `@page { size: ${bcLabel.w} ${bcLabel.h}; margin: 0; }
          @media print {
@@ -763,7 +763,7 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
   // Убираем ведущий код группы (цифры в начале), например «1025 Obogrevatel» → «Obogrevatel».
   const cleanGroup = item.group.replace(/^\d+\s*/, '');
   const title = `${cleanGroup} ${item.producer}`.trim() || item.product_name;
-  const monthly = monthlyInstallment(item.price, pct);
+  const monthly = pct > 0 ? monthlyInstallment(item.price, pct) : 0;
 
   return (
     <div className="tag relative border-[11px] border-black bg-white flex flex-col overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
