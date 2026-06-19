@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
 import {
   listDeliveries, createDelivery, updateDelivery, deleteDeliveryApi, listDrivers,
@@ -200,10 +201,15 @@ function LogisticsContent() {
     <div>
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h2 className="text-xl font-bold">🚚 Логистика <span className="text-sm text-gray-400 font-normal">({items.length})</span></h2>
-        <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-          <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} />
-          Скрывать завершённые
-        </label>
+        <div className="flex items-center gap-3">
+          <Link href="/logistics/shops" className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700">
+            🏪 Точки доставки
+          </Link>
+          <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+            <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} />
+            Скрывать завершённые
+          </label>
+        </div>
       </div>
 
       {/* Создание доставки — свёрнуто (основной поток: назначение из карточки водителя) */}

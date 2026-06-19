@@ -575,6 +575,58 @@ export async function listDrivers(): Promise<UserInfo[]> {
   return data.data || [];
 }
 
+// ─── Логистика: справочник точек доставки (магазины/адреса) ───────────────────
+export const DIRECTIONS = ['Север', 'Юг', 'Восток', 'Запад', 'Центр'] as const;
+export type Direction = (typeof DIRECTIONS)[number];
+
+export interface Shop {
+  id: string;
+  name: string;
+  address: string;
+  direction: Direction;
+  km: number;
+  phone: string;
+  created_at: string;
+}
+
+export async function listShops(): Promise<Shop[]> {
+  const res = await fetch('/api/shops', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
+export async function createShop(input: {
+  name: string; address?: string; direction?: string; km?: number; phone?: string;
+}): Promise<Shop> {
+  const res = await fetch('/api/shops', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка создания');
+  return data.data as Shop;
+}
+
+export async function updateShop(
+  id: string,
+  patch: { name?: string; address?: string; direction?: string; km?: number; phone?: string }
+): Promise<Shop> {
+  const res = await fetch(`/api/shops/${encodeURIComponent(id)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка изменения');
+  return data.data as Shop;
+}
+
+export async function deleteShopApi(id: string): Promise<void> {
+  const res = await fetch(`/api/shops/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка удаления');
+}
+
 export class NotFoundError extends Error {
   constructor(message: string) {
     super(message);
