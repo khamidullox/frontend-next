@@ -248,7 +248,12 @@ export default function PriceTagsPage() {
     if (!el) { el = document.createElement('style'); el.id = id; document.head.appendChild(el); }
     el.textContent = tab === 'tags'
       ? `@page { size: A4 portrait; margin: 2mm; }
-         @media print { .tag { page-break-inside: avoid; margin-bottom: 2mm !important; } .tag:last-child { margin-bottom: 0 !important; } .tag:nth-child(2n) { page-break-after: always; } .tag-print-wrap { gap: 0 !important; } }`
+         @media print {
+           .tag-print-wrap { display: block !important; }
+           .tag { display: block !important; page-break-inside: avoid; break-inside: avoid; margin-bottom: 2mm !important; }
+           .tag:last-child { margin-bottom: 0 !important; }
+           .tag:nth-child(2n) { page-break-after: always; break-after: page; margin-bottom: 0 !important; }
+         }`
       : `@page { size: ${bcLabel.w} ${bcLabel.h}; margin: 0; }
          @media print {
            html, body { margin: 0 !important; padding: 0 !important; }
