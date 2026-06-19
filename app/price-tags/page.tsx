@@ -247,8 +247,8 @@ export default function PriceTagsPage() {
     let el = document.getElementById(id) as HTMLStyleElement | null;
     if (!el) { el = document.createElement('style'); el.id = id; document.head.appendChild(el); }
     el.textContent = tab === 'tags'
-      ? `@page { size: A4 portrait; margin: 6mm; }
-         @media print { .tag { page-break-inside: avoid; } .tag:nth-child(2n) { page-break-after: always; } }`
+      ? `@page { size: A4 portrait; margin: 3mm; }
+         @media print { .tag { page-break-inside: avoid; margin: 0 !important; } .tag:nth-child(2n) { page-break-after: always; } .tag-print-wrap { gap: 0 !important; } }`
       : `@page { size: ${bcLabel.w} ${bcLabel.h}; margin: 0; }
          @media print {
            html, body { margin: 0 !important; padding: 0 !important; }
@@ -304,6 +304,7 @@ export default function PriceTagsPage() {
                 onChange={e => setPctMode(e.target.value)}
                 className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400"
               >
+                <option value="0">Без рассрочки</option>
                 <option value="38">38%</option>
                 <option value="40">40%</option>
                 <option value="55">55%</option>
@@ -568,7 +569,7 @@ export default function PriceTagsPage() {
 
       {/* ── Область печати ── */}
       {printItems.length > 0 && tab === 'tags' && (
-        <div className="flex flex-col items-center gap-2">
+        <div className="tag-print-wrap flex flex-col items-center gap-2">
           {visibleItems.map((it, idx) => <PriceTag key={idx} item={it} store={store} pct={installmentPct} />)}
         </div>
       )}
