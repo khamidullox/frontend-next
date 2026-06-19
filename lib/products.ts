@@ -66,6 +66,8 @@ export interface CatalogItem {
   group: string;      // продуктовая группа (первый group_code, без префикса PRDGR:)
   barcodes: string[];
   price: number;      // оптовая цена продажи
+  weight: number;     // вес единицы (брутто/нетто), кг — для логистики
+  volume_l: number;   // объём (литраж), л — для логистики
 }
 
 const PRODUCT_GROUP_EXPORT_ENDPOINT = '/b/anor/mxsx/mr/product_group$export';
@@ -120,6 +122,9 @@ export async function getProductCatalog(): Promise<CatalogItem[]> {
           group: groupTypeName(i, 'PRDGR:3', typeName),    // вид
           barcodes: buildBarcodes(i),
           price: priceMap.get(code) || 0,
+          // Для логистики: вес (брутто, иначе нетто) и объём (литраж) из Smartup.
+          weight: Number(i.weight_brutto) || Number(i.weight_netto) || 0,
+          volume_l: Number(i.litr) || 0,
         };
       })
       .filter((i) => i.code)
@@ -243,7 +248,7 @@ async function getWarehouseIdCodeMap(): Promise<Map<string, string>> {
 // Каталог из Firestore-кэша (тот же, что у /api/products), без живого Smartup.
 // Ключ v3 — после добавления цены продажи в каталог.
 function getCachedCatalog(): Promise<CatalogItem[]> {
-  return getCachedList('catalog_v3', getProductCatalog, REF_TTL_MS);
+  return getCachedList('catalog_v4', getProductCatalog, REF_TTL_MS);
 }
 
 // Когда снимок остатков последний раз обновлялся (для подписи «обновлено …»).
@@ -257,7 +262,7 @@ export async function refreshStockCache(): Promise<{ balance: number; warehouses
   const [balance, warehouses] = await Promise.all([
     refreshCachedList('balance_free', fetchSlimBalance, BALANCE_CHUNK),
     refreshCachedList('warehouse_ref_v2', fetchWarehouseRef),
-    refreshCachedList('catalog_v3', getProductCatalog),
+    refreshCachedList('catalog_v4', getProductCatalog),
   ]);
   return { balance, warehouses };
 }

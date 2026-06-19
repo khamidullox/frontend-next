@@ -11,7 +11,7 @@ const CATALOG_TTL_MS = 6 * 60 * 60 * 1000; // 6 часов
 export async function GET() {
   return withRole('worker', async () => {
     try {
-      const data = await getCachedList('catalog_v3', getProductCatalog, CATALOG_TTL_MS);
+      const data = await getCachedList('catalog_v4', getProductCatalog, CATALOG_TTL_MS);
       return Response.json({ data });
     } catch (err) {
       return Response.json({ error: (err as Error).message }, { status: 500 });

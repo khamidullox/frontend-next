@@ -387,6 +387,8 @@ export interface CatalogItem {
   group: string;
   barcodes: string[];
   price: number;   // оптовая цена продажи
+  weight: number;  // вес единицы, кг (из Smartup)
+  volume_l: number; // объём (литраж), л (из Smartup)
 }
 
 export async function listProducts(): Promise<CatalogItem[]> {
