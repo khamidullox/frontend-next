@@ -1,8 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { listSessions, deleteSessionApi, setSessionStatusApi, SessionListItem, getSmartupLimits, SmartupLimit, DOC_TYPE_LABEL } from '@/lib/api';
+import {
+  listSessions, deleteSessionApi, setSessionStatusApi,
+  SessionListItem, getSmartupLimits, SmartupLimit, DOC_TYPE_LABEL,
+  listDeliveries, Delivery, DeliveryStatus,
+} from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
 import { useAuth } from '@/components/AuthProvider';
 import { useCachedList } from '@/lib/useCachedList';
@@ -11,14 +15,29 @@ import ConfirmModal from '@/components/ConfirmModal';
 
 const PAGE_SIZE = 50;
 
-function isToday(iso?: string | null): boolean {
+// ─── Date helpers ─────────────────────────────────────────────────────────────
+function isSameDay(iso: string | null | undefined, date: Date): boolean {
   if (!iso) return false;
   const d = new Date(iso);
-  const n = new Date();
-  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+  return d.getFullYear() === date.getFullYear() &&
+    d.getMonth() === date.getMonth() &&
+    d.getDate() === date.getDate();
 }
 
-// Понятное имя для endpoint лимита
+function addDays(date: Date, n: number): Date {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+function fmtDay(date: Date): string {
+  const today = new Date();
+  const yesterday = addDays(today, -1);
+  if (isSameDay(date.toISOString(), today)) return 'Сегодня';
+  if (isSameDay(date.toISOString(), yesterday)) return 'Вчера';
+  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', weekday: 'short' });
+}
+
 function limitLabel(endpoint: string): string {
   if (endpoint.includes('movement')) return 'Накладные';
   if (endpoint.includes('order')) return 'Заказы';
@@ -28,35 +47,81 @@ function limitLabel(endpoint: string): string {
   return endpoint.split('/').pop() || endpoint;
 }
 
-function Dashboard({ sessions }: { sessions: SessionListItem[] }) {
-  const [limits, setLimits] = useState<SmartupLimit[]>([]);
+function fmt(iso?: string | null) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString('ru-RU', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch { return ''; }
+}
 
-  useEffect(() => {
-    getSmartupLimits().then(setLimits).catch(() => {});
-  }, []);
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+function Dashboard({
+  sessions, limits, date, allDates, onPrev, onNext, onToday, onToggleAll,
+}: {
+  sessions: SessionListItem[];
+  limits: SmartupLimit[];
+  date: Date;
+  allDates: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  onToday: () => void;
+  onToggleAll: () => void;
+}) {
+  const isToday = isSameDay(new Date().toISOString(), date);
+  const filtered = useMemo(
+    () => allDates ? sessions : sessions.filter(s => isSameDay(s.finished_at || s.created_at, date)),
+    [sessions, date, allDates],
+  );
 
   const stats = useMemo(() => {
-    const today = sessions.filter(s => isToday(s.finished_at || s.created_at));
-    const finished = today.filter(s => s.status === 'finished');
+    const finished = filtered.filter(s => s.status === 'finished');
     const clean = finished.filter(s => s.summary.done_items === s.summary.total_items && s.summary.total_items > 0);
-    const withDiff = finished.length - clean.length;
-    const active = today.filter(s => s.status === 'active').length;
-
     const byChecker = new Map<string, number>();
-    for (const s of today) {
+    for (const s of filtered) {
       const name = s.checker_name || '—';
       byChecker.set(name, (byChecker.get(name) || 0) + 1);
     }
-    const checkers = Array.from(byChecker.entries()).sort((a, b) => b[1] - a[1]);
-
-    return { total: today.length, finished: finished.length, clean: clean.length, withDiff, active, checkers };
-  }, [sessions]);
+    return {
+      total: filtered.length,
+      clean: clean.length,
+      withDiff: finished.length - clean.length,
+      active: filtered.filter(s => s.status === 'active').length,
+      checkers: [...byChecker.entries()].sort((a, b) => b[1] - a[1]),
+    };
+  }, [filtered]);
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
-      <div className="flex items-center justify-between mb-3">
-        <span className="font-semibold">📊 Сегодня</span>
-        <span className="text-xs text-gray-400">{new Date().toLocaleDateString('ru-RU')}</span>
+      {/* Навигация по дням */}
+      <div className="flex items-center gap-2 mb-3">
+        <button onClick={onPrev}
+          className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold text-sm">
+          ←
+        </button>
+        <button onClick={onToday}
+          className={`flex-1 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+            isToday && !allDates ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+          }`}>
+          📅 {allDates ? 'Все дни' : fmtDay(date)}
+          {!allDates && (
+            <span className="ml-1.5 text-xs font-normal text-gray-400">
+              {date.toLocaleDateString('ru-RU')}
+            </span>
+          )}
+        </button>
+        <button onClick={onNext} disabled={isToday && !allDates}
+          className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-30 text-gray-600 font-bold text-sm">
+          →
+        </button>
+        <button onClick={onToggleAll}
+          className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${
+            allDates ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+          }`}>
+          Все
+        </button>
       </div>
 
       <div className="grid grid-cols-4 gap-2 text-center mb-3">
@@ -95,11 +160,8 @@ function Dashboard({ sessions }: { sessions: SessionListItem[] }) {
             {limits.map(l => {
               const low = l.left !== null && l.left <= 20;
               return (
-                <span
-                  key={l.endpoint}
-                  className={`text-xs rounded-full px-2.5 py-1 ${low ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}
-                  title={l.endpoint}
-                >
+                <span key={l.endpoint} title={l.endpoint}
+                  className={`text-xs rounded-full px-2.5 py-1 ${low ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
                   {limitLabel(l.endpoint)}: <strong>{l.left ?? '?'}{l.total ? `/${l.total}` : ''}</strong>
                 </span>
               );
@@ -111,61 +173,84 @@ function Dashboard({ sessions }: { sessions: SessionListItem[] }) {
   );
 }
 
-function fmt(iso?: string | null) {
-  if (!iso) return '';
-  try {
-    return new Date(iso).toLocaleString('ru-RU', {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
-  } catch {
-    return '';
-  }
-}
-
+// ─── Badges ───────────────────────────────────────────────────────────────────
 function resultBadge(s: SessionListItem) {
-  const { summary, status } = s;
-  if (status === 'active') {
+  if (s.status === 'active')
     return <span className="text-xs font-semibold px-2 py-1 rounded-full bg-blue-100 text-blue-700">В работе</span>;
-  }
-  if (summary.done_items === summary.total_items && summary.total_items > 0) {
+  if (s.summary.done_items === s.summary.total_items && s.summary.total_items > 0)
     return <span className="text-xs font-semibold px-2 py-1 rounded-full bg-green-100 text-green-700">✅ Всё собрано</span>;
-  }
   return <span className="text-xs font-semibold px-2 py-1 rounded-full bg-amber-100 text-amber-700">⚠️ Расхождения</span>;
 }
 
+const DELIV_COLOR: Record<DeliveryStatus, string> = {
+  new: 'bg-gray-100 text-gray-600',
+  assigned: 'bg-amber-100 text-amber-700',
+  on_way: 'bg-blue-100 text-blue-700',
+  delivered: 'bg-green-100 text-green-700',
+  returned: 'bg-red-100 text-red-700',
+};
+const DELIV_LABEL: Record<DeliveryStatus, string> = {
+  new: 'Новая', assigned: 'Назначена', on_way: 'В пути',
+  delivered: 'Доставлена', returned: 'Возврат',
+};
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 export default function HistoryPage() {
-  return (
-    <AdminGate>
-      <HistoryContent />
-    </AdminGate>
-  );
+  return <AdminGate><HistoryContent /></AdminGate>;
 }
 
 function HistoryContent() {
-  const { data: cachedSessions, loading, error } = useCachedList(
-    'cache:history',
-    listSessions,
-    30_000 // история обновляется чаще — окно «свежести» меньше
-  );
+  const { data: cachedSessions, loading, error } = useCachedList('cache:history', listSessions, 30_000);
   const { session: authSession } = useAuth();
   const isAdmin = authSession?.role === 'admin';
   const router = useRouter();
+
+  const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [page, setPage] = useState(1);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
-  const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [confirmState, setConfirmState] = useState<{ msg: string; onOk: () => void } | null>(null);
 
+  // Day navigation
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [allDates, setAllDates] = useState(false);
+
+  // Tabs
+  const [activeTab, setActiveTab] = useState<'sessions' | 'deliveries'>('sessions');
+
+  // Bulk selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const selectAllRef = useRef<HTMLInputElement>(null);
+
+  // Deliveries
+  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const [delivLoading, setDelivLoading] = useState(false);
+
+  // Limits
+  const [limits, setLimits] = useState<SmartupLimit[]>([]);
+
   useEffect(() => { setSessions(cachedSessions); }, [cachedSessions]);
+  useEffect(() => { getSmartupLimits().then(setLimits).catch(() => {}); }, []);
+
+  const loadDeliveries = useCallback(async () => {
+    setDelivLoading(true);
+    try { setDeliveries(await listDeliveries()); }
+    catch { /* ignore */ }
+    finally { setDelivLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'deliveries' && deliveries.length === 0) loadDeliveries();
+  }, [activeTab, deliveries.length, loadDeliveries]);
+
+  // Reset page + selection on date change
+  useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [selectedDate, allDates]);
 
   function syncCache(next: SessionListItem[]) {
     setSessions(next);
-    try {
-      sessionStorage.setItem('cache:history', JSON.stringify({ t: Date.now(), v: next }));
-    } catch {
-      // переполнение sessionStorage — не страшно
-    }
+    try { sessionStorage.setItem('cache:history', JSON.stringify({ t: Date.now(), v: next })); }
+    catch { /* overflow */ }
   }
 
   function handleDelete(id: string) {
@@ -178,11 +263,28 @@ function HistoryContent() {
         try {
           await deleteSessionApi(id);
           syncCache(sessions.filter(s => s.id !== id));
-        } catch (e) {
-          setActionError((e as Error).message);
-        } finally {
-          setBusyId(null);
-        }
+          setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+        } catch (e) { setActionError((e as Error).message); }
+        finally { setBusyId(null); }
+      },
+    });
+  }
+
+  function handleBulkDelete() {
+    if (selectedIds.size === 0) return;
+    setConfirmState({
+      msg: `Удалить ${selectedIds.size} ${selectedIds.size === 1 ? 'запись' : 'записей'} из истории?`,
+      onOk: async () => {
+        setConfirmState(null);
+        setBulkDeleting(true);
+        setActionError('');
+        const ids = [...selectedIds];
+        try {
+          await Promise.all(ids.map(id => deleteSessionApi(id)));
+          syncCache(sessions.filter(s => !ids.includes(s.id)));
+          setSelectedIds(new Set());
+        } catch (e) { setActionError((e as Error).message); }
+        finally { setBulkDeleting(false); }
       },
     });
   }
@@ -196,16 +298,50 @@ function HistoryContent() {
       syncCache(sessions.map(item => item.id === s.id
         ? { ...item, status: updated.status, finished_at: updated.finished_at }
         : item));
-    } catch (e) {
-      setActionError((e as Error).message);
-    } finally {
-      setBusyId(null);
+    } catch (e) { setActionError((e as Error).message); }
+    finally { setBusyId(null); }
+  }
+
+  // Filtered by date
+  const dateSessions = useMemo(
+    () => allDates ? sessions : sessions.filter(s => isSameDay(s.finished_at || s.created_at, selectedDate)),
+    [sessions, selectedDate, allDates],
+  );
+  const dateDeliveries = useMemo(
+    () => allDates ? deliveries : deliveries.filter(d => isSameDay(d.created_at, selectedDate)),
+    [deliveries, selectedDate, allDates],
+  );
+
+  const totalPages = Math.max(1, Math.ceil(dateSessions.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const shown = dateSessions.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  // Bulk selection helpers
+  const shownIds = shown.map(s => s.id);
+  const allSelected = shownIds.length > 0 && shownIds.every(id => selectedIds.has(id));
+  const someSelected = shownIds.some(id => selectedIds.has(id));
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someSelected && !allSelected;
+    }
+  }, [someSelected, allSelected]);
+
+  function toggleAll() {
+    if (allSelected) {
+      setSelectedIds(prev => { const n = new Set(prev); shownIds.forEach(id => n.delete(id)); return n; });
+    } else {
+      setSelectedIds(prev => new Set([...prev, ...shownIds]));
     }
   }
 
-  const totalPages = Math.max(1, Math.ceil(sessions.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const shown = sessions.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  function toggleOne(id: string) {
+    setSelectedIds(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  }
 
   if (loading) {
     return (
@@ -219,84 +355,185 @@ function HistoryContent() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <h2 className="text-xl font-bold">История проверок</h2>
-        <span className="text-sm text-gray-400">{sessions.length} шт.</span>
+        <h2 className="text-xl font-bold">История</h2>
+        <span className="text-sm text-gray-400">{sessions.length} пров. · {deliveries.length || '…'} дост.</span>
       </div>
 
-      <Dashboard sessions={sessions} />
+      <Dashboard
+        sessions={sessions}
+        limits={limits}
+        date={selectedDate}
+        allDates={allDates}
+        onPrev={() => setSelectedDate(d => addDays(d, -1))}
+        onNext={() => setSelectedDate(d => addDays(d, 1))}
+        onToday={() => { setSelectedDate(new Date()); setAllDates(false); }}
+        onToggleAll={() => setAllDates(v => !v)}
+      />
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-3 bg-gray-100 rounded-xl p-1">
+        <button onClick={() => setActiveTab('sessions')}
+          className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
+            activeTab === 'sessions' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}>
+          📋 Проверки ({dateSessions.length})
+        </button>
+        <button onClick={() => setActiveTab('deliveries')}
+          className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
+            activeTab === 'deliveries' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}>
+          🚚 Доставки ({dateDeliveries.length})
+        </button>
+      </div>
 
       {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
       {actionError && <p className="text-red-500 text-sm mb-3">{actionError}</p>}
 
-      {sessions.length === 0 ? (
-        <div className="bg-white rounded-xl p-8 text-center text-gray-400">
-          Проверок пока нет
-        </div>
-      ) : (
+      {/* ── Sessions ── */}
+      {activeTab === 'sessions' && (
         <>
-        <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
-        <div className="flex flex-col gap-2.5">
-          {shown.map(s => (
-            <div
-              key={s.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => router.push(`/session/${s.id}`)}
-              onKeyDown={e => { if (e.key === 'Enter') router.push(`/session/${s.id}`); }}
-              className="bg-white rounded-xl shadow-sm p-4 flex flex-col gap-2 text-left cursor-pointer
-                         hover:shadow-md hover:ring-2 hover:ring-blue-200 transition-all"
-            >
-              <div className="flex items-center gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold text-base flex items-center gap-2">
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                      s.doc_type === 'order' ? 'bg-purple-100 text-purple-700'
-                      : s.doc_type === 'transfer' ? 'bg-teal-100 text-teal-700'
-                      : s.doc_type === 'receipt' ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-blue-100 text-blue-700'
-                    }`}>
-                      {DOC_TYPE_LABEL[s.doc_type] || 'Документ'}
-                    </span>
-                    № {s.doc_number || s.doc_id}
-                  </div>
-                  <div className="text-xs text-gray-400 mt-0.5">
-                    {fmt(s.finished_at || s.created_at)}
-                    {s.checker_name && ` · 👤 ${s.checker_name}`}
-                  </div>
-                  {s.client_name && (
-                    <div className="text-xs text-gray-500 mt-0.5 truncate">🚚 {s.client_name}</div>
-                  )}
-                  <div className="text-xs text-gray-500 mt-1">
-                    Собрано {s.summary.done_items} из {s.summary.total_items} позиций
-                  </div>
-                </div>
-                {resultBadge(s)}
-              </div>
-
-              {isAdmin && (
-                <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
-                  <button
-                    onClick={e => { e.stopPropagation(); handleToggleStatus(s); }}
-                    disabled={busyId === s.id}
-                    className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700
-                               hover:bg-amber-200 disabled:opacity-50 transition-colors"
-                  >
-                    {s.status === 'finished' ? '↩️ Вернуть в работу' : '✅ Завершить'}
-                  </button>
-                  <button
-                    onClick={e => { e.stopPropagation(); handleDelete(s.id); }}
-                    disabled={busyId === s.id}
-                    className="text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700
-                               hover:bg-red-200 disabled:opacity-50 transition-colors"
-                  >
-                    🗑️ Удалить
-                  </button>
-                </div>
+          {isAdmin && dateSessions.length > 0 && (
+            <div className="flex items-center gap-3 mb-2 px-1">
+              <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
+                <input
+                  ref={selectAllRef}
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  className="w-4 h-4 cursor-pointer"
+                />
+                Выбрать все на странице
+              </label>
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600
+                             disabled:bg-red-300 text-white transition-colors">
+                  {bulkDeleting ? '⏳ Удаляю…' : `🗑️ Удалить выбранные (${selectedIds.size})`}
+                </button>
               )}
             </div>
-          ))}
-        </div>
-        <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
+          )}
+
+          {dateSessions.length === 0 ? (
+            <div className="bg-white rounded-xl p-8 text-center text-gray-400">
+              {allDates ? 'Проверок пока нет' : 'Нет проверок за этот день'}
+            </div>
+          ) : (
+            <>
+              <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
+              <div className="flex flex-col gap-2.5">
+                {shown.map(s => (
+                  <div
+                    key={s.id}
+                    className={`bg-white rounded-xl shadow-sm p-4 flex flex-col gap-2 transition-all ${
+                      selectedIds.has(s.id) ? 'ring-2 ring-blue-300' : ''
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      {isAdmin && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(s.id)}
+                          onChange={() => toggleOne(s.id)}
+                          className="mt-1 w-4 h-4 shrink-0 cursor-pointer"
+                        />
+                      )}
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => router.push(`/session/${s.id}`)}
+                        onKeyDown={e => { if (e.key === 'Enter') router.push(`/session/${s.id}`); }}
+                        className="flex-1 min-w-0 cursor-pointer hover:opacity-80 transition-opacity"
+                      >
+                        <div className="font-bold text-base flex items-center gap-2">
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                            s.doc_type === 'order' ? 'bg-purple-100 text-purple-700'
+                            : s.doc_type === 'transfer' ? 'bg-teal-100 text-teal-700'
+                            : s.doc_type === 'receipt' ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {DOC_TYPE_LABEL[s.doc_type] || 'Документ'}
+                          </span>
+                          № {s.doc_number || s.doc_id}
+                        </div>
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          {fmt(s.finished_at || s.created_at)}
+                          {s.checker_name && ` · 👤 ${s.checker_name}`}
+                        </div>
+                        {s.client_name && (
+                          <div className="text-xs text-gray-500 mt-0.5 truncate">🚚 {s.client_name}</div>
+                        )}
+                        <div className="text-xs text-gray-500 mt-1">
+                          Собрано {s.summary.done_items} из {s.summary.total_items} позиций
+                        </div>
+                      </div>
+                      {resultBadge(s)}
+                    </div>
+
+                    {isAdmin && (
+                      <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                        <button
+                          onClick={() => handleToggleStatus(s)}
+                          disabled={busyId === s.id}
+                          className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700
+                                     hover:bg-amber-200 disabled:opacity-50 transition-colors">
+                          {s.status === 'finished' ? '↩️ Вернуть в работу' : '✅ Завершить'}
+                        </button>
+                        <button
+                          onClick={() => handleDelete(s.id)}
+                          disabled={busyId === s.id}
+                          className="text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700
+                                     hover:bg-red-200 disabled:opacity-50 transition-colors">
+                          🗑️ Удалить
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
+            </>
+          )}
+        </>
+      )}
+
+      {/* ── Deliveries ── */}
+      {activeTab === 'deliveries' && (
+        <>
+          {delivLoading ? (
+            <div className="flex items-center justify-center py-12 gap-2 text-gray-500 text-sm">
+              <span className="w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
+              Загрузка…
+            </div>
+          ) : dateDeliveries.length === 0 ? (
+            <div className="bg-white rounded-xl p-8 text-center text-gray-400">
+              {allDates ? 'Доставок пока нет' : 'Нет доставок за этот день'}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {dateDeliveries.map(d => (
+                <div key={d.id} className="bg-white rounded-xl shadow-sm px-4 py-3 flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold truncate">{d.client_name || '—'}</div>
+                    {d.address && (
+                      <div className="text-xs text-gray-400 mt-0.5 truncate">📍 {d.address}</div>
+                    )}
+                    <div className="text-xs text-gray-400 mt-0.5 flex flex-wrap gap-2">
+                      {d.driver_name && <span>👤 {d.driver_name}</span>}
+                      {d.doc_number && <span>📄 {d.doc_number}</span>}
+                      {d.direction && <span>🧭 {d.direction}</span>}
+                      <span>{fmt(d.created_at)}</span>
+                    </div>
+                  </div>
+                  <span className={`text-xs font-semibold px-2 py-1 rounded-full shrink-0 ${DELIV_COLOR[d.status]}`}>
+                    {DELIV_LABEL[d.status]}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
 
