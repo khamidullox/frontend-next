@@ -12,6 +12,9 @@ export interface StoredUser {
   warehouses?: string[];
   car_number?: string;   // для роли «водитель»
   transport?: string;    // тип транспорта (Газель, Спринтер, …)
+  capacity_m3?: number;  // вместимость машины, м³
+  capacity_kg?: number;  // грузоподъёмность, кг
+  direction?: string;    // основное направление машины
 }
 
 export interface UserInfo {
@@ -22,6 +25,9 @@ export interface UserInfo {
   warehouses: string[];
   car_number: string;
   transport: string;
+  capacity_m3: number;
+  capacity_kg: number;
+  direction: string;
 }
 
 function publicUser(u: StoredUser): UserInfo {
@@ -33,6 +39,9 @@ function publicUser(u: StoredUser): UserInfo {
     warehouses: Array.isArray(u.warehouses) ? u.warehouses : [],
     car_number: u.car_number ?? '',
     transport: u.transport ?? '',
+    capacity_m3: Number(u.capacity_m3) || 0,
+    capacity_kg: Number(u.capacity_kg) || 0,
+    direction: u.direction ?? '',
   };
 }
 
@@ -74,6 +83,9 @@ export async function createUser(input: {
   warehouses?: string[];
   car_number?: string;
   transport?: string;
+  capacity_m3?: number;
+  capacity_kg?: number;
+  direction?: string;
 }): Promise<{ ok: true } | { error: string }> {
   const username = normUsername(input.username);
   if (!username) return { error: 'Логин обязателен' };
@@ -97,6 +109,9 @@ export async function createUser(input: {
     warehouses: normWarehouses(input.warehouses),
     car_number: String(input.car_number || '').trim(),
     transport: String(input.transport || '').trim(),
+    capacity_m3: Math.max(0, Number(input.capacity_m3) || 0),
+    capacity_kg: Math.max(0, Number(input.capacity_kg) || 0),
+    direction: String(input.direction || '').trim(),
   };
   await ref.set(user);
   return { ok: true };
@@ -110,19 +125,21 @@ export async function listDrivers(): Promise<UserInfo[]> {
     .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
 }
 
-// Обновление профиля водителя (машина/транспорт).
+// Обновление профиля водителя (машина/транспорт/вместимость/направление).
 export async function setDriverProfile(
   username: string,
-  car_number: string,
-  transport: string
+  profile: { car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string }
 ): Promise<{ ok: true } | { error: string }> {
   const ref = getDb().collection(COLLECTION).doc(normUsername(username));
   const snap = await ref.get();
   if (!snap.exists) return { error: 'Пользователь не найден' };
-  await ref.set(
-    { car_number: String(car_number || '').trim(), transport: String(transport || '').trim() },
-    { merge: true }
-  );
+  const patch: Partial<StoredUser> = {};
+  if (profile.car_number !== undefined) patch.car_number = String(profile.car_number || '').trim();
+  if (profile.transport !== undefined) patch.transport = String(profile.transport || '').trim();
+  if (profile.capacity_m3 !== undefined) patch.capacity_m3 = Math.max(0, Number(profile.capacity_m3) || 0);
+  if (profile.capacity_kg !== undefined) patch.capacity_kg = Math.max(0, Number(profile.capacity_kg) || 0);
+  if (profile.direction !== undefined) patch.direction = String(profile.direction || '').trim();
+  await ref.set(patch, { merge: true });
   return { ok: true };
 }
 

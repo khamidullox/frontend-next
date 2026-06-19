@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { listUsers, createUser, deleteUserApi, updateUser, listAllWarehouses, WarehouseSummary, UserInfo, Role, ROLE_LABEL } from '@/lib/api';
+import { listUsers, createUser, deleteUserApi, updateUser, listAllWarehouses, WarehouseSummary, UserInfo, Role, ROLE_LABEL, DIRECTIONS } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
 import { loadXLSX } from '@/lib/xlsx';
 import Pager from '@/components/Pager';
@@ -154,6 +154,9 @@ function UsersContent() {
   const [password, setPassword] = useState('');
   const [carNumber, setCarNumber] = useState('');
   const [transport, setTransport] = useState('');
+  const [capM3, setCapM3] = useState('');
+  const [capKg, setCapKg] = useState('');
+  const [direction, setDirection] = useState('');
   const [selectedWh, setSelectedWh] = useState<string[]>([]);
   const [whList, setWhList] = useState<WarehouseSummary[]>([]);
   const [busy, setBusy] = useState(false);
@@ -183,9 +186,12 @@ function UsersContent() {
         warehouses: selectedWh,
         car_number: role === 'driver' ? carNumber.trim() : undefined,
         transport: role === 'driver' ? transport.trim() : undefined,
+        capacity_m3: role === 'driver' ? Number(capM3) || 0 : undefined,
+        capacity_kg: role === 'driver' ? Number(capKg) || 0 : undefined,
+        direction: role === 'driver' ? direction.trim() : undefined,
       });
       setUsername(''); setName(''); setPassword(''); setRole('worker'); setSelectedWh([]);
-      setCarNumber(''); setTransport('');
+      setCarNumber(''); setTransport(''); setCapM3(''); setCapKg(''); setDirection('');
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -300,13 +306,28 @@ function UsersContent() {
 
         {/* Данные водителя */}
         {role === 'driver' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <input value={carNumber} onChange={(e) => setCarNumber(e.target.value)}
-              placeholder="Номер машины (напр. 01A123BC)"
-              className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
-            <input value={transport} onChange={(e) => setTransport(e.target.value)}
-              placeholder="Транспорт (Газель, Спринтер…)"
-              className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <input value={carNumber} onChange={(e) => setCarNumber(e.target.value)}
+                placeholder="Номер машины (напр. 01A123BC)"
+                className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+              <input value={transport} onChange={(e) => setTransport(e.target.value)}
+                placeholder="Транспорт (Газель, Спринтер…)"
+                className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <input type="number" min={0} step="0.1" value={capM3} onChange={(e) => setCapM3(e.target.value)}
+                placeholder="Объём, м³"
+                className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+              <input type="number" min={0} value={capKg} onChange={(e) => setCapKg(e.target.value)}
+                placeholder="Вес, кг"
+                className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+              <select value={direction} onChange={(e) => setDirection(e.target.value)}
+                className="border-2 border-gray-200 rounded-lg px-2 py-2 text-sm bg-white outline-none focus:border-blue-400">
+                <option value="">Направление</option>
+                {DIRECTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
           </div>
         )}
 
@@ -398,6 +419,9 @@ function EditUserModal({
   const [wh, setWh] = useState<string[]>(user.warehouses);
   const [car, setCar] = useState(user.car_number);
   const [transport, setTransport] = useState(user.transport);
+  const [capM3, setCapM3] = useState(String(user.capacity_m3 || ''));
+  const [capKg, setCapKg] = useState(String(user.capacity_kg || ''));
+  const [direction, setDirection] = useState(user.direction || '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [confirmDel, setConfirmDel] = useState(false);
@@ -406,11 +430,14 @@ function EditUserModal({
     setBusy(true);
     setErr('');
     try {
-      const patch: { password?: string; warehouses?: string[]; car_number?: string; transport?: string } = {};
+      const patch: { password?: string; warehouses?: string[]; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string } = {};
       if (password.trim()) patch.password = password.trim();
       if (isDriver) {
         patch.car_number = car.trim();
         patch.transport = transport.trim();
+        patch.capacity_m3 = Number(capM3) || 0;
+        patch.capacity_kg = Number(capKg) || 0;
+        patch.direction = direction.trim();
       } else {
         patch.warehouses = wh;
       }
@@ -467,6 +494,24 @@ function EditUserModal({
                 <label className="text-xs text-gray-500 mb-1 block">Транспорт</label>
                 <input value={transport} onChange={(e) => setTransport(e.target.value)}
                   className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Объём, м³</label>
+                <input type="number" min={0} step="0.1" value={capM3} onChange={(e) => setCapM3(e.target.value)}
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Вес, кг</label>
+                <input type="number" min={0} value={capKg} onChange={(e) => setCapKg(e.target.value)}
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="text-xs text-gray-500 mb-1 block">Направление</label>
+                <select value={direction} onChange={(e) => setDirection(e.target.value)}
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
+                  <option value="">— не указано —</option>
+                  {DIRECTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
               </div>
             </div>
           ) : (

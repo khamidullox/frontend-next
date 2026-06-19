@@ -57,6 +57,9 @@ export interface UserInfo {
   warehouses: string[];
   car_number: string;
   transport: string;
+  capacity_m3: number;
+  capacity_kg: number;
+  direction: string;
 }
 
 export async function listUsers(): Promise<UserInfo[]> {
@@ -68,7 +71,7 @@ export async function listUsers(): Promise<UserInfo[]> {
 
 export async function createUser(input: {
   username: string; name: string; role: Role; password: string; warehouses?: string[];
-  car_number?: string; transport?: string;
+  car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string;
 }): Promise<void> {
   const res = await fetch('/api/users', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -105,6 +108,7 @@ export async function setUserWarehouses(username: string, warehouses: string[]):
 // Единое обновление пользователя из модалки (пароль / склады / профиль водителя).
 export async function updateUser(username: string, patch: {
   password?: string; warehouses?: string[]; car_number?: string; transport?: string;
+  capacity_m3?: number; capacity_kg?: number; direction?: string;
 }): Promise<void> {
   const res = await fetch(`/api/users/${encodeURIComponent(username)}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
