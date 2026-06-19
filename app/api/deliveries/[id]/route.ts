@@ -53,11 +53,14 @@ export async function PATCH(
     const res = await setDeliveryStatus(id, body.status as DeliveryStatus, s.name || s.username);
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
   }
-  if (body.client_name !== undefined || body.address !== undefined || body.note !== undefined) {
+  if (body.client_name !== undefined || body.address !== undefined || body.note !== undefined ||
+      body.direction !== undefined || body.km !== undefined) {
     const res = await updateDeliveryFields(id, {
       client_name: body.client_name,
       address: body.address,
       note: body.note,
+      direction: body.direction,
+      km: body.km,
     });
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
   }

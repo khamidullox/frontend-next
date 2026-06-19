@@ -520,6 +520,8 @@ export interface Delivery {
   total_weight: number;
   total_volume_l: number;
   total_qty: number;
+  direction: string;
+  km: number;
   driver_username: string | null;
   driver_name: string | null;
   car_number: string | null;
@@ -560,7 +562,7 @@ export async function createDelivery(input: {
 
 export async function updateDelivery(
   id: string,
-  patch: { status?: DeliveryStatus; driver_username?: string | null; client_name?: string; address?: string; note?: string }
+  patch: { status?: DeliveryStatus; driver_username?: string | null; client_name?: string; address?: string; note?: string; direction?: string; km?: number }
 ): Promise<Delivery> {
   const res = await fetch(`/api/deliveries/${encodeURIComponent(id)}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -569,6 +571,28 @@ export async function updateDelivery(
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка изменения доставки');
   return data.data as Delivery;
+}
+
+export async function autoAssign(): Promise<{ assigned: number; skipped: number }> {
+  const res = await fetch('/api/logistics/auto-assign', { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка автораспределения');
+  return data.data as { assigned: number; skipped: number };
+}
+
+export interface LogisticsSettings { fuel_rate_per_km: number; }
+
+export async function fetchLogisticsSettings(): Promise<LogisticsSettings> {
+  const res = await fetch('/api/logistics/settings', { cache: 'no-store' });
+  const data = await res.json().catch(() => ({}));
+  return (data.data as LogisticsSettings) || { fuel_rate_per_km: 0 };
+}
+
+export async function saveLogisticsSettings(s: Partial<LogisticsSettings>): Promise<void> {
+  await fetch('/api/logistics/settings', {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(s),
+  });
 }
 
 export async function deleteDeliveryApi(id: string): Promise<void> {

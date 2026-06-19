@@ -7,6 +7,7 @@ import {
   listDeliveries, createDelivery, updateDelivery, deleteDeliveryApi, listDrivers,
   listMovements, listOrders, listTransfers, MovementListItem, OrderListItem, TransferListItem, MOVEMENT_STATUS_LABEL,
   Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL, UserInfo,
+  DIRECTIONS, autoAssign, fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings,
 } from '@/lib/api';
 
 const STATUSES: DeliveryStatus[] = ['new', 'assigned', 'on_way', 'delivered', 'returned'];
@@ -59,6 +60,10 @@ function LogisticsContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [hideDone, setHideDone] = useState(true);
+  const [fuelRate, setFuelRate] = useState(0);
+  const [fuelInput, setFuelInput] = useState('');
+  const [autoAssigning, setAutoAssigning] = useState(false);
+  const [autoMsg, setAutoMsg] = useState('');
   const [driverSearch, setDriverSearch] = useState('');
   const [assignTo, setAssignTo] = useState<UserInfo | null>(null);
   // null = режим по умолчанию (только доставочные: LABO + Газель).
@@ -88,6 +93,28 @@ function LogisticsContent() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { listDrivers().then(setDrivers).catch(() => {}); }, []);
+  useEffect(() => {
+    fetchLogisticsSettings().then((s: LogisticsSettings) => {
+      setFuelRate(s.fuel_rate_per_km);
+      setFuelInput(s.fuel_rate_per_km > 0 ? String(s.fuel_rate_per_km) : '');
+    }).catch(() => {});
+  }, []);
+
+  async function saveFuelRate(val: string) {
+    const n = Math.max(0, Number(val) || 0);
+    setFuelRate(n);
+    await saveLogisticsSettings({ fuel_rate_per_km: n }).catch(() => {});
+  }
+
+  async function doAutoAssign() {
+    setAutoAssigning(true); setAutoMsg('');
+    try {
+      const r = await autoAssign();
+      setAutoMsg(`Назначено: ${r.assigned}, пропущено: ${r.skipped}`);
+      await load();
+    } catch (e) { setAutoMsg((e as Error).message); }
+    finally { setAutoAssigning(false); }
+  }
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -210,6 +237,27 @@ function LogisticsContent() {
             Скрывать завершённые
           </label>
         </div>
+      </div>
+
+      {/* Авто-распределение + топливо */}
+      <div className="bg-white rounded-xl shadow-sm p-3 mb-3 flex flex-wrap items-center gap-3">
+        <button
+          onClick={doAutoAssign} disabled={autoAssigning}
+          className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-200 disabled:text-gray-400 text-white text-xs font-semibold rounded-lg whitespace-nowrap">
+          {autoAssigning ? '⏳ Распределяю…' : '⚡ Авто-распределить'}
+        </button>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-500 whitespace-nowrap">⛽ Стоимость 1 км:</span>
+          <input
+            type="number" min={0} step={100} value={fuelInput}
+            onChange={(e) => setFuelInput(e.target.value)}
+            onBlur={(e) => saveFuelRate(e.target.value)}
+            placeholder="0"
+            className="w-28 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right outline-none focus:border-blue-400"
+          />
+          <span className="text-xs text-gray-400">сум/км</span>
+        </div>
+        {autoMsg && <span className="text-xs text-gray-500">{autoMsg}</span>}
       </div>
 
       {/* Создание доставки — свёрнуто (основной поток: назначение из карточки водителя) */}
@@ -370,6 +418,7 @@ function LogisticsContent() {
                   deliveries={byDriver.get(dr.username) || []}
                   allDrivers={drivers}
                   hideDone={hideDone}
+                  fuelRate={fuelRate}
                   onPatch={patch}
                   onRemove={remove}
                   onAssign={() => setAssignTo(dr)}
@@ -393,12 +442,13 @@ function LogisticsContent() {
 
 // ─── Карточка водителя ──────────────────────────────────────────────────────
 function DriverCard({
-  driver, deliveries, allDrivers, hideDone, onPatch, onRemove, onAssign,
+  driver, deliveries, allDrivers, hideDone, fuelRate, onPatch, onRemove, onAssign,
 }: {
   driver: UserInfo;
   deliveries: Delivery[];
   allDrivers: UserInfo[];
   hideDone: boolean;
+  fuelRate: number;
   onPatch: (id: string, p: Parameters<typeof updateDelivery>[1]) => void;
   onRemove: (id: string) => void;
   onAssign: () => void;
@@ -415,16 +465,53 @@ function DriverCard({
   const doneCount = counts.delivered + counts.returned;
   const shown = hideDone ? deliveries.filter((d) => !isDone(d.status)) : deliveries;
 
+  // Нагрузка: только активные доставки.
+  const activeDeliveries = deliveries.filter((d) => !isDone(d.status));
+  const totalWeightKg = activeDeliveries.reduce((s, d) => s + (d.total_weight || 0), 0);
+  const totalVolL = activeDeliveries.reduce((s, d) => s + (d.total_volume_l || 0), 0);
+  const totalKm = activeDeliveries.reduce((s, d) => s + (d.km || 0), 0);
+  const fuelCost = totalKm > 0 && fuelRate > 0 ? totalKm * 2 * fuelRate : 0;
+  const loadPctKg = driver.capacity_kg > 0 ? Math.min(100, (totalWeightKg / driver.capacity_kg) * 100) : 0;
+  const loadPctM3 = driver.capacity_m3 > 0 ? Math.min(100, (totalVolL / (driver.capacity_m3 * 1000)) * 100) : 0;
+
   return (
     <div className="bg-white rounded-xl shadow-sm">
       <button onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center gap-3 p-3.5 text-left">
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-sm truncate">{driver.name}</div>
-          <div className="text-xs text-gray-400 truncate">
-            {driver.car_number && <>🚗 {driver.car_number}</>}
-            {driver.transport && <span className="text-gray-400"> · {driver.transport}</span>}
+          <div className="text-xs text-gray-400 truncate flex flex-wrap items-center gap-2">
+            {driver.car_number && <span>🚗 {driver.car_number}</span>}
+            {driver.transport && <span>{driver.transport}</span>}
+            {driver.direction && <span className="text-blue-500">{driver.direction}</span>}
+            {totalKm > 0 && <span>🛣️ {totalKm * 2} км</span>}
+            {fuelCost > 0 && <span className="text-emerald-600">⛽ {fuelCost.toLocaleString('ru-RU')} сум</span>}
           </div>
+          {/* Загрузка машины */}
+          {(loadPctKg > 0 || loadPctM3 > 0) && (
+            <div className="mt-1 flex flex-col gap-0.5">
+              {driver.capacity_kg > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-gray-400 w-16 shrink-0">⚖️ {Math.round(totalWeightKg)}/{driver.capacity_kg} кг</span>
+                  <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${loadPctKg > 90 ? 'bg-red-500' : loadPctKg > 70 ? 'bg-amber-400' : 'bg-green-400'}`}
+                      style={{ width: `${loadPctKg}%` }} />
+                  </div>
+                  <span className="text-[10px] text-gray-400 w-8 text-right">{Math.round(loadPctKg)}%</span>
+                </div>
+              )}
+              {driver.capacity_m3 > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-gray-400 w-16 shrink-0">📦 {(totalVolL / 1000).toFixed(1)}/{driver.capacity_m3} м³</span>
+                  <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${loadPctM3 > 90 ? 'bg-red-500' : loadPctM3 > 70 ? 'bg-amber-400' : 'bg-blue-400'}`}
+                      style={{ width: `${loadPctM3}%` }} />
+                  </div>
+                  <span className="text-[10px] text-gray-400 w-8 text-right">{Math.round(loadPctM3)}%</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
           {ACTIVE.map((st) => counts[st] > 0 && (
@@ -475,6 +562,7 @@ function DeliveryRow({
 }) {
   const [editAddr, setEditAddr] = useState(false);
   const [addr, setAddr] = useState(d.address);
+  const [km, setKm] = useState(String(d.km || ''));
 
   return (
     <div className={`rounded-lg ${compact ? 'bg-gray-50' : 'bg-white shadow-sm'} p-3 flex flex-col gap-2`}>
@@ -511,6 +599,37 @@ function DeliveryRow({
         <span className={`text-xs font-semibold px-2 py-1 rounded-full ${statusClass(d.status)}`}>
           {DELIVERY_STATUS_LABEL[d.status]}
         </span>
+      </div>
+
+      {/* Направление + км + вес */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {DIRECTIONS.map((dir) => (
+          <button key={dir}
+            onClick={() => onPatch(d.id, { direction: d.direction === dir ? '' : dir })}
+            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+              d.direction === dir
+                ? 'bg-slate-800 text-white border-slate-800'
+                : 'bg-white text-gray-400 border-gray-200 hover:border-slate-400'
+            }`}>
+            {dir}
+          </button>
+        ))}
+        <div className="flex items-center gap-1 ml-1">
+          <span className="text-[10px] text-gray-400">км:</span>
+          <input
+            type="number" min={0} value={km}
+            onChange={(e) => setKm(e.target.value)}
+            onBlur={() => onPatch(d.id, { km: Number(km) || 0 })}
+            className="w-14 border border-gray-100 rounded px-1.5 py-0.5 text-[11px] text-right outline-none focus:border-blue-300"
+          />
+        </div>
+        {(d.total_weight > 0 || d.total_qty > 0) && (
+          <span className="text-[10px] text-gray-400 ml-auto">
+            {d.total_qty > 0 && `${d.total_qty} шт`}
+            {d.total_weight > 0 && ` · ${d.total_weight} кг`}
+            {d.total_volume_l > 0 && ` · ${(d.total_volume_l / 1000).toFixed(2)} м³`}
+          </span>
+        )}
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">

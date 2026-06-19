@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { getDb } from './firebase';
 import { resolveDocument } from './resolve';
-import { getUserRaw } from './users';
+import { getUserRaw, listDrivers } from './users';
 import { getSession as getCheckSession } from './sessions';
 import { getWarehouseCodeMap, getCachedCatalog } from './products';
 import { DocType } from './document';
@@ -60,6 +60,10 @@ export interface Delivery {
   total_volume_l: number; // л
   total_qty: number;      // суммарное количество позиций
 
+  // Маршрутизация.
+  direction: string;      // Север / Юг / Восток / Запад / Центр
+  km: number;             // расстояние до точки (км, в одну сторону)
+
   status: DeliveryStatus;
   history: StatusEvent[];
 }
@@ -102,6 +106,8 @@ interface CreateInput {
   driver_username?: string;      // штатный водитель (есть аккаунт)
   external_driver?: string;      // внешний водитель «со стороны» — имя
   external_car?: string;         // его машина
+  direction?: string;
+  km?: number;
   created_by?: string;
 }
 
@@ -184,6 +190,8 @@ export async function createDelivery(
     total_weight: dims.weight,
     total_volume_l: dims.volume_l,
     total_qty: dims.qty,
+    direction: str(input.direction),
+    km: Math.max(0, Number(input.km) || 0),
     driver_username: null,
     driver_name: null,
     car_number: null,
@@ -297,7 +305,7 @@ export async function setDeliveryStatus(
 // Правка текстовых полей (адрес/клиент/примечание) — для менеджера.
 export async function updateDeliveryFields(
   id: string,
-  fields: { client_name?: string; address?: string; note?: string }
+  fields: { client_name?: string; address?: string; note?: string; direction?: string; km?: number }
 ): Promise<{ delivery: Delivery } | { error: string }> {
   const db = getDb();
   const ref = db.collection(COLLECTION).doc(str(id));
@@ -308,6 +316,8 @@ export async function updateDeliveryFields(
   if (fields.client_name !== undefined) delivery.client_name = str(fields.client_name);
   if (fields.address !== undefined) delivery.address = str(fields.address);
   if (fields.note !== undefined) delivery.note = str(fields.note);
+  if (fields.direction !== undefined) delivery.direction = str(fields.direction);
+  if (fields.km !== undefined) delivery.km = Math.max(0, Number(fields.km) || 0);
   delivery.updated_at = new Date().toISOString();
   await ref.set(delivery);
   return { delivery };
@@ -319,4 +329,86 @@ export async function deleteDelivery(id: string): Promise<boolean> {
   if (!snap.exists) return false;
   await ref.delete();
   return true;
+}
+
+// ─── Автораспределение ───────────────────────────────────────────────────────
+// Назначает нераспределённые доставки (direction задан) водителям по направлению.
+// Учитывает вместимость: не превышает capacity_kg/m3 более чем на 10%.
+export async function autoAssignDeliveries(
+  by: string
+): Promise<{ assigned: number; skipped: number }> {
+  const db = getDb();
+  const col = db.collection(COLLECTION);
+
+  const [snap, drivers] = await Promise.all([col.get(), listDrivers()]);
+  const all = snap.docs.map((d) => d.data() as Delivery);
+
+  // Нераспределённые с указанным направлением.
+  const queue = all.filter((d) => !d.driver_username && d.direction && d.status === 'new');
+  if (!queue.length) return { assigned: 0, skipped: 0 };
+
+  const activeDrivers = drivers.filter((dr) => dr.direction);
+  if (!activeDrivers.length) return { assigned: 0, skipped: queue.length };
+
+  // Текущая нагрузка каждого водителя (активные доставки).
+  const loadMap = new Map<string, { weight: number; vol_l: number }>();
+  for (const d of all) {
+    if (d.driver_username && !['delivered', 'returned'].includes(d.status)) {
+      const cur = loadMap.get(d.driver_username) || { weight: 0, vol_l: 0 };
+      cur.weight += d.total_weight || 0;
+      cur.vol_l += d.total_volume_l || 0;
+      loadMap.set(d.driver_username, cur);
+    }
+  }
+
+  const now = new Date().toISOString();
+  const batch = db.batch();
+  let assigned = 0, skipped = 0;
+
+  for (const delivery of queue) {
+    const candidates = activeDrivers.filter((dr) => dr.direction === delivery.direction);
+    if (!candidates.length) { skipped++; continue; }
+
+    // Выбираем водителя с наибольшим остатком вместимости (или первого, если ёмкость не задана).
+    let best: typeof candidates[0] | null = null;
+    let bestScore = -Infinity;
+
+    for (const dr of candidates) {
+      const cur = loadMap.get(dr.username) || { weight: 0, vol_l: 0 };
+      const capKg = dr.capacity_kg;
+      const capM3 = dr.capacity_m3;
+      const dw = delivery.total_weight || 0;
+      const dv = delivery.total_volume_l || 0;
+
+      // Жёсткий предел: не больше 110% от ёмкости.
+      if (capKg > 0 && cur.weight + dw > capKg * 1.1) continue;
+      if (capM3 > 0 && cur.vol_l + dv > capM3 * 1000 * 1.1) continue;
+
+      const score = capKg > 0 ? capKg - cur.weight : 99999 - cur.weight * 0.001;
+      if (score > bestScore) { bestScore = score; best = dr; }
+    }
+
+    if (!best) { skipped++; continue; }
+
+    const updated: Delivery = {
+      ...delivery,
+      driver_username: best.username,
+      driver_name: best.name,
+      car_number: best.car_number || null,
+      transport: best.transport || null,
+      status: 'assigned',
+      updated_at: now,
+      history: [...(delivery.history || []), { at: now, status: 'assigned', by }],
+    };
+    batch.set(col.doc(delivery.id), updated);
+
+    const cur = loadMap.get(best.username) || { weight: 0, vol_l: 0 };
+    cur.weight += delivery.total_weight || 0;
+    cur.vol_l += delivery.total_volume_l || 0;
+    loadMap.set(best.username, cur);
+    assigned++;
+  }
+
+  if (assigned > 0) await batch.commit();
+  return { assigned, skipped };
 }
