@@ -248,7 +248,7 @@ export default function PriceTagsPage() {
     if (!el) { el = document.createElement('style'); el.id = id; document.head.appendChild(el); }
     el.textContent = tab === 'tags'
       ? `@page { size: A4 portrait; margin: 2mm; }
-         @media print { .tag { page-break-inside: avoid; margin: 0 !important; } .tag:nth-child(2n) { page-break-after: always; } .tag-print-wrap { gap: 0 !important; } }`
+         @media print { .tag { page-break-inside: avoid; margin-bottom: 2mm !important; } .tag:last-child { margin-bottom: 0 !important; } .tag:nth-child(2n) { page-break-after: always; } .tag-print-wrap { gap: 0 !important; } }`
       : `@page { size: ${bcLabel.w} ${bcLabel.h}; margin: 0; }
          @media print {
            html, body { margin: 0 !important; padding: 0 !important; }
@@ -775,8 +775,8 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
       )}
       {/* Верхняя часть с отступами */}
       <div className="flex-1 flex flex-col px-4 pt-3 min-h-0">
-        {/* Шапка: крупный логотип, смещён левее (справа место под бейдж) */}
-        <div className="flex items-center justify-center pr-28 min-h-[170px]">
+        {/* Шапка: логотип; когда нет бейджа — по центру, иначе сдвиг влево */}
+        <div className={`flex items-center justify-center min-h-[170px] ${monthly > 0 ? 'pr-28' : ''}`}>
           {logoOk && store.logo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={store.logo} alt={store.name} onError={() => setLogoOk(false)} className="h-44 w-auto max-w-[90%] object-contain" />
