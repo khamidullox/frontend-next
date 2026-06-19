@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
-import { listShops, createShop, deleteShopApi, Shop, DIRECTIONS } from '@/lib/api';
+import { listShops, createShop, deleteShopApi, Shop, DIRECTIONS, ShopType } from '@/lib/api';
 
 const DIR_COLOR: Record<string, string> = {
   'Север': 'bg-blue-100 text-blue-700',
@@ -32,6 +32,9 @@ function ShopsContent() {
   const [direction, setDirection] = useState<string>('Центр');
   const [km, setKm] = useState('');
   const [phone, setPhone] = useState('');
+  const [lat, setLat] = useState('');
+  const [lng, setLng] = useState('');
+  const [type, setType] = useState<ShopType>('shop');
 
   const load = useCallback(async () => {
     try { setItems(await listShops()); }
@@ -45,9 +48,10 @@ function ShopsContent() {
     if (!name.trim()) return;
     setBusy(true); setError('');
     try {
-      const shop = await createShop({ name, address, direction, km: Number(km) || 0, phone });
+      const shop = await createShop({ name, address, direction, km: Number(km) || 0, phone,
+        lat: lat ? Number(lat) : undefined, lng: lng ? Number(lng) : undefined, type });
       setItems(prev => [...prev, shop].sort((a, b) => a.name.localeCompare(b.name, 'ru')));
-      setName(''); setAddress(''); setKm(''); setPhone('');
+      setName(''); setAddress(''); setKm(''); setPhone(''); setLat(''); setLng('');
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
@@ -74,13 +78,24 @@ function ShopsContent() {
             className="flex-[2] border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
+          <select value={type} onChange={e => setType(e.target.value as ShopType)}
+            className="sm:w-36 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
+            <option value="shop">🏪 Магазин</option>
+            <option value="warehouse">🏭 Склад (база)</option>
+          </select>
           <select value={direction} onChange={e => setDirection(e.target.value)}
-            className="sm:w-40 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
+            className="sm:w-36 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
             {DIRECTIONS.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
-          <input type="number" min={0} step="0.1" value={km} onChange={e => setKm(e.target.value)} placeholder="Км (в одну сторону)"
-            className="sm:w-44 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <input type="number" min={0} step="0.1" value={km} onChange={e => setKm(e.target.value)} placeholder="Км"
+            className="sm:w-24 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
           <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Телефон"
+            className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 items-end">
+          <input type="number" step="any" value={lat} onChange={e => setLat(e.target.value)} placeholder="Широта (40.44513)"
+            className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <input type="number" step="any" value={lng} onChange={e => setLng(e.target.value)} placeholder="Долгота (71.75780)"
             className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
           <button disabled={busy || !name.trim()}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg whitespace-nowrap">
@@ -101,12 +116,14 @@ function ShopsContent() {
         <div className="flex flex-col gap-1.5">
           {items.map(s => (
             <div key={s.id} className="bg-white rounded-lg shadow-sm px-3 py-2.5 flex items-center gap-3">
+              <span className="text-xl shrink-0">{s.type === 'warehouse' ? '🏭' : '🏪'}</span>
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-sm truncate">{s.name}</div>
                 <div className="text-[11px] text-gray-400 truncate">
                   {s.address || '—'}
                   {s.km > 0 && ` · ${s.km} км`}
                   {s.phone && ` · ${s.phone}`}
+                  {s.lat && s.lng && <span className="text-emerald-600"> · 📍 {s.lat.toFixed(4)}, {s.lng.toFixed(4)}</span>}
                 </div>
               </div>
               <span className={`text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap ${DIR_COLOR[s.direction] || 'bg-gray-100 text-gray-600'}`}>

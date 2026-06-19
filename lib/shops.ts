@@ -7,6 +7,8 @@ const COLLECTION = 'logistics_shops';
 export const DIRECTIONS = ['Север', 'Юг', 'Восток', 'Запад', 'Центр'] as const;
 export type Direction = (typeof DIRECTIONS)[number];
 
+export type ShopType = 'warehouse' | 'shop';
+
 export interface Shop {
   id: string;
   name: string;
@@ -14,6 +16,9 @@ export interface Shop {
   direction: Direction;
   km: number;        // расстояние от базы (в одну сторону)
   phone: string;
+  lat?: number;      // широта (десятичные градусы)
+  lng?: number;      // долгота
+  type?: ShopType;   // warehouse = база/склад, shop = магазин
   created_at: string;
 }
 
@@ -39,6 +44,9 @@ interface ShopInput {
   direction?: string;
   km?: number;
   phone?: string;
+  lat?: number;
+  lng?: number;
+  type?: ShopType;
 }
 
 export async function createShop(input: ShopInput): Promise<{ shop: Shop } | { error: string }> {
@@ -51,6 +59,9 @@ export async function createShop(input: ShopInput): Promise<{ shop: Shop } | { e
     direction: normDirection(input.direction),
     km: Math.max(0, Number(input.km) || 0),
     phone: str(input.phone),
+    lat: input.lat !== undefined ? Number(input.lat) || undefined : undefined,
+    lng: input.lng !== undefined ? Number(input.lng) || undefined : undefined,
+    type: input.type === 'warehouse' ? 'warehouse' : 'shop',
     created_at: new Date().toISOString(),
   };
   await getDb().collection(COLLECTION).doc(shop.id).set(shop);
@@ -67,6 +78,9 @@ export async function updateShop(id: string, input: ShopInput): Promise<{ shop: 
   if (input.direction !== undefined) shop.direction = normDirection(input.direction);
   if (input.km !== undefined) shop.km = Math.max(0, Number(input.km) || 0);
   if (input.phone !== undefined) shop.phone = str(input.phone);
+  if (input.lat !== undefined) shop.lat = Number(input.lat) || undefined;
+  if (input.lng !== undefined) shop.lng = Number(input.lng) || undefined;
+  if (input.type !== undefined) shop.type = input.type === 'warehouse' ? 'warehouse' : 'shop';
   await ref.set(shop);
   return { shop };
 }

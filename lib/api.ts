@@ -612,6 +612,8 @@ export async function listDrivers(): Promise<UserInfo[]> {
 export const DIRECTIONS = ['Север', 'Юг', 'Восток', 'Запад', 'Центр'] as const;
 export type Direction = (typeof DIRECTIONS)[number];
 
+export type ShopType = 'warehouse' | 'shop';
+
 export interface Shop {
   id: string;
   name: string;
@@ -619,6 +621,9 @@ export interface Shop {
   direction: Direction;
   km: number;
   phone: string;
+  lat?: number;
+  lng?: number;
+  type?: ShopType;
   created_at: string;
 }
 
@@ -631,6 +636,7 @@ export async function listShops(): Promise<Shop[]> {
 
 export async function createShop(input: {
   name: string; address?: string; direction?: string; km?: number; phone?: string;
+  lat?: number; lng?: number; type?: ShopType;
 }): Promise<Shop> {
   const res = await fetch('/api/shops', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
