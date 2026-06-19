@@ -44,8 +44,11 @@ function MapContent() {
       .finally(() => setLoading(false));
   }, []);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const getL = () => (window as any).L;
+
   useEffect(() => {
-    if ((window as { L?: unknown }).L) { setLeafletReady(true); return; }
+    if (getL()) { setLeafletReady(true); return; }
     const link = document.createElement('link');
     link.rel = 'stylesheet';
     link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
@@ -54,24 +57,28 @@ function MapContent() {
     script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
     script.onload = () => setLeafletReady(true);
     document.head.appendChild(script);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (!leafletReady || !mapDivRef.current || mapRef.current) return;
-    const L = (window as { L: { map: Function; tileLayer: Function } }).L;
+    const L = getL();
     const map = L.map(mapDivRef.current).setView([40.461, 71.755], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors', maxZoom: 19,
     }).addTo(map);
     mapRef.current = map;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leafletReady]);
 
   const renderMarkers = useCallback(() => {
-    const L = (window as { L?: { divIcon: Function; marker: Function; circleMarker: Function; latLngBounds: Function } }).L;
-    const map = mapRef.current as { addTo?: Function; fitBounds?: Function } | null;
+    const L = getL();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const map = mapRef.current as any;
     if (!L || !map) return;
 
-    (markersRef.current as { remove: Function }[]).forEach((m) => m.remove());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (markersRef.current as any[]).forEach((m) => m.remove());
     markersRef.current = [];
     const coords: [number, number][] = [];
 
@@ -82,13 +89,13 @@ function MapContent() {
         html: `<div style="background:${color};color:#fff;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;border:2px solid rgba(255,255,255,0.85);box-shadow:0 2px 6px rgba(0,0,0,0.25);">${TYPE_ICON[shop.type || 'shop'] || '📍'} ${shop.name}</div>`,
         iconAnchor: [0, 14],
       });
-      const m = L.marker([shop.lat!, shop.lng!], { icon }).addTo(map as never);
-      (m as { bindPopup: Function }).bindPopup(
-        `<b>${shop.name}</b><br>${shop.address || ''}<br>` +
-        `${shop.direction}${shop.km ? ` · ${shop.km} км` : ''}<br>` +
-        `<small style="color:#888">${shop.lat!.toFixed(5)}, ${shop.lng!.toFixed(5)}</small>`
-      );
-      markersRef.current.push(m);
+      L.marker([shop.lat!, shop.lng!], { icon })
+        .addTo(map)
+        .bindPopup(
+          `<b>${shop.name}</b><br>${shop.address || ''}<br>` +
+          `${shop.direction}${shop.km ? ` · ${shop.km} км` : ''}<br>` +
+          `<small style="color:#888">${shop.lat!.toFixed(5)}, ${shop.lng!.toFixed(5)}</small>`
+        );
       coords.push([shop.lat!, shop.lng!]);
     });
 
@@ -100,14 +107,14 @@ function MapContent() {
         html: `<div style="background:#D85A30;color:#fff;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;border:2px solid rgba(255,255,255,0.85);box-shadow:0 2px 6px rgba(0,0,0,0.25);">📦 ${d.client_name || 'Доставка'}</div>`,
         iconAnchor: [0, 14],
       });
-      const m = L.marker([lat, lng], { icon }).addTo(map as never);
-      (m as { bindPopup: Function }).bindPopup(`<b>${d.client_name || '—'}</b><br>${d.address}`);
-      markersRef.current.push(m);
+      L.marker([lat, lng], { icon })
+        .addTo(map)
+        .bindPopup(`<b>${d.client_name || '—'}</b><br>${d.address}`);
       coords.push([lat, lng]);
     });
 
     if (coords.length > 0) {
-      (map as { fitBounds: Function }).fitBounds(L.latLngBounds(coords).pad(0.3));
+      map.fitBounds(L.latLngBounds(coords).pad(0.3));
     }
   }, [shops, deliveries, geocodeMap]);
 
