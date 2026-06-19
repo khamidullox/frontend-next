@@ -266,7 +266,7 @@ function HistoryContent() {
                 {resultBadge(s)}
               </div>
 
-              {isAdmin && s.doc_type === 'transfer' && (
+              {isAdmin && (
                 <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
                   <button
                     onClick={e => { e.stopPropagation(); handleToggleStatus(s); }}
