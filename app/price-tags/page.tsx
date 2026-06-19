@@ -250,7 +250,7 @@ export default function PriceTagsPage() {
       ? `@page { size: A4 portrait; margin: 2mm; }
          @media print {
            .tag-print-wrap { display: block !important; }
-           .tag { display: block !important; page-break-inside: avoid; break-inside: avoid; margin-bottom: 2mm !important; }
+           .tag { display: block !important; page-break-inside: avoid; break-inside: avoid; margin: 0 auto 2mm auto !important; }
            .tag:last-child { margin-bottom: 0 !important; }
            .tag:nth-child(2n) { page-break-after: always; break-after: page; margin-bottom: 0 !important; }
          }`
