@@ -771,7 +771,7 @@ function PriceTag({ item, store, pct }: { item: PickedRow; store: StoreBrand; pc
   const monthly = pct > 0 ? monthlyInstallment(item.price, pct) : 0;
 
   return (
-    <div className="tag relative border-[11px] border-black bg-white flex flex-col overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
+    <div className="tag relative border-x-[11px] border-y-[16px] border-black bg-white flex flex-col overflow-hidden" style={{ width: A4_TAG.width, height: A4_TAG.height }}>
       {/* Бейдж рассрочки — в самый угол, чуть выходит на рамку */}
       {monthly > 0 && (
         <div className="absolute z-10" style={{ top: -2, right: -2, transform: 'rotate(-12deg)' }}>
