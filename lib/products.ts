@@ -61,6 +61,7 @@ function buildBarcodes(item: Record<string, unknown>): string[] {
 
 export interface CatalogItem {
   code: string;
+  product_id: string; // внутренний ID Smartup (для получения фото через inventory_view:model)
   name: string;
   producer: string;   // бренд (producer_code; названия за стеной прав Smartup)
   group: string;      // продуктовая группа (первый group_code, без префикса PRDGR:)
@@ -117,6 +118,7 @@ export async function getProductCatalog(): Promise<CatalogItem[]> {
         const code = normalizeCode(i.code);
         return {
           code,
+          product_id: normalizeCode(i.product_id) || code,
           name: String(i.name ?? ''),
           producer: groupTypeName(i, 'PRDGR:5', typeName), // бренд / торговая марка
           group: groupTypeName(i, 'PRDGR:3', typeName),    // вид

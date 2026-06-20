@@ -4,6 +4,8 @@ const SMARTUP_PASSWORD = process.env.SMARTUP_PASSWORD || '';
 const SMARTUP_PROJECT = process.env.SMARTUP_PROJECT || 'anor';
 const SMARTUP_FILIAL_ID = process.env.SMARTUP_FILIAL_ID || '';
 
+export const getSmartupProject = () => SMARTUP_PROJECT;
+
 // ─── Учёт лимитов Smartup ────────────────────────────────────────────────
 // Каждый ответ Smartup содержит объект limits со счётчиком по типу документа.
 // Запоминаем последнее виденное значение по endpoint — без лишних запросов.
@@ -89,4 +91,17 @@ export async function smartupRequest<T = Record<string, unknown>>(
     }
     throw err;
   }
+}
+
+// GET-запрос к Smartup (для biruni: фото, файлы) — тот же Basic auth.
+export async function smartupGetFile(path: string): Promise<Response> {
+  if (!SMARTUP_USERNAME || !SMARTUP_PASSWORD) {
+    throw new Error('Не заданы SMARTUP_USERNAME / SMARTUP_PASSWORD');
+  }
+  return fetch(`${SMARTUP_URL}${path}`, {
+    headers: {
+      Authorization: 'Basic ' + Buffer.from(`${SMARTUP_USERNAME}:${SMARTUP_PASSWORD}`).toString('base64'),
+    },
+    redirect: 'follow',
+  });
 }

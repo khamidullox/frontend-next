@@ -385,6 +385,7 @@ export async function listReceipts(): Promise<ReceiptListItem[]> {
 
 export interface CatalogItem {
   code: string;
+  product_id: string; // внутренний ID Smartup (для фото)
   name: string;
   producer: string;
   group: string;

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { listProducts, getProductStock, CatalogItem, ProductStock } from '@/lib/api';
 import { useCachedList } from '@/lib/useCachedList';
+import ProductPhoto from '@/components/ProductPhoto';
 
 export default function ProductDetailPage() {
   const { code } = useParams<{ code: string }>();
@@ -55,23 +56,26 @@ export default function ProductDetailPage() {
       </button>
 
       {/* Шапка товара */}
-      <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
-        <h2 className="font-bold text-base leading-snug">{item?.name || `Товар ${code}`}</h2>
-        <p className="text-xs text-gray-400 mt-1">
-          Код {code}
-          {item?.producer && ` · ${item.producer}`}
-        </p>
-        {item && item.barcodes.length > 0 && (
-          <p className="text-xs text-gray-500 mt-0.5">ШК: {item.barcodes.join(', ')}</p>
-        )}
-        {stock && stock.wholesale_price > 0 && (
-          <p className="mt-2 text-sm">
-            💵 Оптовая цена:{' '}
-            <strong className="text-emerald-600">
-              {stock.wholesale_price.toLocaleString('ru-RU')} сум
-            </strong>
+      <div className="bg-white rounded-xl shadow-sm p-4 mb-4 flex gap-4">
+        <ProductPhoto code={code} size="lg" />
+        <div className="flex-1 min-w-0">
+          <h2 className="font-bold text-base leading-snug">{item?.name || `Товар ${code}`}</h2>
+          <p className="text-xs text-gray-400 mt-1">
+            Код {code}
+            {item?.producer && ` · ${item.producer}`}
           </p>
-        )}
+          {item && item.barcodes.length > 0 && (
+            <p className="text-xs text-gray-500 mt-0.5">ШК: {item.barcodes.join(', ')}</p>
+          )}
+          {stock && stock.wholesale_price > 0 && (
+            <p className="mt-2 text-sm">
+              💵 Оптовая цена:{' '}
+              <strong className="text-emerald-600">
+                {stock.wholesale_price.toLocaleString('ru-RU')} сум
+              </strong>
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Остатки */}
