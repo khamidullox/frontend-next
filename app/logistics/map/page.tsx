@@ -295,7 +295,7 @@ function MapContent() {
       <div
         ref={mapDivRef}
         className="rounded-xl border border-gray-200 overflow-hidden w-full mb-3"
-        style={{ height: 'calc(100vh - 190px)' }}
+        style={{ height: '55vh' }}
       />
 
       {/* GPS-трекеры под картой */}
