@@ -114,11 +114,22 @@ function MapContent() {
       if (!delivery) return;
 
       let dest: [number, number] | null = null;
+      // 1. По shop_id
       if (delivery.shop_id) {
         const shop = shops.find((s) => s.id === delivery.shop_id);
         if (shop?.lat && shop?.lng) dest = [shop.lat, shop.lng];
       }
+      // 2. По to_name или shop_name (складские перемещения)
+      if (!dest) {
+        const destName = delivery.to_name || delivery.shop_name;
+        if (destName) {
+          const shop = shops.find((s) => s.name === destName || s.name.includes(destName) || destName.includes(s.name));
+          if (shop?.lat && shop?.lng) dest = [shop.lat, shop.lng];
+        }
+      }
+      // 3. Из geocodeMap
       if (!dest) dest = geocodeMapRef.current[delivery.id] ?? null;
+      // 4. Геокодинг адреса
       if (!dest && delivery.address) {
         try {
           const q = encodeURIComponent(`${delivery.address}, Андижан, Узбекистан`);
