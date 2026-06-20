@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
 import LogisticsTabs from '@/components/LogisticsTabs';
-import { listShops, listDeliveries, listUsers, Shop, Delivery, UserInfo } from '@/lib/api';
+import { listShops, listDeliveries, listUsers, updateDelivery, Shop, Delivery, UserInfo } from '@/lib/api';
 import type { GpsLocation } from '@/lib/gps';
 
 const GPS_POLL_MS = 30_000;
@@ -153,11 +153,16 @@ function MapContent() {
         const j = await r.json();
         const ro = j.routes?.[0];
         if (!ro) return;
+        const distanceKm = Math.round(ro.distance / 100) / 10;
+        // Автосохраняем км в доставку если ещё не заполнено
+        if (!delivery.km) {
+          updateDelivery(delivery.id, { km: Math.round(distanceKm) }).catch(() => {});
+        }
         results.push({
           userId: gps.user_id,
           path: (ro.geometry.coordinates as number[][]).map(([ln, la]) => [la, ln] as [number, number]),
           durationMin: Math.round(ro.duration / 60),
-          distanceKm: Math.round(ro.distance / 100) / 10,
+          distanceKm,
           destCoords: dest,
           deliveryLabel: delivery.to_name || delivery.shop_name || delivery.client_name || '',
         });

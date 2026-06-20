@@ -1,6 +1,21 @@
 import { NextRequest } from 'next/server';
 import { deleteUser, setPassword, setUserWarehouses, setDriverProfile, setWorkerShop } from '@/lib/users';
+import { listDeliveriesForDriver } from '@/lib/deliveries';
 import { withRole } from '@/lib/auth';
+
+// Статистика водителя: суммарные км по доставленным заказам
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ username: string }> }
+) {
+  return withRole('manager', async () => {
+    const { username } = await params;
+    const deliveries = await listDeliveriesForDriver(username);
+    const delivered = deliveries.filter((d) => d.status === 'delivered');
+    const totalKm   = delivered.reduce((s, d) => s + (d.km || 0), 0);
+    return Response.json({ total_km: totalKm, delivery_count: delivered.length });
+  });
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

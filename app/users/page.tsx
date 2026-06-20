@@ -448,6 +448,14 @@ function EditUserModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [confirmDel, setConfirmDel] = useState(false);
+  const [kmStats, setKmStats] = useState<{ total_km: number; delivery_count: number } | null>(null);
+
+  useEffect(() => {
+    if (!isDriver) return;
+    fetch(`/api/users/${encodeURIComponent(user.username)}`).then((r) => r.json()).then((d) => {
+      if (d.total_km !== undefined) setKmStats(d);
+    }).catch(() => {});
+  }, [isDriver, user.username]);
 
   async function save() {
     setBusy(true);
@@ -553,6 +561,18 @@ function EditUserModal({
                   placeholder="UUID из платформы GPS"
                   className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-blue-400" />
               </div>
+              {kmStats !== null && (
+                <div className="sm:col-span-2 bg-blue-50 rounded-xl px-4 py-3 flex items-center gap-4">
+                  <div className="text-center">
+                    <div className="text-xl font-bold text-blue-700">{kmStats.total_km} км</div>
+                    <div className="text-[10px] text-blue-400">пробег (доставлено)</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-xl font-bold text-blue-700">{kmStats.delivery_count}</div>
+                    <div className="text-[10px] text-blue-400">доставок</div>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex flex-col gap-3">
