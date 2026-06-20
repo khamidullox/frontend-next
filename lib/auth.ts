@@ -83,7 +83,11 @@ export function verifyToken(token: string): Session | null {
 }
 
 // ─── Сессия (cookie) ─────────────────────────────────────────────────────────
+// AUTH_BYPASS=true — временный режим без логина (пока Firestore недоступен).
+const BYPASS_SESSION: Session = { username: 'guest', name: 'Гость', role: 'manager', warehouses: [] };
+
 export async function getSession(): Promise<Session | null> {
+  if (process.env.AUTH_BYPASS === 'true') return BYPASS_SESSION;
   const token = (await cookies()).get(COOKIE)?.value;
   if (!token) return null;
   return verifyToken(token);
