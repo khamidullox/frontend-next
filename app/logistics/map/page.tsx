@@ -7,10 +7,6 @@ import LogisticsTabs from '@/components/LogisticsTabs';
 import { listShops, listDeliveries, listUsers, Shop, Delivery, UserInfo } from '@/lib/api';
 import type { GpsLocation } from '@/lib/gps';
 
-// mds token — полупубличный ключ платформы (виден в URL браузера gps16888.com)
-const GPS_MDS = process.env.NEXT_PUBLIC_GPS_MDS_TOKEN || '507e1fb31adc446490e5be54caba822b';
-const GPS_CB  = '_gpsLoadCb'; // имя глобального JSONP-колбека
-
 const GPS_POLL_MS = 30_000;
 const GPS_OFFLINE_MS = 30 * 60_000; // старше 30 мин — офлайн
 
@@ -65,48 +61,21 @@ function MapContent() {
   }, []);
 
   const fetchGps = useCallback(() => {
-    // JSONP: браузер сам отправляет cookies (включая HttpOnly ASP.NET_SessionId)
-    // и использует свой IP — поэтому сессия gps16888.com принимается
-    document.getElementById('gps-jsonp-script')?.remove();
-
-    const timer = setTimeout(() => {
-      setGpsError(true);
-      setGpsLoaded(true);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delete (window as any)[GPS_CB];
-    }, 12_000);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any)[GPS_CB] = (data: any) => {
-      clearTimeout(timer);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delete (window as any)[GPS_CB];
-      if (data?.success === 'true' && Array.isArray(data.data)) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const locs: GpsLocation[] = data.data.filter((d: any) => d.jingdu && d.weidu).map((d: any) => ({
-          user_name:  String(d.user_name  || ''),
-          user_id:    String(d.user_id    || ''),
-          lat:        Number(d.weidu)     || 0,
-          lng:        Number(d.jingdu)    || 0,
-          speed:      Math.round(Number(d.sudu) || 0),
-          sys_time:   String(d.sys_time   || ''),
-          heart_time: String(d.heart_time || ''),
-          alarm:      Number(d.alarm)     || 0,
-          sim_id:     String(d.sim_id     || ''),
-        }));
-        setGpsLocations(locs);
-        setGpsError(false);
-      } else {
-        setGpsError(true);
-      }
-      setGpsLoaded(true);
-    };
-
-    const s = document.createElement('script');
-    s.id  = 'gps-jsonp-script';
-    s.src = `https://www.gps16888.com/GetDataService.aspx?method=loadUser&mds=${GPS_MDS}&callback=${GPS_CB}&_=${Date.now()}`;
-    s.onerror = () => { clearTimeout(timer); setGpsError(true); setGpsLoaded(true); };
-    document.head.appendChild(s);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    fetch('/api/gps', { cache: 'no-store', signal: controller.signal })
+      .then((r) => r.json())
+      .then((data) => {
+        clearTimeout(timer);
+        if (data.ok && Array.isArray(data.locations)) {
+          setGpsLocations(data.locations);
+          setGpsError(false);
+        } else {
+          setGpsError(true);
+        }
+      })
+      .catch(() => setGpsError(true))
+      .finally(() => setGpsLoaded(true));
   }, []);
 
   useEffect(() => {

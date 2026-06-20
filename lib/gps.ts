@@ -98,26 +98,26 @@ export async function fetchGpsRaw(): Promise<string> {
   }
 }
 
-export async function fetchAllGpsLocations(): Promise<GpsLocation[]> {
-  const token = process.env.GPS_MDS_TOKEN;
-  if (!token) return [];
-
+async function fetchOneByUserId(token: string, userId: string): Promise<GpsLocation | null> {
   try {
-    const cookie = await getGpsCookie(token);
-    const url = `https://www.gps16888.com/GetDataService.aspx?method=loadUser&mds=${token}&callback=loadedCallback&_=${Date.now()}`;
-    const res = await fetch(url, {
-      cache: 'no-store',
-      headers: {
-        'User-Agent': BASE_UA,
-        'Referer': `https://www.gps16888.com/user/indexp.aspx?mds=${token}`,
-        'Accept': 'text/javascript, application/javascript, */*; q=0.01',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Cookie': cookie,
-      },
-    });
-    if (!res.ok) return [];
-    return parseGpsJson(await res.text());
+    const url = `https://www.gps16888.com/GetDataService.aspx?method=loadUser&mds=${token}&callback=loadedCallback&user_id=${userId}&_=${Date.now()}`;
+    const res = await fetch(url, { cache: 'no-store', headers: { 'User-Agent': BASE_UA } });
+    if (!res.ok) return null;
+    const locs = parseGpsJson(await res.text());
+    return locs[0] ?? null;
   } catch {
-    return [];
+    return null;
   }
+}
+
+// Основная функция: запрашивает GPS по списку user_id (mds+user_id работает без сессии)
+export async function fetchGpsLocationsByUserIds(userIds: string[]): Promise<GpsLocation[]> {
+  const token = process.env.GPS_MDS_TOKEN;
+  if (!token || userIds.length === 0) return [];
+  const results = await Promise.all(userIds.map((id) => fetchOneByUserId(token, id)));
+  return results.filter((r): r is GpsLocation => r !== null);
+}
+
+export async function fetchAllGpsLocations(): Promise<GpsLocation[]> {
+  return [];
 }

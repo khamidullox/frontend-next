@@ -1,4 +1,5 @@
-import { fetchAllGpsLocations, fetchGpsRaw, fetchGpsRawUid } from '@/lib/gps';
+import { fetchGpsLocationsByUserIds, fetchGpsRawUid } from '@/lib/gps';
+import { listUsers } from '@/lib/users';
 import { withRole } from '@/lib/auth';
 
 export const runtime = 'nodejs';
@@ -7,13 +8,21 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   return withRole('driver', async () => {
     const url = new URL(request.url);
-    const debug = url.searchParams.get('debug') === '1';
-    const testUid = url.searchParams.get('uid'); // тест: конкретный user_id без сессии
-    if (debug) {
-      const raw = testUid ? await fetchGpsRawUid(testUid) : await fetchGpsRaw();
+
+    // Диагностика: ?debug=1&uid=UUID
+    if (url.searchParams.get('debug') === '1') {
+      const uid = url.searchParams.get('uid') ?? '';
+      const raw = uid ? await fetchGpsRawUid(uid) : '{"error":"pass uid= param"}';
       return Response.json({ raw: raw.slice(0, 2000) });
     }
-    const locations = await fetchAllGpsLocations();
+
+    // Получаем gps_user_id всех водителей и запрашиваем их GPS
+    const users = await listUsers();
+    const gpsIds = users
+      .filter((u) => u.role === 'driver' && u.gps_user_id)
+      .map((u) => u.gps_user_id as string);
+
+    const locations = await fetchGpsLocationsByUserIds(gpsIds);
     return Response.json({ ok: true, locations });
   });
 }
