@@ -19,7 +19,7 @@ interface PickedRow extends WarehouseProduct {
   fromCatalog?: boolean; // добавлен через поиск по справочнику
 }
 
-const A4_TAG = { width: '190mm', height: '145mm' };          // 2 ценника на лист A4
+const A4_TAG = { width: '190mm', height: '141mm' };          // 2 ценника на лист A4
 
 // Размеры термоэтикеток (по одной на «страницу» термопринтера).
 const BC_SIZES: Record<string, { label: string; w: string; h: string }> = {
@@ -247,10 +247,10 @@ export default function PriceTagsPage() {
     let el = document.getElementById(id) as HTMLStyleElement | null;
     if (!el) { el = document.createElement('style'); el.id = id; document.head.appendChild(el); }
     el.textContent = tab === 'tags'
-      ? `@page { size: A4 portrait; margin: 2mm; }
+      ? `@page { size: A4 portrait; margin: 5mm 2mm; }
          @media print {
            .tag-print-wrap { display: block !important; }
-           .tag { page-break-inside: avoid; break-inside: avoid; margin: 0 auto 2mm auto !important; }
+           .tag { page-break-inside: avoid; break-inside: avoid; margin: 0 auto 1mm auto !important; }
            .tag:last-child { margin-bottom: 0 !important; }
            .tag:nth-child(2n) { page-break-after: always; break-after: page; margin-bottom: 0 !important; }
          }`
