@@ -289,6 +289,11 @@ function LogisticsContent() {
             🏪 <span>Точки доставки</span>
             <span className="text-[10px] text-gray-400 font-normal">(магазины/склады)</span>
           </Link>
+          <Link
+            href="/logistics/reports"
+            className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center gap-1">
+            📊 Отчёты
+          </Link>
           <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
             <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} />
             Скрывать завершённые
