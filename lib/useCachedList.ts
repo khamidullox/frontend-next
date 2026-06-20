@@ -25,7 +25,7 @@ export function useCachedList<T>(
 
     // 1) Мгновенно показываем из кэша.
     try {
-      const raw = sessionStorage.getItem(key);
+      const raw = localStorage.getItem(key);
       if (raw) {
         const { t, v } = JSON.parse(raw) as { t: number; v: T[] };
         // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -47,9 +47,9 @@ export function useCachedList<T>(
         setData(v);
         setLoading(false);
         try {
-          sessionStorage.setItem(key, JSON.stringify({ t: Date.now(), v }));
+          localStorage.setItem(key, JSON.stringify({ t: Date.now(), v }));
         } catch {
-          // переполнение sessionStorage — не страшно
+          // переполнение localStorage — не страшно
         }
       })
       .catch((e) => {

@@ -385,14 +385,10 @@ export async function listReceipts(): Promise<ReceiptListItem[]> {
 
 export interface CatalogItem {
   code: string;
-  product_id: string; // внутренний ID Smartup (для фото)
   name: string;
   producer: string;
-  group: string;
   barcodes: string[];
-  price: number;   // оптовая цена продажи
-  weight: number;  // вес единицы, кг (из Smartup)
-  volume_l: number; // объём (литраж), л (из Smartup)
+  price: number;
 }
 
 export async function listProducts(): Promise<CatalogItem[]> {
