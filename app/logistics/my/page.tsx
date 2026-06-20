@@ -74,6 +74,12 @@ export default function MyDeliveriesPage() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadRoute(); }, [loadRoute]);
 
+  // Автообновление: синхронизируем список доставок каждые 30 секунд.
+  useEffect(() => {
+    const id = setInterval(() => { load(); loadRoute(); }, 30_000);
+    return () => clearInterval(id);
+  }, [load, loadRoute]);
+
   async function setStatus(id: string, status: DeliveryStatus) {
     setBusyId(id);
     setError('');
