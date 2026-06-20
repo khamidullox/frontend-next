@@ -14,13 +14,15 @@ export async function fetchAllGpsLocations(): Promise<GpsLocation[]> {
   const token = process.env.GPS_MDS_TOKEN;
   if (!token) return [];
 
-  const url = `https://www.gps16888.com/GetDataService.aspx?method=loadUser&mds=${token}&_=${Date.now()}`;
+  const url = `https://www.gps16888.com/GetDataService.aspx?method=loadUser&mds=${token}&callback=loadedCallback&_=${Date.now()}`;
 
   const res = await fetch(url, {
     cache: 'no-store',
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Referer': 'https://www.gps16888.com/',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+      'Referer': `https://www.gps16888.com/user/indexp.aspx?mds=${token}`,
+      'Accept': 'text/javascript, application/javascript, application/ecmascript, application/x-ecmascript, */*; q=0.01',
+      'X-Requested-With': 'XMLHttpRequest',
     },
   });
 
