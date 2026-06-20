@@ -31,6 +31,14 @@ const DRIVERS = [
   { name: "Nuraliyev Otamurod",       car: "40 H 052 QB", transport: "LABO",   phone: "94 355 53 50" },
 ];
 
+const CAPACITY: Record<string, { kg: number; m3: number }> = {
+  'LABO':   { kg: 1200, m3: 9 },
+  'COBALT': { kg: 300,  m3: 0.4 },
+  'DAMAS':  { kg: 750,  m3: 3.5 },
+  'MATIZ':  { kg: 250,  m3: 0.3 },
+  '33021':  { kg: 1500, m3: 10 },
+};
+
 function toUsername(name: string): string {
   // "Zulfiqorov Sharifjon" → "zulfiqorov"
   return name
@@ -52,13 +60,16 @@ export async function POST() {
     for (const d of DRIVERS) {
       const username = toUsername(d.name);
       const password = toPassword(d.phone);
+      const cap = CAPACITY[d.transport] || { kg: 0, m3: 0 };
       const res = await createUser({
         username,
         name: d.name,
         role: 'driver',
         password,
         car_number: d.car,
-        transport: d.transport,
+        transport: `Chevrolet ${d.transport}`.replace('GAZ 33021', 'GAZ 33021').replace('Chevrolet 33021', 'GAZ 33021'),
+        capacity_kg: cap.kg,
+        capacity_m3: cap.m3,
       });
       results.push({
         name: d.name,

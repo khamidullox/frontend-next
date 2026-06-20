@@ -21,9 +21,10 @@ export async function PATCH(
       const res = await setUserWarehouses(username, body.warehouses);
       if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
     }
-    if (body.car_number !== undefined || body.transport !== undefined ||
+    if (body.name !== undefined || body.car_number !== undefined || body.transport !== undefined ||
         body.capacity_m3 !== undefined || body.capacity_kg !== undefined || body.direction !== undefined) {
       const res = await setDriverProfile(username, {
+        name: body.name,
         car_number: body.car_number,
         transport: body.transport,
         capacity_m3: body.capacity_m3,

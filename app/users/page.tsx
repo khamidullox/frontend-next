@@ -435,6 +435,7 @@ function EditUserModal({
 }) {
   const isDriver = user.role === 'driver';
   const isWorker = user.role === 'worker';
+  const [editName, setEditName] = useState(user.name);
   const [password, setPassword] = useState('');
   const [wh, setWh] = useState<string[]>(user.warehouses);
   const [shopId, setShopId] = useState(user.shop_id || '');
@@ -451,7 +452,8 @@ function EditUserModal({
     setBusy(true);
     setErr('');
     try {
-      const patch: { password?: string; warehouses?: string[]; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string; shop_id?: string } = {};
+      const patch: { name?: string; password?: string; warehouses?: string[]; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string; shop_id?: string } = {};
+      if (editName.trim() && editName.trim() !== user.name) patch.name = editName.trim();
       if (password.trim()) patch.password = password.trim();
       if (isDriver) {
         patch.car_number = car.trim();
@@ -496,6 +498,14 @@ function EditUserModal({
         </div>
 
         <div className="flex flex-col gap-3">
+          {/* Имя */}
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Имя</label>
+            <input value={editName} onChange={(e) => setEditName(e.target.value)}
+              placeholder="Полное имя"
+              className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          </div>
+
           {/* Пароль */}
           <div>
             <label className="text-xs text-gray-500 mb-1 block">Новый пароль (оставьте пустым — без изменений)</label>

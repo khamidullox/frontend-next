@@ -133,12 +133,13 @@ export async function listDrivers(): Promise<UserInfo[]> {
 // Обновление профиля водителя (машина/транспорт/вместимость/направление).
 export async function setDriverProfile(
   username: string,
-  profile: { car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string }
+  profile: { name?: string; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string }
 ): Promise<{ ok: true } | { error: string }> {
   const ref = getDb().collection(COLLECTION).doc(normUsername(username));
   const snap = await ref.get();
   if (!snap.exists) return { error: 'Пользователь не найден' };
   const patch: Partial<StoredUser> = {};
+  if (profile.name !== undefined) patch.name = String(profile.name || '').trim();
   if (profile.car_number !== undefined) patch.car_number = String(profile.car_number || '').trim();
   if (profile.transport !== undefined) patch.transport = String(profile.transport || '').trim();
   if (profile.capacity_m3 !== undefined) patch.capacity_m3 = Math.max(0, Number(profile.capacity_m3) || 0);
