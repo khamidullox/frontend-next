@@ -336,12 +336,16 @@ function UsersContent() {
         )}
 
         {/* Привязка к магазину (для раздела «Заказы клиентам») */}
-        {role === 'worker' && shopList.length > 0 && (
-          <select value={shopId} onChange={(e) => setShopId(e.target.value)}
-            className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
-            <option value="">— магазин не привязан —</option>
-            {shopList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+        {role === 'worker' && (
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">🏪 Магазин (для «Заказы клиентам»)</label>
+            <select value={shopId} onChange={(e) => setShopId(e.target.value)}
+              className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
+              <option value="">— не привязан —</option>
+              {shopList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            {shopList.length === 0 && <p className="text-xs text-amber-500 mt-1">Сначала добавьте точки в разделе Логистика → Точки доставки</p>}
+          </div>
         )}
 
         {/* Прикреплённые склады */}
@@ -534,14 +538,15 @@ function EditUserModal({
             </div>
           ) : (
             <div className="flex flex-col gap-3">
-              {isWorker && allShops.length > 0 && (
+              {isWorker && (
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Магазин (для «Заказы клиентам»)</label>
+                  <label className="text-xs text-gray-500 mb-1 block">🏪 Магазин (для «Заказы клиентам»)</label>
                   <select value={shopId} onChange={(e) => setShopId(e.target.value)}
                     className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
                     <option value="">— не привязан —</option>
                     {allShops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
+                  {allShops.length === 0 && <p className="text-xs text-amber-500 mt-1">Нет точек — добавьте в Логистика → Точки доставки</p>}
                 </div>
               )}
               <div>
