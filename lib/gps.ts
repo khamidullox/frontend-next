@@ -10,43 +10,28 @@ export interface GpsLocation {
   sim_id: string;
 }
 
-function buildGpsUrl(token: string) {
-  return `https://www.gps16888.com/GetDataService.aspx?method=loadUser&mds=${token}&callback=loadedCallback&_=${Date.now()}`;
-}
+const BASE_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36';
 
-function gpsHeaders(token: string) {
-  return {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
-    'Referer': `https://www.gps16888.com/user/indexp.aspx?mds=${token}`,
-    'Accept': 'text/javascript, application/javascript, application/ecmascript, application/x-ecmascript, */*; q=0.01',
-    'X-Requested-With': 'XMLHttpRequest',
-  };
-}
-
-export async function fetchGpsRaw(): Promise<string> {
-  const token = process.env.GPS_MDS_TOKEN;
-  if (!token) return 'NO_TOKEN';
-  try {
-    const res = await fetch(buildGpsUrl(token), { cache: 'no-store', headers: gpsHeaders(token) });
-    return `status=${res.status} | ` + (await res.text());
-  } catch (e) {
-    return `fetch_error: ${e}`;
-  }
-}
-
-export async function fetchAllGpsLocations(): Promise<GpsLocation[]> {
-  const token = process.env.GPS_MDS_TOKEN;
-  if (!token) return [];
-
-  const res = await fetch(buildGpsUrl(token), {
+// Открываем страницу платформы чтобы получить ASP.NET_SessionId
+async function bootstrapSession(token: string): Promise<string> {
+  const loginUrl = `https://www.gps16888.com/user/indexp.aspx?mds=${token}`;
+  const res = await fetch(loginUrl, {
     cache: 'no-store',
-    headers: gpsHeaders(token),
+    redirect: 'follow',
+    headers: { 'User-Agent': BASE_UA },
   });
+  // Собираем все Set-Cookie заголовки
+  const cookies: string[] = [];
+  res.headers.forEach((value, key) => {
+    if (key.toLowerCase() === 'set-cookie') {
+      const part = value.split(';')[0];
+      if (part) cookies.push(part);
+    }
+  });
+  return cookies.join('; ');
+}
 
-  if (!res.ok) return [];
-
-  const text = await res.text();
-  // Try JSONP format: loadedCallback({...})
+function parseGpsJson(text: string): GpsLocation[] {
   const match = text.match(/loadedCallback\(([\s\S]+)\)/);
   let json: Record<string, unknown>;
   try {
@@ -54,9 +39,7 @@ export async function fetchAllGpsLocations(): Promise<GpsLocation[]> {
   } catch {
     return [];
   }
-
   if (json.success !== 'true' || !Array.isArray(json.data)) return [];
-
   return (json.data as Record<string, unknown>[])
     .filter((d) => d.jingdu && d.weidu)
     .map((d) => ({
@@ -70,4 +53,50 @@ export async function fetchAllGpsLocations(): Promise<GpsLocation[]> {
       alarm: Number(d.alarm) || 0,
       sim_id: String(d.sim_id || ''),
     }));
+}
+
+export async function fetchGpsRaw(): Promise<string> {
+  const token = process.env.GPS_MDS_TOKEN;
+  if (!token) return 'NO_TOKEN';
+  try {
+    const cookie = await bootstrapSession(token);
+    const url = `https://www.gps16888.com/GetDataService.aspx?method=loadUser&mds=${token}&callback=loadedCallback&_=${Date.now()}`;
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: {
+        'User-Agent': BASE_UA,
+        'Referer': `https://www.gps16888.com/user/indexp.aspx?mds=${token}`,
+        'Accept': 'text/javascript, application/javascript, */*; q=0.01',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Cookie': cookie,
+      },
+    });
+    return `cookie=${cookie} | status=${res.status} | ` + (await res.text());
+  } catch (e) {
+    return `fetch_error: ${e}`;
+  }
+}
+
+export async function fetchAllGpsLocations(): Promise<GpsLocation[]> {
+  const token = process.env.GPS_MDS_TOKEN;
+  if (!token) return [];
+
+  try {
+    const cookie = await bootstrapSession(token);
+    const url = `https://www.gps16888.com/GetDataService.aspx?method=loadUser&mds=${token}&callback=loadedCallback&_=${Date.now()}`;
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: {
+        'User-Agent': BASE_UA,
+        'Referer': `https://www.gps16888.com/user/indexp.aspx?mds=${token}`,
+        'Accept': 'text/javascript, application/javascript, */*; q=0.01',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Cookie': cookie,
+      },
+    });
+    if (!res.ok) return [];
+    return parseGpsJson(await res.text());
+  } catch {
+    return [];
+  }
 }
