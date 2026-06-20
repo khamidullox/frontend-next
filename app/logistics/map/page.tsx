@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
 import LogisticsTabs from '@/components/LogisticsTabs';
-import { listShops, listDeliveries, Shop, Delivery } from '@/lib/api';
+import { listShops, listDeliveries, listUsers, Shop, Delivery, UserInfo } from '@/lib/api';
 import type { GpsLocation } from '@/lib/gps';
 
 const GPS_POLL_MS = 30_000;
@@ -40,6 +40,8 @@ function MapContent() {
   const [shops, setShops] = useState<Shop[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [gpsLocations, setGpsLocations] = useState<GpsLocation[]>([]);
+  const [gpsLoaded, setGpsLoaded] = useState(false);
+  const [drivers, setDrivers] = useState<UserInfo[]>([]);
   const [geocodeMap, setGeocodeMap] = useState<Record<string, [number, number]>>({});
   const [geocoding, setGeocoding] = useState<string | null>(null);
   const [leafletReady, setLeafletReady] = useState(false);
@@ -48,25 +50,32 @@ function MapContent() {
   const [selectedGps, setSelectedGps] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([listShops(), listDeliveries()])
-      .then(([s, d]) => {
+    Promise.all([listShops(), listDeliveries(), listUsers()])
+      .then(([s, d, u]) => {
         setShops(s);
         setDeliveries(d.filter((x) => !['delivered', 'returned'].includes(x.status)));
+        setDrivers(u.filter((x) => x.role === 'driver'));
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
   const fetchGps = useCallback(() => {
-    fetch('/api/gps', { cache: 'no-store' })
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    fetch('/api/gps', { cache: 'no-store', signal: controller.signal })
       .then((r) => r.json())
       .then((data) => {
+        clearTimeout(timer);
         if (data.ok && Array.isArray(data.locations)) {
           setGpsLocations(data.locations);
           setGpsError(false);
+        } else {
+          setGpsError(true);
         }
       })
-      .catch(() => setGpsError(true));
+      .catch(() => setGpsError(true))
+      .finally(() => setGpsLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -260,13 +269,23 @@ function MapContent() {
 
         {/* Список GPS-машин */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col"
-          style={{ width: 240, minWidth: 200, maxHeight: 500, overflowY: 'auto' }}>
-          <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100 sticky top-0 bg-white">
-            GPS-трекеры · {gpsLocations.length} устройств
+          style={{ width: 260, minWidth: 220, maxHeight: 500, overflowY: 'auto' }}>
+          <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100 sticky top-0 bg-white flex items-center gap-2">
+            <span>GPS-трекеры</span>
+            {gpsLoaded && <span className="ml-auto text-gray-400">{gpsLocations.length} устройств</span>}
+            {!gpsLoaded && <span className="ml-auto text-gray-300">загрузка…</span>}
           </div>
-          {sortedGps.length === 0 ? (
+          {!gpsLoaded ? (
+            <div className="px-3 py-6 text-xs text-gray-300 text-center">⏳</div>
+          ) : gpsError ? (
+            <div className="px-3 py-4 text-xs text-red-400 text-center">
+              ⚠️ Нет соединения с GPS<br/>
+              <span className="text-gray-400">Проверьте GPS_MDS_TOKEN в Vercel</span>
+            </div>
+          ) : sortedGps.length === 0 ? (
             <div className="px-3 py-4 text-xs text-gray-400 text-center">
-              {gpsError ? 'Нет соединения с GPS' : 'Загрузка…'}
+              Нет устройств<br/>
+              <span className="text-gray-300">Добавьте GPS ID водителям</span>
             </div>
           ) : (
             sortedGps.map((v) => {
@@ -275,22 +294,28 @@ function MapContent() {
               const isOffline = ageMs > GPS_OFFLINE_MS;
               const isMoving = v.speed > 2;
               const isSelected = selectedGps === v.user_id;
+              const driver = drivers.find((d) => d.gps_user_id === v.user_id);
               return (
                 <button
                   key={v.user_id}
                   onClick={() => focusVehicle(v)}
-                  className={`w-full text-left px-3 py-2 border-b border-gray-50 hover:bg-gray-50 transition-colors ${isSelected ? 'bg-blue-50' : ''}`}
+                  className={`w-full text-left px-3 py-2.5 border-b border-gray-50 hover:bg-gray-50 transition-colors ${isSelected ? 'bg-blue-50' : ''}`}
                 >
                   <div className="flex items-center gap-1.5">
                     <span className={`w-2 h-2 rounded-full shrink-0 ${isOffline ? 'bg-gray-400' : isMoving ? 'bg-green-500' : 'bg-amber-400'}`} />
                     <span className="text-xs font-semibold truncate">{v.user_name}</span>
                   </div>
+                  {driver && (
+                    <div className="text-[10px] text-blue-600 mt-0.5 pl-3.5 truncate">
+                      👤 {driver.name} · {driver.car_number}
+                    </div>
+                  )}
                   <div className="text-[10px] text-gray-400 mt-0.5 pl-3.5">
                     {isOffline
-                      ? `офлайн · ${Math.round(ageMs / 60_000)} мин назад`
+                      ? `⚫ офлайн · ${Math.round(ageMs / 60_000)} мин назад`
                       : isMoving
-                      ? `${v.speed} км/ч · едет`
-                      : 'стоит'}
+                      ? `🟢 ${v.speed} км/ч · едет`
+                      : '🟡 стоит'}
                   </div>
                 </button>
               );
