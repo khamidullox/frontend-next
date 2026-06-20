@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { listUsers, createUser, deleteUserApi, updateUser, listAllWarehouses, WarehouseSummary, UserInfo, Role, ROLE_LABEL, DIRECTIONS } from '@/lib/api';
+import { listUsers, createUser, deleteUserApi, updateUser, listAllWarehouses, listShops, WarehouseSummary, Shop, UserInfo, Role, ROLE_LABEL, DIRECTIONS } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
 import { loadXLSX } from '@/lib/xlsx';
 import Pager from '@/components/Pager';
@@ -159,6 +159,8 @@ function UsersContent() {
   const [direction, setDirection] = useState('');
   const [selectedWh, setSelectedWh] = useState<string[]>([]);
   const [whList, setWhList] = useState<WarehouseSummary[]>([]);
+  const [shopList, setShopList] = useState<Shop[]>([]);
+  const [shopId, setShopId] = useState('');
   const [busy, setBusy] = useState(false);
   const [page, setPage] = useState(1);
   const [editUser, setEditUser] = useState<UserInfo | null>(null);
@@ -175,6 +177,7 @@ function UsersContent() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { listAllWarehouses().then(setWhList).catch(() => {}); }, []);
+  useEffect(() => { listShops().then(setShopList).catch(() => {}); }, []);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -189,9 +192,10 @@ function UsersContent() {
         capacity_m3: role === 'driver' ? Number(capM3) || 0 : undefined,
         capacity_kg: role === 'driver' ? Number(capKg) || 0 : undefined,
         direction: role === 'driver' ? direction.trim() : undefined,
+        shop_id: role === 'worker' ? shopId : undefined,
       });
       setUsername(''); setName(''); setPassword(''); setRole('worker'); setSelectedWh([]);
-      setCarNumber(''); setTransport(''); setCapM3(''); setCapKg(''); setDirection('');
+      setCarNumber(''); setTransport(''); setCapM3(''); setCapKg(''); setDirection(''); setShopId('');
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -331,6 +335,15 @@ function UsersContent() {
           </div>
         )}
 
+        {/* Привязка к магазину (для раздела «Заказы клиентам») */}
+        {role === 'worker' && shopList.length > 0 && (
+          <select value={shopId} onChange={(e) => setShopId(e.target.value)}
+            className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
+            <option value="">— магазин не привязан —</option>
+            {shopList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        )}
+
         {/* Прикреплённые склады */}
         {role !== 'driver' && whList.length > 0 && (
           <WarehousePicker all={whList} selected={selectedWh} onChange={setSelectedWh} />
@@ -397,6 +410,7 @@ function UsersContent() {
         <EditUserModal
           user={editUser}
           allWh={whList}
+          allShops={shopList}
           onClose={() => setEditUser(null)}
           onSaved={() => { setEditUser(null); load(); }}
         />
@@ -407,16 +421,19 @@ function UsersContent() {
 
 // ─── Модалка редактирования пользователя ───────────────────────────────────────
 function EditUserModal({
-  user, allWh, onClose, onSaved,
+  user, allWh, allShops, onClose, onSaved,
 }: {
   user: UserInfo;
   allWh: WarehouseSummary[];
+  allShops: Shop[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const isDriver = user.role === 'driver';
+  const isWorker = user.role === 'worker';
   const [password, setPassword] = useState('');
   const [wh, setWh] = useState<string[]>(user.warehouses);
+  const [shopId, setShopId] = useState(user.shop_id || '');
   const [car, setCar] = useState(user.car_number);
   const [transport, setTransport] = useState(user.transport);
   const [capM3, setCapM3] = useState(String(user.capacity_m3 || ''));
@@ -430,7 +447,7 @@ function EditUserModal({
     setBusy(true);
     setErr('');
     try {
-      const patch: { password?: string; warehouses?: string[]; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string } = {};
+      const patch: { password?: string; warehouses?: string[]; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string; shop_id?: string } = {};
       if (password.trim()) patch.password = password.trim();
       if (isDriver) {
         patch.car_number = car.trim();
@@ -440,6 +457,7 @@ function EditUserModal({
         patch.direction = direction.trim();
       } else {
         patch.warehouses = wh;
+        if (isWorker) patch.shop_id = shopId;
       }
       await updateUser(user.username, patch);
       onSaved();
@@ -515,9 +533,21 @@ function EditUserModal({
               </div>
             </div>
           ) : (
-            <div>
-              <label className="text-xs text-gray-500 mb-1 block">Склады</label>
-              <WarehousePicker all={allWh} selected={wh} onChange={setWh} />
+            <div className="flex flex-col gap-3">
+              {isWorker && allShops.length > 0 && (
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Магазин (для «Заказы клиентам»)</label>
+                  <select value={shopId} onChange={(e) => setShopId(e.target.value)}
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
+                    <option value="">— не привязан —</option>
+                    {allShops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Склады</label>
+                <WarehousePicker all={allWh} selected={wh} onChange={setWh} />
+              </div>
             </div>
           )}
 

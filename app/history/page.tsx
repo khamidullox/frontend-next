@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   listSessions, deleteSessionApi, setSessionStatusApi,
   SessionListItem, getSmartupLimits, SmartupLimit, DOC_TYPE_LABEL,
-  listDeliveries, Delivery, DeliveryStatus,
+  listRoutes, getRoute, Route, RouteWithDeliveries, DeliveryStatus,
 } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
 import { useAuth } from '@/components/AuthProvider';
@@ -216,16 +216,19 @@ function HistoryContent() {
   const [allDates, setAllDates] = useState(false);
 
   // Tabs
-  const [activeTab, setActiveTab] = useState<'sessions' | 'deliveries'>('sessions');
+  const [activeTab, setActiveTab] = useState<'sessions' | 'routes'>('sessions');
 
   // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
-  // Deliveries
-  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  const [delivLoading, setDelivLoading] = useState(false);
+  // Маршруты (заходы водителей) — заменяют плоский список доставок.
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [routesLoading, setRoutesLoading] = useState(false);
+  const [expandedRouteId, setExpandedRouteId] = useState<string | null>(null);
+  const [expandedRoutes, setExpandedRoutes] = useState<Record<string, RouteWithDeliveries>>({});
+  const [expandLoading, setExpandLoading] = useState<string | null>(null);
 
   // Limits
   const [limits, setLimits] = useState<SmartupLimit[]>([]);
@@ -233,16 +236,29 @@ function HistoryContent() {
   useEffect(() => { setSessions(cachedSessions); }, [cachedSessions]);
   useEffect(() => { getSmartupLimits().then(setLimits).catch(() => {}); }, []);
 
-  const loadDeliveries = useCallback(async () => {
-    setDelivLoading(true);
-    try { setDeliveries(await listDeliveries()); }
+  const loadRoutes = useCallback(async () => {
+    setRoutesLoading(true);
+    try { setRoutes(await listRoutes()); }
     catch { /* ignore */ }
-    finally { setDelivLoading(false); }
+    finally { setRoutesLoading(false); }
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'deliveries' && deliveries.length === 0) loadDeliveries();
-  }, [activeTab, deliveries.length, loadDeliveries]);
+    if (activeTab === 'routes' && routes.length === 0) loadRoutes();
+  }, [activeTab, routes.length, loadRoutes]);
+
+  async function toggleRoute(id: string) {
+    if (expandedRouteId === id) { setExpandedRouteId(null); return; }
+    setExpandedRouteId(id);
+    if (!expandedRoutes[id]) {
+      setExpandLoading(id);
+      try {
+        const full = await getRoute(id);
+        setExpandedRoutes((prev) => ({ ...prev, [id]: full }));
+      } catch { /* ignore */ }
+      finally { setExpandLoading(null); }
+    }
+  }
 
   // Reset page + selection on date change
   useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [selectedDate, allDates]);
@@ -307,9 +323,9 @@ function HistoryContent() {
     () => allDates ? sessions : sessions.filter(s => isSameDay(s.finished_at || s.created_at, selectedDate)),
     [sessions, selectedDate, allDates],
   );
-  const dateDeliveries = useMemo(
-    () => allDates ? deliveries : deliveries.filter(d => isSameDay(d.created_at, selectedDate)),
-    [deliveries, selectedDate, allDates],
+  const dateRoutes = useMemo(
+    () => allDates ? routes : routes.filter(r => isSameDay(r.finished_at || r.started_at, selectedDate)),
+    [routes, selectedDate, allDates],
   );
 
   const totalPages = Math.max(1, Math.ceil(dateSessions.length / PAGE_SIZE));
@@ -356,7 +372,7 @@ function HistoryContent() {
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <h2 className="text-xl font-bold">История</h2>
-        <span className="text-sm text-gray-400">{sessions.length} пров. · {deliveries.length || '…'} дост.</span>
+        <span className="text-sm text-gray-400">{sessions.length} пров. · {routes.length || '…'} маршр.</span>
       </div>
 
       <Dashboard
@@ -378,11 +394,11 @@ function HistoryContent() {
           }`}>
           📋 Проверки ({dateSessions.length})
         </button>
-        <button onClick={() => setActiveTab('deliveries')}
+        <button onClick={() => setActiveTab('routes')}
           className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
-            activeTab === 'deliveries' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            activeTab === 'routes' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
           }`}>
-          🚚 Доставки ({dateDeliveries.length})
+          🧭 Маршруты ({dateRoutes.length})
         </button>
       </div>
 
@@ -499,39 +515,77 @@ function HistoryContent() {
         </>
       )}
 
-      {/* ── Deliveries ── */}
-      {activeTab === 'deliveries' && (
+      {/* ── Routes ── */}
+      {activeTab === 'routes' && (
         <>
-          {delivLoading ? (
+          {routesLoading ? (
             <div className="flex items-center justify-center py-12 gap-2 text-gray-500 text-sm">
               <span className="w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
               Загрузка…
             </div>
-          ) : dateDeliveries.length === 0 ? (
+          ) : dateRoutes.length === 0 ? (
             <div className="bg-white rounded-xl p-8 text-center text-gray-400">
-              {allDates ? 'Доставок пока нет' : 'Нет доставок за этот день'}
+              {allDates ? 'Маршрутов пока нет' : 'Нет маршрутов за этот день'}
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              {dateDeliveries.map(d => (
-                <div key={d.id} className="bg-white rounded-xl shadow-sm px-4 py-3 flex items-start gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold truncate">{d.client_name || '—'}</div>
-                    {d.address && (
-                      <div className="text-xs text-gray-400 mt-0.5 truncate">📍 {d.address}</div>
+              {dateRoutes.map(r => {
+                const expanded = expandedRouteId === r.id;
+                const full = expandedRoutes[r.id];
+                return (
+                  <div key={r.id} className="bg-white rounded-xl shadow-sm overflow-hidden">
+                    <button onClick={() => toggleRoute(r.id)} className="w-full text-left px-4 py-3 flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold truncate">👤 {r.driver_name}{r.car_number ? ` · 🚗 ${r.car_number}` : ''}</div>
+                        <div className="text-xs text-gray-400 mt-0.5 flex flex-wrap gap-2">
+                          <span>начат {fmt(r.started_at)}</span>
+                          {r.finished_at && <span>завершён {fmt(r.finished_at)}</span>}
+                          <span>📦 {r.delivery_ids.length} доставок</span>
+                          {r.total_km > 0 && <span>🛣️ {r.total_km * 2} км</span>}
+                        </div>
+                      </div>
+                      <span className={`text-xs font-semibold px-2 py-1 rounded-full shrink-0 ${
+                        r.status === 'active' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {r.status === 'active' ? 'В пути' : 'Завершён'}
+                      </span>
+                      <span className="text-gray-300 shrink-0">{expanded ? '▲' : '▼'}</span>
+                    </button>
+
+                    {expanded && (
+                      <div className="px-4 pb-3 border-t border-gray-100 pt-2">
+                        {expandLoading === r.id ? (
+                          <div className="text-xs text-gray-400 py-1">Загрузка…</div>
+                        ) : !full ? (
+                          <div className="text-xs text-gray-400 py-1">Не удалось загрузить</div>
+                        ) : full.deliveries.length === 0 ? (
+                          <div className="text-xs text-gray-400 py-1">Нет доставок в маршруте</div>
+                        ) : (
+                          <div className="flex flex-col gap-1.5">
+                            {full.deliveries.map(d => (
+                              <div key={d.id} className="flex items-start gap-2 text-xs py-1 border-b border-gray-50 last:border-0">
+                                <div className="flex-1 min-w-0">
+                                  {d.kind === 'shop_to_client' && (
+                                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 mr-1.5">
+                                      🏪 {d.shop_name}
+                                    </span>
+                                  )}
+                                  <span className="font-medium">{d.client_name || '—'}</span>
+                                  {d.address && <span className="text-gray-400"> · 📍 {d.address}</span>}
+                                  {d.doc_number && <span className="text-gray-400"> · 📄 {d.doc_number}</span>}
+                                </div>
+                                <span className={`px-2 py-0.5 rounded-full shrink-0 ${DELIV_COLOR[d.status]}`}>
+                                  {DELIV_LABEL[d.status]}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
-                    <div className="text-xs text-gray-400 mt-0.5 flex flex-wrap gap-2">
-                      {d.driver_name && <span>👤 {d.driver_name}</span>}
-                      {d.doc_number && <span>📄 {d.doc_number}</span>}
-                      {d.direction && <span>🧭 {d.direction}</span>}
-                      <span>{fmt(d.created_at)}</span>
-                    </div>
                   </div>
-                  <span className={`text-xs font-semibold px-2 py-1 rounded-full shrink-0 ${DELIV_COLOR[d.status]}`}>
-                    {DELIV_LABEL[d.status]}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </>

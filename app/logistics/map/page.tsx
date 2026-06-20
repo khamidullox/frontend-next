@@ -3,7 +3,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
-import { listShops, listDeliveries, Shop, Delivery } from '@/lib/api';
+import LogisticsTabs from '@/components/LogisticsTabs';
+import { listShops, listDeliveries, listVehiclePositions, Shop, Delivery, VehiclePosition } from '@/lib/api';
+
+const VEHICLE_POLL_MS = 12_000;
+const VEHICLE_STALE_MS = 5 * 60_000; // позиция старше 5 мин — считаем водителя офлайн
 
 const TYPE_ICON: Record<string, string> = { warehouse: '🏭', shop: '🏪' };
 const TYPE_COLOR: Record<string, string> = { warehouse: '#185FA5', shop: '#0F6E56' };
@@ -29,6 +33,7 @@ function MapContent() {
   const markersRef = useRef<unknown[]>([]);
   const [shops, setShops] = useState<Shop[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const [vehicles, setVehicles] = useState<VehiclePosition[]>([]);
   const [geocodeMap, setGeocodeMap] = useState<Record<string, [number, number]>>({});
   const [geocoding, setGeocoding] = useState<string | null>(null);
   const [leafletReady, setLeafletReady] = useState(false);
@@ -42,6 +47,17 @@ function MapContent() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+  }, []);
+
+  // Живые позиции машин — polling, пока страница открыта.
+  useEffect(() => {
+    let cancelled = false;
+    function tick() {
+      listVehiclePositions().then((v) => { if (!cancelled) setVehicles(v); }).catch(() => {});
+    }
+    tick();
+    const id = setInterval(tick, VEHICLE_POLL_MS);
+    return () => { cancelled = true; clearInterval(id); };
   }, []);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -113,10 +129,34 @@ function MapContent() {
       coords.push([lat, lng]);
     });
 
+    // Живые машины: позиция водителя, обновлённая не позже VEHICLE_STALE_MS назад.
+    const now = Date.now();
+    vehicles
+      .filter((v) => now - new Date(v.updated_at).getTime() < VEHICLE_STALE_MS)
+      .forEach((v) => {
+        const load = deliveries
+          .filter((d) => d.driver_username === v.username && !['delivered', 'returned'].includes(d.status))
+          .reduce((s, d) => ({ weight: s.weight + (d.total_weight || 0), vol_l: s.vol_l + (d.total_volume_l || 0) }),
+            { weight: 0, vol_l: 0 });
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="background:#1F2937;color:#fff;font-size:12px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;border:2px solid #34D399;box-shadow:0 2px 6px rgba(0,0,0,0.3);">🚚 ${v.driver_name}</div>`,
+          iconAnchor: [0, 14],
+        });
+        L.marker([v.lat, v.lng], { icon })
+          .addTo(map)
+          .bindPopup(
+            `<b>🚚 ${v.driver_name}</b><br>` +
+            `⚖️ ${Math.round(load.weight)} кг · 📦 ${(load.vol_l / 1000).toFixed(1)} м³<br>` +
+            `<small style="color:#888">обновлено ${new Date(v.updated_at).toLocaleTimeString('ru-RU')}</small>`
+          );
+        coords.push([v.lat, v.lng]);
+      });
+
     if (coords.length > 0) {
       map.fitBounds(L.latLngBounds(coords).pad(0.3));
     }
-  }, [shops, deliveries, geocodeMap]);
+  }, [shops, deliveries, geocodeMap, vehicles]);
 
   useEffect(() => {
     if (leafletReady && mapRef.current) renderMarkers();
@@ -142,11 +182,13 @@ function MapContent() {
   const shopsNoCoord = shops.filter((s) => !s.lat || !s.lng);
   const activeWithAddr = deliveries.filter((d) => d.address);
 
+  const onlineVehicles = vehicles.filter((v) => Date.now() - new Date(v.updated_at).getTime() < VEHICLE_STALE_MS);
+
   return (
     <div>
+      <LogisticsTabs />
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <Link href="/logistics" className="text-sm text-gray-500 hover:text-gray-700">← Логистика</Link>
-        <h2 className="text-xl font-bold ml-1">🗺️ Карта доставок</h2>
+        <h2 className="text-xl font-bold">🗺️ Карта · {onlineVehicles.length} машин на связи</h2>
         <Link href="/logistics/shops" className="ml-auto text-xs text-blue-500 hover:underline">
           + Добавить точку →
         </Link>
@@ -164,6 +206,7 @@ function MapContent() {
         <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-600 mr-1 align-middle" />Склад (база)</span>
         <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-600 mr-1 align-middle" />Магазин</span>
         <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500 mr-1 align-middle" />Доставка</span>
+        <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-slate-800 border border-emerald-400 mr-1 align-middle" />🚚 Машина (live)</span>
         <span className="ml-auto text-gray-400">Кликни на маркер — подробности</span>
       </div>
 

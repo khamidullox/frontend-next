@@ -18,6 +18,7 @@ export interface Session {
   name: string;
   role: Role;
   warehouses: string[]; // коды прикреплённых складов (пусто = все)
+  shop_id?: string;      // для роли «магазин» — привязка к точке (lib/shops.ts)
 }
 
 const COOKIE = 'auth';
@@ -74,6 +75,7 @@ export function verifyToken(token: string): Session | null {
       name: data.name,
       role: data.role,
       warehouses: Array.isArray(data.warehouses) ? data.warehouses : [],
+      shop_id: data.shop_id || undefined,
     };
   } catch {
     return null;

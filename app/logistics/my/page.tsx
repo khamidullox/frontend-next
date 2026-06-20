@@ -1,11 +1,21 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   listDeliveries, updateDelivery, Delivery, DeliveryStatus,
   DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL,
+  listRoutes, startRoute, finishRoute, sendTrackPoint, Route,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
+
+const TRACK_INTERVAL_MS = 45_000;
+
+function fmtTime(iso?: string | null) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  } catch { return ''; }
+}
 
 function statusClass(s: DeliveryStatus): string {
   switch (s) {
@@ -40,6 +50,10 @@ export default function MyDeliveriesPage() {
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  const [route, setRoute] = useState<Route | null>(null);
+  const [routeBusy, setRouteBusy] = useState(false);
+  const [geoError, setGeoError] = useState('');
+
   const load = useCallback(async () => {
     try {
       setItems(await listDeliveries());
@@ -50,7 +64,15 @@ export default function MyDeliveriesPage() {
     }
   }, []);
 
+  const loadRoute = useCallback(async () => {
+    try {
+      const routes = await listRoutes();
+      setRoute(routes.find((r) => r.status === 'active') || null);
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadRoute(); }, [loadRoute]);
 
   async function setStatus(id: string, status: DeliveryStatus) {
     setBusyId(id);
@@ -64,6 +86,69 @@ export default function MyDeliveriesPage() {
       setBusyId(null);
     }
   }
+
+  async function handleStartRoute() {
+    setRouteBusy(true);
+    setError('');
+    try {
+      const r = await startRoute();
+      setRoute(r);
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRouteBusy(false);
+    }
+  }
+
+  async function handleFinishRoute() {
+    if (!route) return;
+    setRouteBusy(true);
+    setError('');
+    try {
+      await finishRoute(route.id);
+      setRoute(null);
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRouteBusy(false);
+    }
+  }
+
+  // GPS: пока есть активный маршрут — раз в TRACK_INTERVAL_MS отправляем позицию.
+  const routeIdRef = useRef<string | null>(null);
+  routeIdRef.current = route?.id ?? null;
+
+  useEffect(() => {
+    if (!route || typeof navigator === 'undefined' || !('geolocation' in navigator)) return;
+
+    let cancelled = false;
+    function tick() {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (cancelled || !routeIdRef.current) return;
+          sendTrackPoint({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            speed: pos.coords.speed ?? undefined,
+            heading: pos.coords.heading ?? undefined,
+          }).catch(() => {});
+          setGeoError('');
+        },
+        (err) => setGeoError(err.message || 'Не удалось определить местоположение'),
+        { enableHighAccuracy: true, maximumAge: 30_000, timeout: 20_000 }
+      );
+    }
+    tick();
+    const id = setInterval(tick, TRACK_INTERVAL_MS);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [route]);
+
+  const routeDeliveries = route ? items.filter((d) => d.route_id === route.id) : [];
+  const routeKm = routeDeliveries.reduce((s, d) => s + (d.km || 0), 0);
+  const unassignedToRoute = items.filter((d) => !d.route_id && (d.status === 'assigned' || d.status === 'on_way'));
 
   const active = items.filter((d) => d.status !== 'delivered' && d.status !== 'returned');
   const done = items.filter((d) => d.status === 'delivered' || d.status === 'returned');
@@ -87,6 +172,48 @@ export default function MyDeliveriesPage() {
       </div>
 
       {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+
+      {/* Маршрут (заход) */}
+      <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
+        {route ? (
+          <>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div>
+                <div className="font-semibold text-sm">🧭 Маршрут в пути · начат {fmtTime(route.started_at)}</div>
+                <div className="text-xs text-gray-400 mt-0.5">
+                  {routeDeliveries.length} доставок{routeKm > 0 ? ` · 🛣️ ${routeKm * 2} км` : ''}
+                </div>
+              </div>
+              <button onClick={handleFinishRoute} disabled={routeBusy}
+                className="px-3 py-2 bg-red-500 hover:bg-red-600 disabled:bg-gray-200 text-white text-xs font-semibold rounded-lg whitespace-nowrap">
+                {routeBusy ? '⏳…' : '🏁 Закончить маршрут'}
+              </button>
+            </div>
+            {geoError ? (
+              <p className="text-xs text-amber-600">⚠️ Геолокация: {geoError}. Разрешите доступ, чтобы быть видимым на карте.</p>
+            ) : (
+              <p className="text-xs text-emerald-600">📡 Местоположение передаётся логисту</p>
+            )}
+            {unassignedToRoute.length > 0 && (
+              <p className="text-xs text-gray-400 mt-1">
+                Есть ещё {unassignedToRoute.length} назначенных доставок — обновите страницу, если логист добавил их в этот заход.
+              </p>
+            )}
+          </>
+        ) : (
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm text-gray-500">
+              {unassignedToRoute.length > 0
+                ? `Готовы к выезду: ${unassignedToRoute.length} доставок`
+                : 'Нет назначенных доставок для выезда'}
+            </div>
+            <button onClick={handleStartRoute} disabled={routeBusy}
+              className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-200 text-white text-xs font-semibold rounded-lg whitespace-nowrap">
+              {routeBusy ? '⏳…' : '🚀 Начать маршрут'}
+            </button>
+          </div>
+        )}
+      </div>
 
       {items.length === 0 && (
         <div className="bg-white rounded-xl p-8 text-center text-gray-400">Доставок пока нет</div>
@@ -129,6 +256,11 @@ function DeliveryCard({
           {d.doc_type && (
             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
               {DOC_TYPE_LABEL[d.doc_type]} № {d.doc_number || d.doc_id}
+            </span>
+          )}
+          {d.kind === 'shop_to_client' && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 ml-1">
+              🏪 {d.shop_name || 'Заявка магазина'}
             </span>
           )}
           <div className="font-bold text-base mt-1">{d.client_name || 'Без названия'}</div>

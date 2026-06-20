@@ -27,6 +27,11 @@ const DRIVER_LINKS: NavLink[] = [
   { href: '/logistics/my', label: '🚚 Мои доставки', min: 'driver' },
 ];
 
+// Магазин (worker) — кроме общих пунктов, видит создание заявок на доставку клиентам.
+const WORKER_EXTRA_LINKS: NavLink[] = [
+  { href: '/logistics/shop', label: '🚚 Заказы клиентам', min: 'worker' },
+];
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -42,6 +47,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const rank = session ? ROLE_RANK[session.role] : 0;
   const links = session?.role === 'driver'
     ? DRIVER_LINKS
+    : session?.role === 'worker'
+    ? [...LINKS.filter((l) => rank >= ROLE_RANK[l.min]), ...WORKER_EXTRA_LINKS]
     : LINKS.filter((l) => rank >= ROLE_RANK[l.min]);
 
   function isActive(href: string) {

@@ -13,6 +13,7 @@ export interface UserSession {
   name: string;
   role: Role;
   warehouses: string[];
+  shop_id?: string;
 }
 
 export interface MeResult {
@@ -60,6 +61,7 @@ export interface UserInfo {
   capacity_m3: number;
   capacity_kg: number;
   direction: string;
+  shop_id: string;
 }
 
 export async function listUsers(): Promise<UserInfo[]> {
@@ -72,6 +74,7 @@ export async function listUsers(): Promise<UserInfo[]> {
 export async function createUser(input: {
   username: string; name: string; role: Role; password: string; warehouses?: string[];
   car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string;
+  shop_id?: string;
 }): Promise<void> {
   const res = await fetch('/api/users', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -108,7 +111,7 @@ export async function setUserWarehouses(username: string, warehouses: string[]):
 // Единое обновление пользователя из модалки (пароль / склады / профиль водителя).
 export async function updateUser(username: string, patch: {
   password?: string; warehouses?: string[]; car_number?: string; transport?: string;
-  capacity_m3?: number; capacity_kg?: number; direction?: string;
+  capacity_m3?: number; capacity_kg?: number; direction?: string; shop_id?: string;
 }): Promise<void> {
   const res = await fetch(`/api/users/${encodeURIComponent(username)}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -502,6 +505,7 @@ export const DELIVERY_STATUS_LABEL: Record<DeliveryStatus, string> = {
 };
 
 export type DeliverySource = 'document' | 'session' | 'manual';
+export type DeliveryKind = 'warehouse_dispatch' | 'shop_to_client';
 
 export interface Delivery {
   id: string;
@@ -509,6 +513,7 @@ export interface Delivery {
   updated_at: string;
   created_by: string;
   source: DeliverySource;
+  kind: DeliveryKind;
   doc_type: DocType | null;
   doc_id: string | null;
   doc_number: string | null;
@@ -517,6 +522,8 @@ export interface Delivery {
   note: string;
   from_name: string | null;
   to_name: string | null;
+  shop_id: string | null;
+  shop_name: string | null;
   total_weight: number;
   total_volume_l: number;
   total_qty: number;
@@ -526,6 +533,7 @@ export interface Delivery {
   driver_name: string | null;
   car_number: string | null;
   transport: string | null;
+  route_id: string | null;
   status: DeliveryStatus;
   history: { at: string; status: DeliveryStatus; by: string }[];
 }
@@ -664,6 +672,122 @@ export async function deleteShopApi(id: string): Promise<void> {
   const res = await fetch(`/api/shops/${encodeURIComponent(id)}`, { method: 'DELETE' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка удаления');
+}
+
+// ─── Логистика: маршруты (раздел 3, история) ──────────────────────────────
+export type RouteStatus = 'active' | 'finished';
+
+export interface Route {
+  id: string;
+  driver_username: string;
+  driver_name: string;
+  car_number: string | null;
+  status: RouteStatus;
+  started_at: string;
+  finished_at: string | null;
+  delivery_ids: string[];
+  total_km: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RouteWithDeliveries extends Route {
+  deliveries: Delivery[];
+}
+
+export async function listRoutes(): Promise<Route[]> {
+  const res = await fetch('/api/logistics/routes', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
+export async function getRoute(id: string): Promise<RouteWithDeliveries> {
+  const res = await fetch(`/api/logistics/routes/${encodeURIComponent(id)}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data as RouteWithDeliveries;
+}
+
+export async function startRoute(driver_username?: string): Promise<Route> {
+  const res = await fetch('/api/logistics/routes', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(driver_username ? { driver_username } : {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка старта маршрута');
+  return data.data as Route;
+}
+
+export async function finishRoute(id: string): Promise<RouteWithDeliveries> {
+  const res = await fetch(`/api/logistics/routes/${encodeURIComponent(id)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'finished' }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка завершения маршрута');
+  return data.data as RouteWithDeliveries;
+}
+
+export async function addDeliveriesToRoute(id: string, deliveryIds: string[]): Promise<RouteWithDeliveries> {
+  const res = await fetch(`/api/logistics/routes/${encodeURIComponent(id)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ add_delivery_ids: deliveryIds }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка добавления в маршрут');
+  return data.data as RouteWithDeliveries;
+}
+
+// ─── Логистика: GPS-трекинг (раздел 3, карта) ─────────────────────────────
+export interface VehiclePosition {
+  username: string;
+  driver_name: string;
+  lat: number;
+  lng: number;
+  accuracy: number | null;
+  speed: number | null;
+  heading: number | null;
+  at: string;
+  updated_at: string;
+  route_id: string | null;
+}
+
+export async function sendTrackPoint(p: {
+  lat: number; lng: number; accuracy?: number; speed?: number; heading?: number;
+}): Promise<void> {
+  await fetch('/api/logistics/track', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(p),
+  });
+}
+
+export async function listVehiclePositions(): Promise<VehiclePosition[]> {
+  const res = await fetch('/api/logistics/track', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
+// ─── Логистика: заявки магазинов (раздел 2) ───────────────────────────────
+export async function listShopRequests(): Promise<Delivery[]> {
+  const res = await fetch('/api/logistics/shop-requests', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
+export async function createShopRequest(input: {
+  client_name: string; address: string; note?: string;
+}): Promise<Delivery> {
+  const res = await fetch('/api/logistics/shop-requests', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка создания заявки');
+  return data.data as Delivery;
 }
 
 export class NotFoundError extends Error {

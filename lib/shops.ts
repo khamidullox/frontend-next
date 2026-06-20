@@ -31,6 +31,11 @@ function normDirection(v: unknown): Direction {
   return (DIRECTIONS as readonly string[]).includes(s) ? s : 'Центр';
 }
 
+export async function getShop(id: string): Promise<Shop | null> {
+  const snap = await getDb().collection(COLLECTION).doc(str(id)).get();
+  return snap.exists ? (snap.data() as Shop) : null;
+}
+
 export async function listShops(): Promise<Shop[]> {
   const snap = await getDb().collection(COLLECTION).get();
   return snap.docs

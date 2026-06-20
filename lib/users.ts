@@ -15,6 +15,7 @@ export interface StoredUser {
   capacity_m3?: number;  // вместимость машины, м³
   capacity_kg?: number;  // грузоподъёмность, кг
   direction?: string;    // основное направление машины
+  shop_id?: string;      // для роли «магазин» — привязка к точке (lib/shops.ts)
 }
 
 export interface UserInfo {
@@ -28,6 +29,7 @@ export interface UserInfo {
   capacity_m3: number;
   capacity_kg: number;
   direction: string;
+  shop_id: string;
 }
 
 function publicUser(u: StoredUser): UserInfo {
@@ -42,6 +44,7 @@ function publicUser(u: StoredUser): UserInfo {
     capacity_m3: Number(u.capacity_m3) || 0,
     capacity_kg: Number(u.capacity_kg) || 0,
     direction: u.direction ?? '',
+    shop_id: u.shop_id ?? '',
   };
 }
 
@@ -86,6 +89,7 @@ export async function createUser(input: {
   capacity_m3?: number;
   capacity_kg?: number;
   direction?: string;
+  shop_id?: string;
 }): Promise<{ ok: true } | { error: string }> {
   const username = normUsername(input.username);
   if (!username) return { error: 'Логин обязателен' };
@@ -112,6 +116,7 @@ export async function createUser(input: {
     capacity_m3: Math.max(0, Number(input.capacity_m3) || 0),
     capacity_kg: Math.max(0, Number(input.capacity_kg) || 0),
     direction: String(input.direction || '').trim(),
+    shop_id: String(input.shop_id || '').trim(),
   };
   await ref.set(user);
   return { ok: true };
@@ -140,6 +145,18 @@ export async function setDriverProfile(
   if (profile.capacity_kg !== undefined) patch.capacity_kg = Math.max(0, Number(profile.capacity_kg) || 0);
   if (profile.direction !== undefined) patch.direction = String(profile.direction || '').trim();
   await ref.set(patch, { merge: true });
+  return { ok: true };
+}
+
+// Привязка магазина (роль «worker») к точке из справочника (lib/shops.ts).
+export async function setWorkerShop(
+  username: string,
+  shopId: string
+): Promise<{ ok: true } | { error: string }> {
+  const ref = getDb().collection(COLLECTION).doc(normUsername(username));
+  const snap = await ref.get();
+  if (!snap.exists) return { error: 'Пользователь не найден' };
+  await ref.set({ shop_id: String(shopId || '').trim() }, { merge: true });
   return { ok: true };
 }
 

@@ -22,6 +22,10 @@ export const DELIVERY_STATUS_LABEL: Record<DeliveryStatus, string> = {
 
 export type DeliverySource = 'document' | 'session' | 'manual';
 
+// warehouse_dispatch — раздел 1 (склад → магазин/клиент, из накладной/заказа).
+// shop_to_client — раздел 2: заявка магазина на доставку своему покупателю.
+export type DeliveryKind = 'warehouse_dispatch' | 'shop_to_client';
+
 interface StatusEvent {
   at: string;
   status: DeliveryStatus;
@@ -34,6 +38,7 @@ export interface Delivery {
   updated_at: string;
   created_by: string;
   source: DeliverySource;
+  kind: DeliveryKind;
 
   // Привязка к документу-первоисточнику (если есть).
   doc_type: DocType | null;
@@ -48,6 +53,10 @@ export interface Delivery {
   // Маршрут склад → склад (для накладных/перемещений; у заказов — пусто).
   from_name: string | null;
   to_name: string | null;
+
+  // Заявка магазина (kind = shop_to_client): кто создал.
+  shop_id: string | null;
+  shop_name: string | null;
 
   // Назначенный водитель (снимок данных на момент назначения).
   driver_username: string | null;
@@ -64,8 +73,22 @@ export interface Delivery {
   direction: string;      // Север / Юг / Восток / Запад / Центр
   km: number;             // расстояние до точки (км, в одну сторону)
 
+  // Привязка к маршруту водителя (заход за один раз, см. lib/routes.ts).
+  route_id: string | null;
+
   status: DeliveryStatus;
   history: StatusEvent[];
+}
+
+// Старые документы Firestore созданы до появления kind/shop_id/route_id — дефолтим их.
+function normalizeDelivery(d: Delivery): Delivery {
+  return {
+    ...d,
+    kind: d.kind ?? 'warehouse_dispatch',
+    shop_id: d.shop_id ?? null,
+    shop_name: d.shop_name ?? null,
+    route_id: d.route_id ?? null,
+  };
 }
 
 function str(v: unknown): string {
@@ -94,6 +117,7 @@ async function computeDims(
 
 interface CreateInput {
   source?: DeliverySource;
+  kind?: DeliveryKind;    // по умолчанию warehouse_dispatch
   query?: string;        // ID накладной/заказа — подтянем данные из Smartup (авто-тип)
   movement_id?: string;  // явная накладная
   deal_id?: string;      // явный заказ
@@ -103,6 +127,8 @@ interface CreateInput {
   client_name?: string;
   address?: string;
   note?: string;
+  shop_id?: string;       // заявка магазина (kind = shop_to_client)
+  shop_name?: string;
   driver_username?: string;      // штатный водитель (есть аккаунт)
   external_driver?: string;      // внешний водитель «со стороны» — имя
   external_car?: string;         // его машина
@@ -179,6 +205,7 @@ export async function createDelivery(
     updated_at: now,
     created_by: str(input.created_by),
     source,
+    kind: input.kind || 'warehouse_dispatch',
     doc_type: base.doc_type ?? null,
     doc_id: base.doc_id ?? null,
     doc_number: base.doc_number ?? null,
@@ -187,6 +214,8 @@ export async function createDelivery(
     note: base.note ?? '',
     from_name,
     to_name,
+    shop_id: input.shop_id ? str(input.shop_id) : null,
+    shop_name: input.shop_name ? str(input.shop_name) : null,
     total_weight: dims.weight,
     total_volume_l: dims.volume_l,
     total_qty: dims.qty,
@@ -196,6 +225,7 @@ export async function createDelivery(
     driver_name: null,
     car_number: null,
     transport: null,
+    route_id: null,
     status: 'new',
     history: [{ at: now, status: 'new', by: str(input.created_by) }],
   };
@@ -235,7 +265,7 @@ export async function listDeliveries(limit = 200): Promise<Delivery[]> {
     .orderBy('created_at', 'desc')
     .limit(limit)
     .get();
-  return snap.docs.map((d) => d.data() as Delivery);
+  return snap.docs.map((d) => normalizeDelivery(d.data() as Delivery));
 }
 
 // Доставки конкретного водителя (без orderBy — сортируем в памяти, чтобы не
@@ -246,13 +276,51 @@ export async function listDeliveriesForDriver(username: string): Promise<Deliver
     .where('driver_username', '==', str(username))
     .get();
   return snap.docs
-    .map((d) => d.data() as Delivery)
+    .map((d) => normalizeDelivery(d.data() as Delivery))
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
 export async function getDelivery(id: string): Promise<Delivery | null> {
   const snap = await getDb().collection(COLLECTION).doc(str(id)).get();
-  return snap.exists ? (snap.data() as Delivery) : null;
+  return snap.exists ? normalizeDelivery(snap.data() as Delivery) : null;
+}
+
+// Несколько доставок по id (для разворачивания маршрута в истории/деталях).
+export async function getDeliveriesByIds(ids: string[]): Promise<Delivery[]> {
+  if (!ids.length) return [];
+  const db = getDb();
+  const snaps = await Promise.all(ids.map((id) => db.collection(COLLECTION).doc(id).get()));
+  return snaps.filter((s) => s.exists).map((s) => normalizeDelivery(s.data() as Delivery));
+}
+
+// Заявки магазина (раздел 2), которые ещё не привязаны ни к одному маршруту.
+export async function listShopRequestsForShop(shopId: string): Promise<Delivery[]> {
+  const snap = await getDb()
+    .collection(COLLECTION)
+    .where('shop_id', '==', str(shopId))
+    .get();
+  return snap.docs
+    .map((d) => normalizeDelivery(d.data() as Delivery))
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+export async function listShopRequests(): Promise<Delivery[]> {
+  const snap = await getDb()
+    .collection(COLLECTION)
+    .where('kind', '==', 'shop_to_client')
+    .get();
+  return snap.docs
+    .map((d) => normalizeDelivery(d.data() as Delivery))
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+// Привязка/отвязка доставок к маршруту (вызывается из lib/routes.ts).
+export async function attachDeliveriesToRoute(ids: string[], routeId: string | null): Promise<void> {
+  if (!ids.length) return;
+  const db = getDb();
+  const batch = db.batch();
+  for (const id of ids) batch.update(db.collection(COLLECTION).doc(id), { route_id: routeId });
+  await batch.commit();
 }
 
 // ─── Изменение ────────────────────────────────────────────────────────────────
@@ -267,7 +335,7 @@ export async function assignDriver(
   const snap = await ref.get();
   if (!snap.exists) return { error: 'Доставка не найдена' };
 
-  const delivery = snap.data() as Delivery;
+  const delivery = normalizeDelivery(snap.data() as Delivery);
   if (username) {
     await applyDriver(delivery, str(username));
   } else {
@@ -293,7 +361,7 @@ export async function setDeliveryStatus(
   const snap = await ref.get();
   if (!snap.exists) return { error: 'Доставка не найдена' };
 
-  const delivery = snap.data() as Delivery;
+  const delivery = normalizeDelivery(snap.data() as Delivery);
   const now = new Date().toISOString();
   delivery.status = status;
   delivery.updated_at = now;
@@ -312,7 +380,7 @@ export async function updateDeliveryFields(
   const snap = await ref.get();
   if (!snap.exists) return { error: 'Доставка не найдена' };
 
-  const delivery = snap.data() as Delivery;
+  const delivery = normalizeDelivery(snap.data() as Delivery);
   if (fields.client_name !== undefined) delivery.client_name = str(fields.client_name);
   if (fields.address !== undefined) delivery.address = str(fields.address);
   if (fields.note !== undefined) delivery.note = str(fields.note);
@@ -341,10 +409,11 @@ export async function autoAssignDeliveries(
   const col = db.collection(COLLECTION);
 
   const [snap, drivers] = await Promise.all([col.get(), listDrivers()]);
-  const all = snap.docs.map((d) => d.data() as Delivery);
+  const all = snap.docs.map((d) => normalizeDelivery(d.data() as Delivery));
 
-  // Нераспределённые с указанным направлением.
-  const queue = all.filter((d) => !d.driver_username && d.direction && d.status === 'new');
+  // Нераспределённые с указанным направлением (раздел 1 — заявки магазинов
+  // подхватываются отдельно, через присоединение к маршруту того же водителя).
+  const queue = all.filter((d) => !d.driver_username && d.direction && d.status === 'new' && d.kind !== 'shop_to_client');
   if (!queue.length) return { assigned: 0, skipped: 0 };
 
   const activeDrivers = drivers.filter((dr) => dr.direction);

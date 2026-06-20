@@ -4,12 +4,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
 import ConfirmModal from '@/components/ConfirmModal';
+import LogisticsTabs from '@/components/LogisticsTabs';
 import {
   listDeliveries, createDelivery, updateDelivery, deleteDeliveryApi, listDrivers,
   listMovements, listOrders, listTransfers, MovementListItem, OrderListItem, TransferListItem, MOVEMENT_STATUS_LABEL,
   Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL, UserInfo,
   DIRECTIONS, autoAssign, fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings,
+  listRoutes, Route,
 } from '@/lib/api';
+
+function fmtTime(iso?: string | null) {
+  if (!iso) return '';
+  try { return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); }
+  catch { return ''; }
+}
 
 const STATUSES: DeliveryStatus[] = ['new', 'assigned', 'on_way', 'delivered', 'returned'];
 const ACTIVE: DeliveryStatus[] = ['new', 'assigned', 'on_way'];
@@ -58,6 +66,7 @@ export default function LogisticsPage() {
 function LogisticsContent() {
   const [items, setItems] = useState<Delivery[]>([]);
   const [drivers, setDrivers] = useState<UserInfo[]>([]);
+  const [activeRoutes, setActiveRoutes] = useState<Route[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [hideDone, setHideDone] = useState(true);
@@ -95,6 +104,9 @@ function LogisticsContent() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { listDrivers().then(setDrivers).catch(() => {}); }, []);
+  useEffect(() => {
+    listRoutes().then((r) => setActiveRoutes(r.filter((x) => x.status === 'active'))).catch(() => {});
+  }, []);
   useEffect(() => {
     fetchLogisticsSettings().then((s: LogisticsSettings) => {
       setFuelRate(s.fuel_rate_per_km);
@@ -233,12 +245,10 @@ function LogisticsContent() {
 
   return (
     <div>
+      <LogisticsTabs />
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <h2 className="text-xl font-bold">🚚 Логистика <span className="text-sm text-gray-400 font-normal">({items.length})</span></h2>
+        <h2 className="text-xl font-bold">1️⃣ Накладные/заказы <span className="text-sm text-gray-400 font-normal">({items.length})</span></h2>
         <div className="flex items-center gap-3">
-          <Link href="/logistics/map" className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700">
-            🗺️ Карта
-          </Link>
           <Link href="/logistics/shops" className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700">
             🏪 Точки
           </Link>
@@ -429,6 +439,7 @@ function LogisticsContent() {
                   allDrivers={drivers}
                   hideDone={hideDone}
                   fuelRate={fuelRate}
+                  activeRoute={activeRoutes.find((r) => r.driver_username === dr.username) || null}
                   onPatch={patch}
                   onRemove={remove}
                   onAssign={() => setAssignTo(dr)}
@@ -460,13 +471,14 @@ function LogisticsContent() {
 
 // ─── Карточка водителя ──────────────────────────────────────────────────────
 function DriverCard({
-  driver, deliveries, allDrivers, hideDone, fuelRate, onPatch, onRemove, onAssign,
+  driver, deliveries, allDrivers, hideDone, fuelRate, activeRoute, onPatch, onRemove, onAssign,
 }: {
   driver: UserInfo;
   deliveries: Delivery[];
   allDrivers: UserInfo[];
   hideDone: boolean;
   fuelRate: number;
+  activeRoute: Route | null;
   onPatch: (id: string, p: Parameters<typeof updateDelivery>[1]) => void;
   onRemove: (id: string) => void;
   onAssign: () => void;
@@ -497,7 +509,14 @@ function DriverCard({
       <button onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center gap-3 p-3.5 text-left">
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-sm truncate">{driver.name}</div>
+          <div className="font-semibold text-sm truncate flex items-center gap-1.5">
+            {driver.name}
+            {activeRoute && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 whitespace-nowrap">
+                🧭 в заходе с {fmtTime(activeRoute.started_at)}
+              </span>
+            )}
+          </div>
           <div className="text-xs text-gray-400 truncate flex flex-wrap items-center gap-2">
             {driver.car_number && <span>🚗 {driver.car_number}</span>}
             {driver.transport && <span>{driver.transport}</span>}
