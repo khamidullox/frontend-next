@@ -18,7 +18,7 @@ const SIZE: Record<string, string> = {
 export default function ProductPhoto({ code, size = 'md', className = '', zoomable = false }: Props) {
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
-  const src = `/api/products/${encodeURIComponent(code)}/photo`;
+  const src = `/api/products/${encodeURIComponent(code)}/photo?v=3`;
 
   useEffect(() => {
     if (!open) return;

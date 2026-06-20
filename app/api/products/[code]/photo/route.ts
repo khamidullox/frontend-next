@@ -62,7 +62,7 @@ export async function GET(
   return new Response(imgRes.body, {
     headers: {
       'Content-Type': imgRes.headers.get('Content-Type') || 'image/jpeg',
-      'Cache-Control': 'public, max-age=86400, stale-while-revalidate=3600',
+      'Cache-Control': 'public, max-age=3600, stale-while-revalidate=600',
     },
   });
 }
