@@ -34,7 +34,7 @@ export async function GET(
     if (sha) {
       try {
         const imgRes = await smartupGetFile(
-          `/b/biruni/m:load_image_v2?sha=${encodeURIComponent(sha)}&type=S&height=400&width=400`
+          `/b/biruni/m:load_image_v2?sha=${encodeURIComponent(sha)}`
         );
         imgStatus = imgRes.status;
         imgContentType = imgRes.headers.get('Content-Type');
