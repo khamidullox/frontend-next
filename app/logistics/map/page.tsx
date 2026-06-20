@@ -291,34 +291,28 @@ function MapContent() {
         ))}
       </div>
 
-      <div className="flex gap-3 mb-3" style={{ alignItems: 'flex-start' }}>
-        {/* Карта */}
-        <div
-          ref={mapDivRef}
-          className="rounded-xl border border-gray-200 overflow-hidden flex-1"
-          style={{ height: 'calc(100vh - 190px)', minWidth: 0 }}
-        />
+      {/* Карта на весь экран */}
+      <div
+        ref={mapDivRef}
+        className="rounded-xl border border-gray-200 overflow-hidden w-full mb-3"
+        style={{ height: 'calc(100vh - 190px)' }}
+      />
 
-        {/* Список GPS-машин */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col"
-          style={{ width: 260, minWidth: 220, height: 'calc(100vh - 190px)', overflowY: 'auto' }}>
-          <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100 sticky top-0 bg-white flex items-center gap-2">
-            <span>GPS-трекеры</span>
-            {gpsLoaded && <span className="ml-auto text-gray-400">{gpsLocations.length} устройств</span>}
-            {!gpsLoaded && <span className="ml-auto text-gray-300">загрузка…</span>}
-          </div>
+      {/* GPS-трекеры под картой */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-3">
+        <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100 flex items-center gap-2">
+          <span>GPS-трекеры</span>
+          {gpsLoaded && <span className="ml-auto text-gray-400">{gpsLocations.length} устройств</span>}
+          {!gpsLoaded && <span className="ml-auto text-gray-300">загрузка…</span>}
+        </div>
+        <div className="flex flex-wrap gap-2 p-2">
+
           {!gpsLoaded ? (
-            <div className="px-3 py-6 text-xs text-gray-300 text-center">⏳</div>
+            <div className="px-3 py-3 text-xs text-gray-300">⏳ загрузка…</div>
           ) : gpsError ? (
-            <div className="px-3 py-4 text-xs text-red-400 text-center">
-              ⚠️ Нет соединения с GPS<br/>
-              <span className="text-gray-400">Проверьте GPS_MDS_TOKEN в Vercel</span>
-            </div>
+            <div className="px-3 py-3 text-xs text-red-400">⚠️ Нет соединения с GPS</div>
           ) : sortedGps.length === 0 ? (
-            <div className="px-3 py-4 text-xs text-gray-400 text-center">
-              Нет устройств<br/>
-              <span className="text-gray-300">Добавьте GPS ID водителям</span>
-            </div>
+            <div className="px-3 py-3 text-xs text-gray-400">Нет устройств · Добавьте GPS ID водителям</div>
           ) : (
             sortedGps.map((v) => {
               const lastSeen = parseGpsTime(v.sys_time).getTime();
@@ -331,23 +325,15 @@ function MapContent() {
                 <button
                   key={v.user_id}
                   onClick={() => focusVehicle(v)}
-                  className={`w-full text-left px-3 py-2.5 border-b border-gray-50 hover:bg-gray-50 transition-colors ${isSelected ? 'bg-blue-50' : ''}`}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors text-left ${isSelected ? 'bg-blue-50 border-blue-200' : 'border-gray-100 hover:bg-gray-50'}`}
                 >
-                  <div className="flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${isOffline ? 'bg-gray-400' : isMoving ? 'bg-green-500' : 'bg-amber-400'}`} />
-                    <span className="text-xs font-semibold truncate">{v.user_name}</span>
-                  </div>
-                  {driver && (
-                    <div className="text-[10px] text-blue-600 mt-0.5 pl-3.5 truncate">
-                      👤 {driver.name} · {driver.car_number}
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${isOffline ? 'bg-gray-400' : isMoving ? 'bg-green-500' : 'bg-amber-400'}`} />
+                  <div>
+                    <div className="text-xs font-semibold">{v.user_name}</div>
+                    {driver && <div className="text-[10px] text-blue-600">{driver.name} · {driver.car_number}</div>}
+                    <div className="text-[10px] text-gray-400">
+                      {isOffline ? `⚫ ${Math.round(ageMs / 60_000)} мин назад` : isMoving ? `🟢 ${v.speed} км/ч` : '🟡 стоит'}
                     </div>
-                  )}
-                  <div className="text-[10px] text-gray-400 mt-0.5 pl-3.5">
-                    {isOffline
-                      ? `⚫ офлайн · ${Math.round(ageMs / 60_000)} мин назад`
-                      : isMoving
-                      ? `🟢 ${v.speed} км/ч · едет`
-                      : '🟡 стоит'}
                   </div>
                 </button>
               );
