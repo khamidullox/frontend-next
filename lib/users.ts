@@ -16,6 +16,7 @@ export interface StoredUser {
   capacity_kg?: number;  // грузоподъёмность, кг
   direction?: string;    // основное направление машины
   shop_id?: string;      // для роли «магазин» — привязка к точке (lib/shops.ts)
+  gps_user_id?: string;  // UUID на платформе gps16888.com
 }
 
 export interface UserInfo {
@@ -30,6 +31,7 @@ export interface UserInfo {
   capacity_kg: number;
   direction: string;
   shop_id: string;
+  gps_user_id: string;
 }
 
 function publicUser(u: StoredUser): UserInfo {
@@ -45,6 +47,7 @@ function publicUser(u: StoredUser): UserInfo {
     capacity_kg: Number(u.capacity_kg) || 0,
     direction: u.direction ?? '',
     shop_id: u.shop_id ?? '',
+    gps_user_id: u.gps_user_id ?? '',
   };
 }
 
@@ -130,10 +133,10 @@ export async function listDrivers(): Promise<UserInfo[]> {
     .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
 }
 
-// Обновление профиля водителя (машина/транспорт/вместимость/направление).
+// Обновление профиля водителя (машина/транспорт/вместимость/направление/GPS).
 export async function setDriverProfile(
   username: string,
-  profile: { name?: string; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string }
+  profile: { name?: string; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string; gps_user_id?: string }
 ): Promise<{ ok: true } | { error: string }> {
   const ref = getDb().collection(COLLECTION).doc(normUsername(username));
   const snap = await ref.get();
@@ -145,6 +148,7 @@ export async function setDriverProfile(
   if (profile.capacity_m3 !== undefined) patch.capacity_m3 = Math.max(0, Number(profile.capacity_m3) || 0);
   if (profile.capacity_kg !== undefined) patch.capacity_kg = Math.max(0, Number(profile.capacity_kg) || 0);
   if (profile.direction !== undefined) patch.direction = String(profile.direction || '').trim();
+  if (profile.gps_user_id !== undefined) patch.gps_user_id = String(profile.gps_user_id || '').trim();
   await ref.set(patch, { merge: true });
   return { ok: true };
 }

@@ -444,6 +444,7 @@ function EditUserModal({
   const [capM3, setCapM3] = useState(String(user.capacity_m3 || ''));
   const [capKg, setCapKg] = useState(String(user.capacity_kg || ''));
   const [direction, setDirection] = useState(user.direction || '');
+  const [gpsUserId, setGpsUserId] = useState(user.gps_user_id || '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [confirmDel, setConfirmDel] = useState(false);
@@ -452,7 +453,7 @@ function EditUserModal({
     setBusy(true);
     setErr('');
     try {
-      const patch: { name?: string; password?: string; warehouses?: string[]; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string; shop_id?: string } = {};
+      const patch: { name?: string; password?: string; warehouses?: string[]; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string; shop_id?: string; gps_user_id?: string } = {};
       if (editName.trim() && editName.trim() !== user.name) patch.name = editName.trim();
       if (password.trim()) patch.password = password.trim();
       if (isDriver) {
@@ -461,6 +462,7 @@ function EditUserModal({
         patch.capacity_m3 = Number(capM3) || 0;
         patch.capacity_kg = Number(capKg) || 0;
         patch.direction = direction.trim();
+        patch.gps_user_id = gpsUserId.trim();
       } else {
         patch.warehouses = wh;
         if (isWorker) patch.shop_id = shopId;
@@ -544,6 +546,12 @@ function EditUserModal({
                   <option value="">— не указано —</option>
                   {DIRECTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
                 </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="text-xs text-gray-500 mb-1 block">GPS ID (gps16888.com user_id)</label>
+                <input value={gpsUserId} onChange={(e) => setGpsUserId(e.target.value)}
+                  placeholder="UUID из платформы GPS"
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-blue-400" />
               </div>
             </div>
           ) : (

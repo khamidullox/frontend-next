@@ -22,7 +22,8 @@ export async function PATCH(
       if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
     }
     if (body.name !== undefined || body.car_number !== undefined || body.transport !== undefined ||
-        body.capacity_m3 !== undefined || body.capacity_kg !== undefined || body.direction !== undefined) {
+        body.capacity_m3 !== undefined || body.capacity_kg !== undefined || body.direction !== undefined ||
+        body.gps_user_id !== undefined) {
       const res = await setDriverProfile(username, {
         name: body.name,
         car_number: body.car_number,
@@ -30,6 +31,7 @@ export async function PATCH(
         capacity_m3: body.capacity_m3,
         capacity_kg: body.capacity_kg,
         direction: body.direction,
+        gps_user_id: body.gps_user_id,
       });
       if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
     }
