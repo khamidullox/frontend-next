@@ -565,11 +565,6 @@ function HistoryContent() {
                             {full.deliveries.map(d => (
                               <div key={d.id} className="flex items-start gap-2 text-xs py-1 border-b border-gray-50 last:border-0">
                                 <div className="flex-1 min-w-0">
-                                  {d.kind === 'shop_to_client' && (
-                                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 mr-1.5">
-                                      🏪 {d.shop_name}
-                                    </span>
-                                  )}
                                   <span className="font-medium">{d.client_name || '—'}</span>
                                   {d.address && <span className="text-gray-400"> · 📍 {d.address}</span>}
                                   {d.doc_number && <span className="text-gray-400"> · 📄 {d.doc_number}</span>}
