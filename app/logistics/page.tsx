@@ -750,6 +750,13 @@ function DeliveryRow({
   const [editAddr, setEditAddr] = useState(false);
   const [addr, setAddr] = useState(d.address);
   const [km, setKm] = useState(String(d.km || ''));
+  const [manualKg, setManualKg] = useState('');
+
+  const assignedDriver = drivers.find((dr) => dr.username === d.driver_username);
+  const capKg = assignedDriver?.capacity_kg || 0;
+  const loadKg = d.total_weight > 0 ? d.total_weight : (Number(manualKg) || 0);
+  const loadPct = capKg > 0 && loadKg > 0 ? Math.min(100, Math.round((loadKg / capKg) * 100)) : null;
+  const loadColor = loadPct === null ? '' : loadPct > 90 ? 'bg-red-500' : loadPct > 70 ? 'bg-amber-400' : 'bg-green-500';
 
   return (
     <div className={`rounded-lg ${compact ? 'bg-gray-50' : 'bg-white shadow-sm'} p-3 flex flex-col gap-2`}>
@@ -788,34 +795,48 @@ function DeliveryRow({
         </span>
       </div>
 
-      {/* Направление + км + вес */}
-      <div className="flex items-center gap-1.5 flex-wrap">
-        {DIRECTIONS.map((dir) => (
-          <button key={dir}
-            onClick={() => onPatch(d.id, { direction: d.direction === dir ? '' : dir })}
-            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
-              d.direction === dir
-                ? 'bg-slate-800 text-white border-slate-800'
-                : 'bg-white text-gray-400 border-gray-200 hover:border-slate-400'
-            }`}>
-            {dir}
-          </button>
-        ))}
-        <div className="flex items-center gap-1 ml-1">
+      {/* км + вес + загруженность */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1">
           <span className="text-[10px] text-gray-400">км:</span>
-          <input
-            type="number" min={0} value={km}
+          <input type="number" min={0} value={km}
             onChange={(e) => setKm(e.target.value)}
             onBlur={() => onPatch(d.id, { km: Number(km) || 0 })}
             className="w-14 border border-gray-100 rounded px-1.5 py-0.5 text-[11px] text-right outline-none focus:border-blue-300"
           />
         </div>
-        {(d.total_weight > 0 || d.total_qty > 0) && (
-          <span className="text-[10px] text-gray-400 ml-auto">
+        {(d.total_qty > 0 || d.total_weight > 0) && (
+          <span className="text-[10px] text-gray-400">
             {d.total_qty > 0 && `${d.total_qty} шт`}
             {d.total_weight > 0 && ` · ${d.total_weight} кг`}
             {d.total_volume_l > 0 && ` · ${(d.total_volume_l / 1000).toFixed(2)} м³`}
           </span>
+        )}
+        {/* Загруженность машины */}
+        {assignedDriver && loadPct !== null && (
+          <div className="flex items-center gap-1.5 ml-auto">
+            <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div className={`h-full rounded-full ${loadColor}`} style={{ width: `${loadPct}%` }} />
+            </div>
+            <span className={`text-[10px] font-semibold ${loadPct > 90 ? 'text-red-500' : loadPct > 70 ? 'text-amber-500' : 'text-green-600'}`}>
+              {loadPct}%
+            </span>
+            <span className="text-[10px] text-gray-400">{loadKg}/{capKg} кг</span>
+          </div>
+        )}
+        {/* Если кг не известны — ручной ввод */}
+        {assignedDriver && capKg > 0 && d.total_weight === 0 && (
+          <div className="flex items-center gap-1 ml-auto">
+            <span className="text-[10px] text-gray-400">груз кг:</span>
+            <input type="number" min={0} value={manualKg}
+              onChange={(e) => setManualKg(e.target.value)}
+              placeholder="—"
+              className="w-16 border border-gray-100 rounded px-1.5 py-0.5 text-[11px] text-right outline-none focus:border-blue-300"
+            />
+            {loadPct === null && Number(manualKg) > 0 && (
+              <span className="text-[10px] text-gray-400">/ {capKg} кг</span>
+            )}
+          </div>
         )}
       </div>
 
