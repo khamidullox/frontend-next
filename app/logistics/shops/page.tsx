@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
-import { listShops, createShop, deleteShopApi, Shop, DIRECTIONS, ShopType } from '@/lib/api';
+import { listShops, createShop, deleteShopApi, listAllWarehouses, Shop, WarehouseSummary, DIRECTIONS, ShopType } from '@/lib/api';
 import ConfirmModal from '@/components/ConfirmModal';
 
 const DIR_COLOR: Record<string, string> = {
@@ -37,6 +37,34 @@ function ShopsContent() {
   const [lat, setLat] = useState('');
   const [lng, setLng] = useState('');
   const [type, setType] = useState<ShopType>('shop');
+
+  const [warehouses, setWarehouses] = useState<WarehouseSummary[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const nameRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    listAllWarehouses().then(setWarehouses).catch(() => {});
+  }, []);
+
+  // Закрыть список при клике вне
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (nameRef.current && !nameRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  const suggestions = name.trim().length >= 1
+    ? warehouses.filter(w => w.warehouse_name.toLowerCase().includes(name.toLowerCase())).slice(0, 10)
+    : warehouses.slice(0, 10);
+
+  function pickWarehouse(w: WarehouseSummary) {
+    setName(w.warehouse_name);
+    setShowSuggestions(false);
+  }
 
   const load = useCallback(async () => {
     try { setItems(await listShops()); }
@@ -79,8 +107,30 @@ function ShopsContent() {
       <form onSubmit={add} className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-col gap-2">
         <div className="text-xs font-semibold text-gray-500">+ Добавить магазин / адрес</div>
         <div className="flex flex-col sm:flex-row gap-2">
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="Название (Базар №1)"
-            className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <div ref={nameRef} className="flex-1 relative">
+            <input
+              value={name}
+              onChange={e => { setName(e.target.value); setShowSuggestions(true); }}
+              onFocus={() => setShowSuggestions(true)}
+              placeholder="Название (Базар №1)"
+              autoComplete="off"
+              className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400"
+            />
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-52 overflow-y-auto">
+                {suggestions.map(w => (
+                  <button
+                    key={w.warehouse_id}
+                    type="button"
+                    onMouseDown={() => pickWarehouse(w)}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 truncate border-b border-gray-100 last:border-0"
+                  >
+                    🏭 {w.warehouse_name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <input value={address} onChange={e => setAddress(e.target.value)} placeholder="Адрес"
             className="flex-[2] border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
         </div>
