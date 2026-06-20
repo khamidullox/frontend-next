@@ -12,15 +12,20 @@ export interface GpsLocation {
 
 const BASE_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36';
 
-// Открываем страницу платформы чтобы получить ASP.NET_SessionId
-async function bootstrapSession(token: string): Promise<string> {
+// Возвращает cookie строку для запросов к GPS платформе
+async function getGpsCookie(token: string): Promise<string> {
+  // Если задана вручную (из браузера пользователя) — используем её
+  const manualSession = process.env.GPS_SESSION_ID;
+  if (manualSession) {
+    return `ASP.NET_SessionId=${manualSession}; domainIndex=0`;
+  }
+  // Иначе пробуем создать новую сессию через mds ссылку
   const loginUrl = `https://www.gps16888.com/user/indexp.aspx?mds=${token}`;
   const res = await fetch(loginUrl, {
     cache: 'no-store',
     redirect: 'follow',
     headers: { 'User-Agent': BASE_UA },
   });
-  // Собираем все Set-Cookie заголовки
   const cookies: string[] = [];
   res.headers.forEach((value, key) => {
     if (key.toLowerCase() === 'set-cookie') {
@@ -59,7 +64,7 @@ export async function fetchGpsRaw(): Promise<string> {
   const token = process.env.GPS_MDS_TOKEN;
   if (!token) return 'NO_TOKEN';
   try {
-    const cookie = await bootstrapSession(token);
+    const cookie = await getGpsCookie(token);
     const url = `https://www.gps16888.com/GetDataService.aspx?method=loadUser&mds=${token}&callback=loadedCallback&_=${Date.now()}`;
     const res = await fetch(url, {
       cache: 'no-store',
@@ -82,7 +87,7 @@ export async function fetchAllGpsLocations(): Promise<GpsLocation[]> {
   if (!token) return [];
 
   try {
-    const cookie = await bootstrapSession(token);
+    const cookie = await getGpsCookie(token);
     const url = `https://www.gps16888.com/GetDataService.aspx?method=loadUser&mds=${token}&callback=loadedCallback&_=${Date.now()}`;
     const res = await fetch(url, {
       cache: 'no-store',
