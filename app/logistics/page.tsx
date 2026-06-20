@@ -11,6 +11,7 @@ import {
   Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL, UserInfo,
   DIRECTIONS, autoAssign, fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings,
   listRoutes, Route,
+  listShops, Shop,
 } from '@/lib/api';
 
 function fmtTime(iso?: string | null) {
@@ -91,6 +92,12 @@ function LogisticsContent() {
   const [extCar, setExtCar] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmState, setConfirmState] = useState<{ msg: string; onOk: () => void } | null>(null);
+
+  // Заявки магазинов
+  const [showShopOrders, setShowShopOrders] = useState(false);
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [shopsLoading, setShopsLoading] = useState(false);
+  const [shopBusyId, setShopBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -193,6 +200,32 @@ function LogisticsContent() {
     setItems((prev) => [created, ...prev]);
   }, []);
 
+  async function loadShops() {
+    setShopsLoading(true);
+    try { setShops(await listShops()); }
+    catch { /* ignore */ }
+    finally { setShopsLoading(false); }
+  }
+
+  async function createShopDelivery(shop: Shop) {
+    setShopBusyId(shop.id);
+    setError('');
+    try {
+      const d = await createDelivery({
+        client_name: shop.name,
+        address: shop.address,
+        direction: shop.direction,
+        km: shop.km,
+        note: `Заявка магазина: ${shop.name}`,
+      });
+      setItems((prev) => [d, ...prev]);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setShopBusyId(null);
+    }
+  }
+
   // Группировка доставок: штатные водители (по username), внешние (по имени), без водителя.
   const { byDriver, external, unassigned } = useMemo(() => {
     const map = new Map<string, Delivery[]>();
@@ -249,8 +282,12 @@ function LogisticsContent() {
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h2 className="text-xl font-bold">1️⃣ Накладные/заказы <span className="text-sm text-gray-400 font-normal">({items.length})</span></h2>
         <div className="flex items-center gap-3">
-          <Link href="/logistics/shops" className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700">
-            🏪 Точки
+          <Link
+            href="/logistics/shops"
+            title="Справочник точек доставки: адреса магазинов и складов, откуда/куда возим товар"
+            className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center gap-1">
+            🏪 <span>Точки доставки</span>
+            <span className="text-[10px] text-gray-400 font-normal">(магазины/склады)</span>
           </Link>
           <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
             <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} />
@@ -278,6 +315,74 @@ function LogisticsContent() {
           <span className="text-xs text-gray-400">сум/км</span>
         </div>
         {autoMsg && <span className="text-xs text-gray-500">{autoMsg}</span>}
+      </div>
+
+      {/* Заявки магазинов — быстрое создание доставки В магазин из справочника */}
+      <div className="bg-white rounded-xl shadow-sm mb-3">
+        <button
+          onClick={() => { setShowShopOrders((v) => !v); if (!shops.length) loadShops(); }}
+          className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-left hover:bg-gray-50 rounded-xl transition-colors"
+        >
+          <span>
+            📋 Заявки магазинов
+            <span className="ml-1.5 text-xs font-normal text-gray-400">
+              — доставка товара в точки из справочника
+            </span>
+          </span>
+          <span className="text-gray-300 ml-2 shrink-0">{showShopOrders ? '▲' : '▼'}</span>
+        </button>
+
+        {showShopOrders && (
+          <div className="border-t border-gray-100 px-4 pb-4 pt-3">
+            {shopsLoading ? (
+              <div className="text-xs text-gray-400 flex items-center gap-1.5">
+                <span className="w-4 h-4 border-2 border-gray-200 border-t-blue-400 rounded-full animate-spin" />
+                Загрузка…
+              </div>
+            ) : shops.length === 0 ? (
+              <div className="text-xs text-gray-400">
+                Точек нет.{' '}
+                <Link href="/logistics/shops" className="text-blue-500 hover:underline">
+                  Добавить магазины/склады →
+                </Link>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {shops.map((shop) => {
+                  const activeCnt = items.filter(
+                    (d) => !isDone(d.status) && d.client_name === shop.name
+                  ).length;
+                  return (
+                    <div key={shop.id} className="flex items-center gap-2 py-1">
+                      <span className="text-lg shrink-0">{shop.type === 'warehouse' ? '🏭' : '🏪'}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate">{shop.name}</div>
+                        <div className="text-xs text-gray-400 truncate">
+                          {shop.address || '—'}
+                          {shop.direction && ` · ${shop.direction}`}
+                          {shop.km > 0 && ` · ${shop.km} км`}
+                        </div>
+                      </div>
+                      {activeCnt > 0 && (
+                        <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full shrink-0">
+                          {activeCnt} акт.
+                        </span>
+                      )}
+                      <button
+                        onClick={() => createShopDelivery(shop)}
+                        disabled={shopBusyId === shop.id}
+                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600
+                                   disabled:bg-gray-200 disabled:text-gray-400 text-white whitespace-nowrap transition-colors"
+                      >
+                        {shopBusyId === shop.id ? '⏳' : '+ Доставка'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Создание доставки — свёрнуто (основной поток: назначение из карточки водителя) */}
