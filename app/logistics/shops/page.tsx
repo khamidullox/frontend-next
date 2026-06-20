@@ -6,6 +6,35 @@ import AdminGate from '@/components/AdminGate';
 import { listShops, createShop, deleteShopApi, listAllWarehouses, Shop, WarehouseSummary, DIRECTIONS, ShopType } from '@/lib/api';
 import ConfirmModal from '@/components/ConfirmModal';
 
+// Главный склад (база) — точка отсчёта для направлений и расстояний.
+// Координаты склада 001 Основной склад (Фергана).
+const BASE_LAT = 40.3864;
+const BASE_LNG = 71.7864;
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+function bearingToDirection(lat: number, lng: number): string {
+  const dLng = (lng - BASE_LNG) * Math.PI / 180;
+  const lat1R = BASE_LAT * Math.PI / 180;
+  const lat2R = lat * Math.PI / 180;
+  const y = Math.sin(dLng) * Math.cos(lat2R);
+  const x = Math.cos(lat1R) * Math.sin(lat2R) - Math.sin(lat1R) * Math.cos(lat2R) * Math.cos(dLng);
+  const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  const dist = haversineKm(BASE_LAT, BASE_LNG, lat, lng);
+  if (dist < 5) return 'Центр';
+  if (bearing >= 315 || bearing < 45) return 'Север';
+  if (bearing >= 45 && bearing < 135) return 'Восток';
+  if (bearing >= 135 && bearing < 225) return 'Юг';
+  return 'Запад';
+}
+
 const DIR_COLOR: Record<string, string> = {
   'Север': 'bg-blue-100 text-blue-700',
   'Юг': 'bg-green-100 text-green-700',
@@ -38,9 +67,21 @@ function ShopsContent() {
   const [lng, setLng] = useState('');
   const [type, setType] = useState<ShopType>('shop');
 
+  const [autoDetected, setAutoDetected] = useState(false);
   const [warehouses, setWarehouses] = useState<WarehouseSummary[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const nameRef = useRef<HTMLDivElement>(null);
+
+  // Автоопределение направления и км по координатам
+  function applyCoords(latVal: string, lngVal: string) {
+    const latN = parseFloat(latVal);
+    const lngN = parseFloat(lngVal);
+    if (!isNaN(latN) && !isNaN(lngN) && latN !== 0 && lngN !== 0) {
+      setDirection(bearingToDirection(latN, lngN));
+      setKm(String(haversineKm(BASE_LAT, BASE_LNG, latN, lngN)));
+      setAutoDetected(true);
+    }
+  }
 
   useEffect(() => {
     listAllWarehouses().then(setWarehouses).catch(() => {});
@@ -140,7 +181,7 @@ function ShopsContent() {
             <option value="shop">🏪 Магазин</option>
             <option value="warehouse">🏭 Склад (база)</option>
           </select>
-          <select value={direction} onChange={e => setDirection(e.target.value)}
+          <select value={direction} onChange={e => { setDirection(e.target.value); setAutoDetected(false); }}
             className="sm:w-36 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
             {DIRECTIONS.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
@@ -150,10 +191,19 @@ function ShopsContent() {
             className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
         </div>
         <div className="flex flex-col sm:flex-row gap-2 items-end">
-          <input type="number" step="any" value={lat} onChange={e => setLat(e.target.value)} placeholder="Широта (40.44513)"
+          <input type="number" step="any" value={lat}
+            onChange={e => { setLat(e.target.value); applyCoords(e.target.value, lng); }}
+            placeholder="Широта (40.44513)"
             className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
-          <input type="number" step="any" value={lng} onChange={e => setLng(e.target.value)} placeholder="Долгота (71.75780)"
+          <input type="number" step="any" value={lng}
+            onChange={e => { setLng(e.target.value); applyCoords(lat, e.target.value); }}
+            placeholder="Долгота (71.75780)"
             className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          {autoDetected && (
+            <div className="text-xs text-emerald-600 whitespace-nowrap pb-2">
+              ✓ {direction} · {km} км
+            </div>
+          )}
           <button disabled={busy || !name.trim()}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg whitespace-nowrap">
             {busy ? '⏳…' : '+ Добавить'}
