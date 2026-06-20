@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { listProducts } from '@/lib/api';
 import { useCachedList } from '@/lib/useCachedList';
 import CameraScanner, { isCameraScanSupported } from '@/components/CameraScanner';
@@ -10,17 +10,47 @@ import CameraScanner, { isCameraScanSupported } from '@/components/CameraScanner
 const PAGE_SIZE = 50;
 
 export default function ProductsPage() {
+  return (
+    <Suspense>
+      <ProductsContent />
+    </Suspense>
+  );
+}
+
+function ProductsContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: products, loading, error } = useCachedList(
     'cache:products_v3',
     listProducts,
     30 * 60 * 1000
   );
-  const [query, setQuery] = useState('');
-  const [producer, setProducer] = useState('');
+  const [query, setQuery] = useState(() => searchParams.get('q') || '');
+  const [producer, setProducer] = useState(() => searchParams.get('p') || '');
   const [scanning, setScanning] = useState(false);
   const [scanMsg, setScanMsg] = useState('');
   const [page, setPage] = useState(1);
+
+  // Синхронизируем поиск с URL — чтобы при возврате назад поиск сохранялся
+  const updateUrl = useCallback((q: string, p: string) => {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (p) params.set('p', p);
+    const qs = params.toString();
+    router.replace(qs ? `/products?${qs}` : '/products', { scroll: false });
+  }, [router]);
+
+  function onQueryChange(v: string) {
+    setQuery(v);
+    setPage(1);
+    updateUrl(v, producer);
+  }
+
+  function onProducerChange(v: string) {
+    setProducer(v);
+    setPage(1);
+    updateUrl(query, v);
+  }
 
   // Поиск товара по штрихкоду (для сканера USB/камеры)
   function gotoByBarcode(raw: string): boolean {
@@ -38,7 +68,7 @@ export default function ProductsPage() {
   function onCameraDetected(code: string) {
     setScanning(false);
     if (!gotoByBarcode(code)) {
-      setQuery(code);
+      onQueryChange(code);
       setScanMsg(`Штрихкод ${code} не найден в справочнике`);
     }
   }
@@ -106,7 +136,7 @@ export default function ProductsPage() {
         <input
           type="text"
           value={query}
-          onChange={e => { setQuery(e.target.value); setScanMsg(''); }}
+          onChange={e => { onQueryChange(e.target.value); setScanMsg(''); }}
           onKeyDown={onSearchKey}
           placeholder="🔍 Поиск или сканируйте штрихкод..."
           autoFocus
@@ -129,7 +159,7 @@ export default function ProductsPage() {
       {producers.length > 1 && (
         <select
           value={producer}
-          onChange={e => setProducer(e.target.value)}
+          onChange={e => onProducerChange(e.target.value)}
           className="w-full border-2 border-gray-200 rounded-xl px-3 py-2.5 text-sm mb-4
                      outline-none focus:border-blue-400 transition-colors bg-white"
         >
