@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import { listProducts } from '@/lib/api';
 import { useCachedList } from '@/lib/useCachedList';
 import CameraScanner, { isCameraScanSupported } from '@/components/CameraScanner';
-import ProductPhoto from '@/components/ProductPhoto';
 
 const PAGE_SIZE = 50;
 
@@ -165,7 +164,6 @@ export default function ProductsPage() {
                   className="bg-white rounded-lg shadow-sm px-3 py-2 flex items-center gap-3
                              hover:ring-2 hover:ring-blue-200 transition-all"
                 >
-                  <ProductPhoto code={p.code} size="sm" />
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-[13px] leading-tight truncate">{p.name || '—'}</div>
                     <div className="text-[11px] text-gray-400 truncate">
