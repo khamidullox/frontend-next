@@ -556,6 +556,8 @@ export async function createDelivery(input: {
   client_name?: string;
   address?: string;
   note?: string;
+  direction?: string;
+  km?: number;
   driver_username?: string;
   external_driver?: string;
   external_car?: string;
