@@ -28,7 +28,7 @@ export async function fetchAllGpsLocations(): Promise<GpsLocation[]> {
 
   const text = await res.text();
   // Response format: loadedCallback({...})
-  const match = text.match(/loadedCallback\((.+)\)/s);
+  const match = text.match(/loadedCallback\(([\s\S]+)\)/);
   if (!match) return [];
 
   try {
