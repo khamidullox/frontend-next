@@ -13,8 +13,8 @@ export async function GET() {
     try {
       const full = await getCachedList('catalog_v4', getProductCatalog, CATALOG_TTL_MS);
       // Отдаём клиенту только то, что нужно для UI — без серверных полей.
-      const data = full.map(({ code, name, producer, barcodes, price }) => ({
-        code, name, producer, barcodes, price,
+      const data = full.map(({ code, name, producer, group, barcodes, price }) => ({
+        code, name, producer, group, barcodes, price,
       }));
       return Response.json({ data }, {
         headers: { 'Cache-Control': 'private, max-age=300' },

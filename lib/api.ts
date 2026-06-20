@@ -387,6 +387,7 @@ export interface CatalogItem {
   code: string;
   name: string;
   producer: string;
+  group: string;
   barcodes: string[];
   price: number;
 }
