@@ -155,7 +155,6 @@ function ReportsContent() {
       ) : (
         <div className="flex flex-col gap-2">
           {filtered.map(r => {
-            const isExpanded = id => expanded[r.id] !== undefined;
             const detail = expanded[r.id];
             const isLoading = loadingId === r.id;
 
