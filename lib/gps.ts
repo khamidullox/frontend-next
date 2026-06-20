@@ -60,6 +60,22 @@ function parseGpsJson(text: string): GpsLocation[] {
     }));
 }
 
+// Тест: запрос конкретного user_id без сессии — проверяем работает ли mds+user_id
+export async function fetchGpsRawUid(userId: string): Promise<string> {
+  const token = process.env.GPS_MDS_TOKEN;
+  if (!token) return 'NO_TOKEN';
+  try {
+    const url = `https://www.gps16888.com/GetDataService.aspx?method=loadUser&mds=${token}&callback=loadedCallback&user_id=${userId}&_=${Date.now()}`;
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: { 'User-Agent': BASE_UA },
+    });
+    return `status=${res.status} | ` + (await res.text());
+  } catch (e) {
+    return `fetch_error: ${e}`;
+  }
+}
+
 export async function fetchGpsRaw(): Promise<string> {
   const token = process.env.GPS_MDS_TOKEN;
   if (!token) return 'NO_TOKEN';
