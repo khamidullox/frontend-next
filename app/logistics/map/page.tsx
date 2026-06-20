@@ -8,7 +8,16 @@ import { listShops, listDeliveries, listUsers, Shop, Delivery, UserInfo } from '
 import type { GpsLocation } from '@/lib/gps';
 
 const GPS_POLL_MS = 30_000;
-const GPS_OFFLINE_MS = 30 * 60_000; // старше 30 мин — офлайн
+const GPS_OFFLINE_MS = 30 * 60_000;
+
+interface RouteInfo {
+  userId: string;
+  path: [number, number][];
+  durationMin: number;
+  distanceKm: number;
+  destCoords: [number, number];
+  deliveryLabel: string;
+}
 
 const TYPE_ICON: Record<string, string> = { warehouse: '🏭', shop: '🏪' };
 const TYPE_COLOR: Record<string, string> = { warehouse: '#185FA5', shop: '#0F6E56' };
@@ -39,7 +48,10 @@ function MapContent() {
   const markersRef = useRef<unknown[]>([]);
   const tileLayerRef = useRef<unknown>(null);
   const boundsSetRef = useRef(false);
+  const routeLayersRef = useRef<unknown[]>([]);
+  const geocodeMapRef = useRef<Record<string, [number, number]>>({});
   const [mapStyle, setMapStyle] = useState<'osm' | 'yandex' | 'satellite'>('yandex');
+  const [routes, setRoutes] = useState<RouteInfo[]>([]);
   const [shops, setShops] = useState<Shop[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [gpsLocations, setGpsLocations] = useState<GpsLocation[]>([]);
@@ -86,6 +98,64 @@ function MapContent() {
     const id = setInterval(fetchGps, GPS_POLL_MS);
     return () => clearInterval(id);
   }, [fetchGps]);
+
+  // Обновляем ref синхронно чтобы избежать цикла зависимостей
+  geocodeMapRef.current = geocodeMap;
+
+  const computeRoutes = useCallback(async () => {
+    if (!gpsLocations.length) { setRoutes([]); return; }
+    const results: RouteInfo[] = [];
+    await Promise.all(gpsLocations.map(async (gps) => {
+      const driver = drivers.find((d) => d.gps_user_id === gps.user_id);
+      if (!driver) return;
+      const delivery = deliveries.find(
+        (d) => d.driver_username === driver.username && d.status === 'on_way'
+      );
+      if (!delivery) return;
+
+      let dest: [number, number] | null = null;
+      if (delivery.shop_id) {
+        const shop = shops.find((s) => s.id === delivery.shop_id);
+        if (shop?.lat && shop?.lng) dest = [shop.lat, shop.lng];
+      }
+      if (!dest) dest = geocodeMapRef.current[delivery.id] ?? null;
+      if (!dest && delivery.address) {
+        try {
+          const q = encodeURIComponent(`${delivery.address}, Андижан, Узбекистан`);
+          const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`, {
+            headers: { 'Accept-Language': 'ru' },
+          });
+          const geo = (await r.json()) as { lat: string; lon: string }[];
+          if (geo.length > 0) {
+            dest = [parseFloat(geo[0].lat), parseFloat(geo[0].lon)];
+            geocodeMapRef.current = { ...geocodeMapRef.current, [delivery.id]: dest };
+            setGeocodeMap((prev) => ({ ...prev, [delivery.id]: dest! }));
+          }
+        } catch { /* ignore */ }
+      }
+      if (!dest) return;
+
+      try {
+        const r = await fetch(
+          `https://router.project-osrm.org/route/v1/driving/${gps.lng},${gps.lat};${dest[1]},${dest[0]}?overview=full&geometries=geojson`
+        );
+        const j = await r.json();
+        const ro = j.routes?.[0];
+        if (!ro) return;
+        results.push({
+          userId: gps.user_id,
+          path: (ro.geometry.coordinates as number[][]).map(([ln, la]) => [la, ln] as [number, number]),
+          durationMin: Math.round(ro.duration / 60),
+          distanceKm: Math.round(ro.distance / 100) / 10,
+          destCoords: dest,
+          deliveryLabel: delivery.to_name || delivery.shop_name || delivery.client_name || '',
+        });
+      } catch { /* ignore */ }
+    }));
+    setRoutes(results);
+  }, [gpsLocations, drivers, deliveries, shops]);
+
+  useEffect(() => { computeRoutes(); }, [computeRoutes]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const getL = () => (window as any).L;
@@ -140,7 +210,28 @@ function MapContent() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (markersRef.current as any[]).forEach((m) => m.remove());
     markersRef.current = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (routeLayersRef.current as any[]).forEach((l) => l.remove());
+    routeLayersRef.current = [];
     const coords: [number, number][] = [];
+
+    // Маршруты водителей
+    routes.forEach((route) => {
+      const eta = new Date(Date.now() + route.durationMin * 60_000);
+      const etaStr = eta.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+      const poly = L.polyline(route.path, { color: '#2563EB', weight: 5, opacity: 0.75, dashArray: '12,6' })
+        .bindPopup(`<b>🗺 Маршрут</b><br>${route.deliveryLabel}<br>${route.distanceKm} км · ~${route.durationMin} мин<br>Прибытие около <b>${etaStr}</b>`)
+        .addTo(map);
+
+      const destIcon = L.divIcon({
+        className: '',
+        html: `<div style="background:#1D4ED8;color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;border:2px solid rgba(255,255,255,0.9);box-shadow:0 2px 6px rgba(0,0,0,0.3);">🏁 ~${route.durationMin} мин · ${etaStr}</div>`,
+        iconAnchor: [0, 14],
+      });
+      const destM = L.marker(route.destCoords, { icon: destIcon, zIndexOffset: 500 }).addTo(map);
+      routeLayersRef.current.push(poly, destM);
+    });
 
     // Точки (склады, магазины)
     shops.filter((s) => s.lat && s.lng).forEach((shop) => {
@@ -216,7 +307,7 @@ function MapContent() {
       boundsSetRef.current = true;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shops, deliveries, geocodeMap, gpsLocations, selectedGps]);
+  }, [shops, deliveries, geocodeMap, gpsLocations, selectedGps, routes]);
 
   useEffect(() => {
     if (leafletReady && mapRef.current) renderMarkers();
@@ -321,6 +412,8 @@ function MapContent() {
               const isMoving = v.speed > 2;
               const isSelected = selectedGps === v.user_id;
               const driver = drivers.find((d) => d.gps_user_id === v.user_id);
+              const route = routes.find((r) => r.userId === v.user_id);
+              const eta = route ? new Date(Date.now() + route.durationMin * 60_000) : null;
               return (
                 <button
                   key={v.user_id}
@@ -334,6 +427,11 @@ function MapContent() {
                     <div className="text-[10px] text-gray-400">
                       {isOffline ? `⚫ ${Math.round(ageMs / 60_000)} мин назад` : isMoving ? `🟢 ${v.speed} км/ч` : '🟡 стоит'}
                     </div>
+                    {route && (
+                      <div className="text-[10px] text-blue-700 font-medium">
+                        🗺 {route.distanceKm} км · ~{route.durationMin} мин · прибытие {eta!.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    )}
                   </div>
                 </button>
               );
