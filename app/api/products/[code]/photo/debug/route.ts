@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getCachedCatalog } from '@/lib/products';
-import { smartupRequest, getSmartupProject } from '@/lib/smartup';
+import { smartupRequest, smartupGetFile, getSmartupProject } from '@/lib/smartup';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,14 +22,35 @@ export async function GET(
       { product_id: productId }
     );
 
+    const card = Array.isArray(view) ? (view as unknown[])[2] : null;
+    const photos = (card as Record<string, unknown> | null)?.photos;
+    const sha = Array.isArray(photos) && photos.length > 0 && Array.isArray(photos[0])
+      ? String((photos[0] as unknown[])[0] || '')
+      : null;
+
+    let imgStatus: number | null = null;
+    let imgContentType: string | null = null;
+
+    if (sha) {
+      try {
+        const imgRes = await smartupGetFile(
+          `/b/biruni/m:load_image_v2?sha=${encodeURIComponent(sha)}&type=S&height=400&width=400`
+        );
+        imgStatus = imgRes.status;
+        imgContentType = imgRes.headers.get('Content-Type');
+      } catch (e) {
+        imgStatus = -1;
+        imgContentType = String(e);
+      }
+    }
+
     return Response.json({
       code,
       productId,
-      itemFound: !!item,
-      isArray: Array.isArray(view),
-      length: Array.isArray(view) ? view.length : null,
-      element2: Array.isArray(view) ? (view as unknown[])[2] : null,
-      raw: view,
+      sha,
+      imgStatus,
+      imgContentType,
+      photosRaw: photos,
     });
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 500 });
