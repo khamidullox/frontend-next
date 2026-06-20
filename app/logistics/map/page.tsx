@@ -37,6 +37,9 @@ function MapContent() {
   const mapDivRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<unknown>(null);
   const markersRef = useRef<unknown[]>([]);
+  const tileLayerRef = useRef<unknown>(null);
+  const boundsSetRef = useRef(false);
+  const [mapStyle, setMapStyle] = useState<'osm' | 'yandex' | 'satellite'>('yandex');
   const [shops, setShops] = useState<Shop[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [gpsLocations, setGpsLocations] = useState<GpsLocation[]>([]);
@@ -100,16 +103,33 @@ function MapContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const TILES = {
+    osm:       { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',  attr: '© OpenStreetMap contributors', max: 19 },
+    yandex:    { url: 'https://core-renderer-tiles.maps.yandex.net/tiles?l=map&x={x}&y={y}&z={z}&scale=1&lang=ru_RU', attr: '© Яндекс', max: 20 },
+    satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr: '© Esri', max: 20 },
+  };
+
   useEffect(() => {
     if (!leafletReady || !mapDivRef.current || mapRef.current) return;
     const L = getL();
     const map = L.map(mapDivRef.current).setView([40.461, 71.755], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors', maxZoom: 19,
-    }).addTo(map);
+    const t = TILES[mapStyle];
+    tileLayerRef.current = L.tileLayer(t.url, { attribution: t.attr, maxZoom: t.max }).addTo(map);
     mapRef.current = map;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leafletReady]);
+
+  // Смена тайл-слоя без пересоздания карты
+  useEffect(() => {
+    const L = getL();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const map = mapRef.current as any;
+    if (!L || !map) return;
+    if (tileLayerRef.current) (tileLayerRef.current as any).remove();
+    const t = TILES[mapStyle];
+    tileLayerRef.current = L.tileLayer(t.url, { attribution: t.attr, maxZoom: t.max }).addTo(map);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapStyle]);
 
   const renderMarkers = useCallback(() => {
     const L = getL();
@@ -190,8 +210,10 @@ function MapContent() {
       coords.push([v.lat, v.lng]);
     });
 
-    if (coords.length > 0) {
+    // Приближаем только при первой загрузке, потом не двигаем карту
+    if (coords.length > 0 && !boundsSetRef.current) {
       map.fitBounds(L.latLngBounds(coords).pad(0.3));
+      boundsSetRef.current = true;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shops, deliveries, geocodeMap, gpsLocations, selectedGps]);
@@ -257,6 +279,16 @@ function MapContent() {
         <Link href="/logistics/shops" className="ml-auto text-xs text-blue-500 hover:underline">
           + Добавить точку →
         </Link>
+      </div>
+
+      {/* Переключатель карты */}
+      <div className="flex gap-1 mb-2">
+        {(['yandex', 'satellite', 'osm'] as const).map((s) => (
+          <button key={s} onClick={() => setMapStyle(s)}
+            className={`text-xs px-3 py-1 rounded-full border transition-colors ${mapStyle === s ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-200 hover:border-blue-400'}`}>
+            {s === 'yandex' ? '🗺 Яндекс' : s === 'satellite' ? '🛰 Спутник' : '🌍 OSM'}
+          </button>
+        ))}
       </div>
 
       <div className="flex gap-3 mb-3" style={{ alignItems: 'flex-start' }}>
