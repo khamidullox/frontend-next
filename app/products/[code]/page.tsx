@@ -56,9 +56,9 @@ export default function ProductDetailPage() {
       </button>
 
       {/* Шапка товара */}
-      <div className="bg-white rounded-xl shadow-sm p-4 mb-4 flex gap-4">
-        <ProductPhoto code={code} size="lg" />
-        <div className="flex-1 min-w-0">
+      <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
+        <ProductPhoto code={code} size="lg" className="mx-auto mb-3" />
+        <div>
           <h2 className="font-bold text-base leading-snug">{item?.name || `Товар ${code}`}</h2>
           <p className="text-xs text-gray-400 mt-1">
             Код {code}

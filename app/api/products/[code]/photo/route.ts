@@ -49,7 +49,7 @@ export async function GET(
   let imgRes: Response;
   try {
     imgRes = await smartupGetFile(
-      `/b/biruni/m:load_image_v2?sha=${encodeURIComponent(sha)}&type=S&height=400&width=400`
+      `/b/biruni/m:load_image_v2?sha=${encodeURIComponent(sha)}&type=L&height=800&width=800`
     );
   } catch {
     return new Response(null, { status: 502 });
