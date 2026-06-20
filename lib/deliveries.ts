@@ -134,6 +134,8 @@ interface CreateInput {
   external_car?: string;         // его машина
   direction?: string;
   km?: number;
+  weight_kg?: number;   // ручной ввод кг (переопределяет авто-расчёт)
+  volume_m3?: number;   // ручной ввод м³ (переопределяет авто-расчёт)
   created_by?: string;
 }
 
@@ -216,8 +218,8 @@ export async function createDelivery(
     to_name,
     shop_id: input.shop_id ? str(input.shop_id) : null,
     shop_name: input.shop_name ? str(input.shop_name) : null,
-    total_weight: dims.weight,
-    total_volume_l: dims.volume_l,
+    total_weight: input.weight_kg != null ? input.weight_kg : dims.weight,
+    total_volume_l: input.volume_m3 != null ? input.volume_m3 * 1000 : dims.volume_l,
     total_qty: dims.qty,
     direction: str(input.direction),
     km: Math.max(0, Number(input.km) || 0),

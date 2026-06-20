@@ -90,6 +90,9 @@ function LogisticsContent() {
   const [formDriver, setFormDriver] = useState(''); // '' | username | '__ext__'
   const [extName, setExtName] = useState('');
   const [extCar, setExtCar] = useState('');
+  const [manualWeightKg, setManualWeightKg] = useState('');
+  const [manualVolM3, setManualVolM3] = useState('');
+  const [manualKm, setManualKm] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmState, setConfirmState] = useState<{ msg: string; onOk: () => void } | null>(null);
 
@@ -111,6 +114,7 @@ function LogisticsContent() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { listDrivers().then(setDrivers).catch(() => {}); }, []);
+  useEffect(() => { listShops().then(setShops).catch(() => {}); }, []);
   useEffect(() => {
     listRoutes().then((r) => setActiveRoutes(r.filter((x) => x.status === 'active'))).catch(() => {});
   }, []);
@@ -153,9 +157,13 @@ function LogisticsContent() {
         client_name: client.trim(),
         address: address.trim(),
         note: note.trim(),
+        ...(mode === 'manual' && manualWeightKg ? { weight_kg: Number(manualWeightKg) } : {}),
+        ...(mode === 'manual' && manualVolM3 ? { volume_m3: Number(manualVolM3) } : {}),
+        ...(mode === 'manual' && manualKm ? { km: Number(manualKm) } : {}),
         ...driverPart,
       });
       setQuery(''); setClient(''); setAddress(''); setNote('');
+      setManualWeightKg(''); setManualVolM3(''); setManualKm('');
       setFormDriver(''); setExtName(''); setExtCar('');
       await load();
     } catch (err) {
@@ -194,9 +202,10 @@ function LogisticsContent() {
   // Назначить водителю существующий документ (накладная/заказ/перемещение) из модалки.
   const assignDoc = useCallback(async (
     ref: { movement_id?: string; deal_id?: string; transfer_id?: string },
-    driver_username: string
+    driver_username: string,
+    shopMatch?: { direction: string; km: number }
   ) => {
-    const created = await createDelivery({ ...ref, driver_username });
+    const created = await createDelivery({ ...ref, driver_username, ...shopMatch });
     setItems((prev) => [created, ...prev]);
   }, []);
 
@@ -212,6 +221,9 @@ function LogisticsContent() {
     setError('');
     try {
       const d = await createDelivery({
+        kind: 'shop_to_client',
+        shop_id: shop.id,
+        shop_name: shop.name,
         client_name: shop.name,
         address: shop.address,
         direction: shop.direction,
@@ -428,6 +440,33 @@ function LogisticsContent() {
           placeholder="Примечание (необязательно)"
           className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
 
+        {/* Вес / объём / км — только для ручного режима */}
+        {mode === 'manual' && (
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="text-[11px] text-gray-400 mb-1 block">⚖️ Вес, кг</label>
+              <input type="number" min={0} step="0.1" value={manualWeightKg}
+                onChange={(e) => setManualWeightKg(e.target.value)}
+                placeholder="напр. 150"
+                className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            </div>
+            <div>
+              <label className="text-[11px] text-gray-400 mb-1 block">📦 Объём, м³</label>
+              <input type="number" min={0} step="0.01" value={manualVolM3}
+                onChange={(e) => setManualVolM3(e.target.value)}
+                placeholder="напр. 0.5"
+                className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            </div>
+            <div>
+              <label className="text-[11px] text-gray-400 mb-1 block">🛣️ Км до точки</label>
+              <input type="number" min={0} step="1" value={manualKm}
+                onChange={(e) => setManualKm(e.target.value)}
+                placeholder="напр. 12"
+                className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            </div>
+          </div>
+        )}
+
         {/* Водитель: штатный из списка или внешний «со стороны» */}
         <select value={formDriver} onChange={(e) => setFormDriver(e.target.value)}
           className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
@@ -563,6 +602,7 @@ function LogisticsContent() {
       {assignTo && (
         <AssignDocModal
           driver={assignTo}
+          shops={shops}
           onClose={() => setAssignTo(null)}
           onPick={assignDoc}
         />
@@ -826,11 +866,12 @@ type AssignTab = 'movement' | 'order' | 'transfer';
 type DocRef = { movement_id?: string; deal_id?: string; transfer_id?: string };
 
 function AssignDocModal({
-  driver, onClose, onPick,
+  driver, shops, onClose, onPick,
 }: {
   driver: UserInfo;
+  shops: Shop[];
   onClose: () => void;
-  onPick: (ref: DocRef, driverUsername: string) => Promise<void>;
+  onPick: (ref: DocRef, driverUsername: string, shopMatch?: { direction: string; km: number }) => Promise<void>;
 }) {
   const [tab, setTab] = useState<AssignTab>('movement');
   const [movements, setMovements] = useState<MovementListItem[]>([]);
@@ -839,8 +880,8 @@ function AssignDocModal({
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [err, setErr] = useState('');
-  // Множественный выбор: id документа → ссылка на него.
-  const [selected, setSelected] = useState<Record<string, DocRef>>({});
+  // Множественный выбор: id → { ref, destName (куда везём, для сопоставления с точкой доставки) }.
+  const [selected, setSelected] = useState<Record<string, { ref: DocRef; destName: string }>>({});
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(0);
 
@@ -854,14 +895,26 @@ function AssignDocModal({
       .finally(() => setLoading(false));
   }, []);
 
-  function toggle(id: string, ref: DocRef) {
+  function toggle(id: string, ref: DocRef, destName: string) {
     if (submitting) return;
     setSelected((prev) => {
       const next = { ...prev };
       if (next[id]) delete next[id];
-      else next[id] = ref;
+      else next[id] = { ref, destName };
       return next;
     });
+  }
+
+  // Ищем магазин по названию пункта назначения (нечёткое совпадение).
+  function findShopMatch(destName: string): { direction: string; km: number } | undefined {
+    if (!destName.trim()) return undefined;
+    const norm = destName.toLowerCase().trim();
+    const match = shops.find(s => {
+      const sn = s.name.toLowerCase().trim();
+      return sn === norm || sn.includes(norm) || norm.includes(sn);
+    });
+    if (!match || !match.direction) return undefined;
+    return { direction: match.direction, km: match.km };
   }
 
   const count = Object.keys(selected).length;
@@ -872,9 +925,10 @@ function AssignDocModal({
     setErr('');
     setDone(0);
     const errs: string[] = [];
-    for (const ref of Object.values(selected)) {
+    for (const { ref, destName } of Object.values(selected)) {
       try {
-        await onPick(ref, driver.username);
+        const shopMatch = findShopMatch(destName);
+        await onPick(ref, driver.username, shopMatch);
         setDone((d) => d + 1);
       } catch (e) {
         errs.push((e as Error).message);
@@ -946,7 +1000,7 @@ function AssignDocModal({
             shownMovements.length === 0 ? (
               <div className="text-center text-gray-400 text-sm py-6">Накладных не найдено</div>
             ) : shownMovements.map((m) => (
-              <button key={m.movement_id} onClick={() => toggle(m.movement_id, { movement_id: m.movement_id })} className={rowCls(m.movement_id)}>
+              <button key={m.movement_id} onClick={() => toggle(m.movement_id, { movement_id: m.movement_id }, m.to_warehouse_name || '')} className={rowCls(m.movement_id)}>
                 {checkbox(m.movement_id)}
                 <span className="min-w-0">
                   <span className="text-sm font-semibold block">№ {m.movement_number}
@@ -961,7 +1015,7 @@ function AssignDocModal({
             shownOrders.length === 0 ? (
               <div className="text-center text-gray-400 text-sm py-6">Заказов не найдено</div>
             ) : shownOrders.map((o) => (
-              <button key={o.deal_id} onClick={() => toggle(o.deal_id, { deal_id: o.deal_id })} className={rowCls(o.deal_id)}>
+              <button key={o.deal_id} onClick={() => toggle(o.deal_id, { deal_id: o.deal_id }, o.client_name || '')} className={rowCls(o.deal_id)}>
                 {checkbox(o.deal_id)}
                 <span className="min-w-0">
                   <span className="text-sm font-semibold block">№ {o.doc_number}</span>
@@ -974,7 +1028,7 @@ function AssignDocModal({
             shownTransfers.length === 0 ? (
               <div className="text-center text-gray-400 text-sm py-6">Перемещений не найдено</div>
             ) : shownTransfers.map((t) => (
-              <button key={t.transfer_id} onClick={() => toggle(t.transfer_id, { transfer_id: t.transfer_id })} className={rowCls(t.transfer_id)}>
+              <button key={t.transfer_id} onClick={() => toggle(t.transfer_id, { transfer_id: t.transfer_id }, t.to_filial || '')} className={rowCls(t.transfer_id)}>
                 {checkbox(t.transfer_id)}
                 <span className="min-w-0">
                   <span className="text-sm font-semibold block">№ {t.number}</span>

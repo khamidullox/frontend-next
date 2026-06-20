@@ -25,6 +25,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const res = await createDelivery({
       source: body.source,
+      kind: body.kind,
+      shop_id: body.shop_id,
+      shop_name: body.shop_name,
       query: body.query,
       movement_id: body.movement_id,
       deal_id: body.deal_id,
@@ -34,9 +37,13 @@ export async function POST(request: NextRequest) {
       client_name: body.client_name,
       address: body.address,
       note: body.note,
+      direction: body.direction,
+      km: body.km != null ? Number(body.km) : undefined,
       driver_username: body.driver_username,
       external_driver: body.external_driver,
       external_car: body.external_car,
+      weight_kg: body.weight_kg != null ? Number(body.weight_kg) : undefined,
+      volume_m3: body.volume_m3 != null ? Number(body.volume_m3) : undefined,
       created_by: session.name || session.username,
     });
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });

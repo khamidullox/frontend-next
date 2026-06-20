@@ -544,6 +544,9 @@ export async function listDeliveries(): Promise<Delivery[]> {
 }
 
 export async function createDelivery(input: {
+  kind?: 'warehouse_dispatch' | 'shop_to_client';
+  shop_id?: string;
+  shop_name?: string;
   query?: string;
   movement_id?: string;
   deal_id?: string;
@@ -555,6 +558,8 @@ export async function createDelivery(input: {
   note?: string;
   direction?: string;
   km?: number;
+  weight_kg?: number;
+  volume_m3?: number;
   driver_username?: string;
   external_driver?: string;
   external_car?: string;
