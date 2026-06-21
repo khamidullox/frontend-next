@@ -9,7 +9,7 @@ import {
   listDeliveries, createDelivery, updateDelivery, deleteDeliveryApi, listDrivers,
   listMovements, listOrders, listTransfers, MovementListItem, OrderListItem, TransferListItem, MOVEMENT_STATUS_LABEL,
   Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL, UserInfo,
-  DIRECTIONS, autoAssign, fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings,
+  autoAssign, fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings,
   listRoutes, Route,
   listShops, Shop,
 } from '@/lib/api';
@@ -651,6 +651,8 @@ function DriverCard({
   const activeCount = ACTIVE.reduce((s, st) => s + counts[st], 0);
   const doneCount = counts.delivered + counts.returned;
   const shown = hideDone ? deliveries.filter((d) => !isDone(d.status)) : deliveries;
+  const doneDeliveries = deliveries.filter((d) => isDone(d.status));
+  const [showDone, setShowDone] = useState(false);
 
   // Нагрузка: только активные доставки.
   const activeDeliveries = deliveries.filter((d) => !isDone(d.status));
@@ -736,6 +738,23 @@ function DriverCard({
               {shown.map((d) => (
                 <DeliveryRow key={d.id} d={d} drivers={allDrivers} onPatch={onPatch} onRemove={onRemove} compact />
               ))}
+            </div>
+          )}
+
+          {/* Завершённые доставки — свернуты; можно раскрыть и удалить (чистка тестовых). */}
+          {hideDone && doneDeliveries.length > 0 && (
+            <div className="mt-2.5">
+              <button onClick={() => setShowDone((v) => !v)}
+                className="text-[11px] text-gray-400 hover:text-gray-600 font-semibold">
+                ✓ Завершённые ({doneDeliveries.length}) {showDone ? '▲' : '▼'}
+              </button>
+              {showDone && (
+                <div className="flex flex-col gap-2 mt-2 opacity-80">
+                  {doneDeliveries.map((d) => (
+                    <DeliveryRow key={d.id} d={d} drivers={allDrivers} onPatch={onPatch} onRemove={onRemove} compact />
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
