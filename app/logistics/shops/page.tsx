@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
-import { listShops, createShop, deleteShopApi, listAllWarehouses, Shop, WarehouseSummary, DIRECTIONS, ShopType } from '@/lib/api';
+import { listShops, createShop, updateShop, deleteShopApi, listAllWarehouses, Shop, WarehouseSummary, DIRECTIONS, ShopType } from '@/lib/api';
 import ConfirmModal from '@/components/ConfirmModal';
+import * as XLSX from 'xlsx';
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
@@ -28,6 +29,12 @@ function calcDirection(baseLat: number, baseLng: number, lat: number, lng: numbe
   if (bearing >= 45 && bearing < 135) return 'Восток';
   if (bearing >= 135 && bearing < 225) return 'Юг';
   return 'Запад';
+}
+
+// Сравниваем точки без учёта хвостового номера телефона в названии
+// (в Excel-выгрузках номер бывает то актуальный, то старый — он не должен мешать сопоставлению).
+function normalizeName(name: string): string {
+  return name.replace(/\s*\d{6,}\s*$/, '').trim().toLowerCase();
 }
 
 const DIR_COLOR: Record<string, string> = {
@@ -71,6 +78,11 @@ function ShopsContent() {
   const [warehouses, setWarehouses] = useState<WarehouseSummary[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const nameRef = useRef<HTMLDivElement>(null);
+
+  // Импорт точек из Excel
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState('');
 
   useEffect(() => {
     listAllWarehouses().then(setWarehouses).catch(() => {});
@@ -152,6 +164,70 @@ function ShopsContent() {
     finally { setBusy(false); }
   }
 
+  // Импорт точек из Excel: колонки "Склад"(название), "Номер"(телефон), "Роль"(магазин/база), "Расположения"("lat, lng").
+  async function handleImportFile(file: File) {
+    setImporting(true); setImportMsg('');
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+      const base = bases[0] ?? null;
+      let created = 0, updated = 0, skipped = 0;
+      const nextItems = [...items];
+
+      for (const row of rows.slice(1)) {
+        const rawName = String(row[0] ?? '').trim();
+        if (!rawName) { skipped++; continue; }
+        const phone = row[1] ? String(row[1]) : '';
+        const roleStr = String(row[2] ?? '').toLowerCase();
+        const type: ShopType = roleStr.includes('магазин') ? 'shop' : 'warehouse';
+        const locStr = String(row[3] ?? '').trim();
+        let lat: number | undefined, lng: number | undefined;
+        if (locStr.includes(',')) {
+          const [a, b] = locStr.split(',').map((s) => parseFloat(s.trim()));
+          if (!isNaN(a) && !isNaN(b)) { lat = a; lng = b; }
+        }
+
+        const norm = normalizeName(rawName);
+        const existing = nextItems.find((s) => normalizeName(s.name) === norm);
+
+        if (existing) {
+          const patch: { lat?: number; lng?: number; phone?: string; type?: ShopType } = { type };
+          if (lat !== undefined) patch.lat = lat;
+          if (lng !== undefined) patch.lng = lng;
+          if (phone) patch.phone = phone;
+          try {
+            const upd = await updateShop(existing.id, patch);
+            const idx = nextItems.findIndex((s) => s.id === existing.id);
+            nextItems[idx] = upd;
+            updated++;
+          } catch { skipped++; }
+        } else {
+          let direction: string | undefined, km: number | undefined;
+          if (base && base.lat && base.lng && lat !== undefined && lng !== undefined && type === 'shop') {
+            direction = calcDirection(base.lat, base.lng, lat, lng);
+            km = haversineKm(base.lat, base.lng, lat, lng);
+          }
+          try {
+            const created_shop = await createShop({ name: rawName, phone, type, lat, lng, direction, km });
+            nextItems.push(created_shop);
+            created++;
+          } catch { skipped++; }
+        }
+      }
+
+      setItems(nextItems.sort((a, b) => a.name.localeCompare(b.name, 'ru')));
+      setImportMsg(`Готово: создано ${created}, обновлено ${updated}, пропущено ${skipped}`);
+    } catch (e) {
+      setImportMsg('Ошибка чтения файла: ' + (e as Error).message);
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
+
   function remove(id: string) {
     setConfirmState({
       msg: 'Удалить точку?',
@@ -168,7 +244,22 @@ function ShopsContent() {
       <div className="flex items-center gap-2 mb-3">
         <Link href="/logistics" className="text-sm text-gray-500 hover:text-gray-700">← Логистика</Link>
         <h2 className="text-xl font-bold ml-1">🏪 Точки доставки <span className="text-sm text-gray-400 font-normal">({items.length})</span></h2>
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={importing}
+          className="ml-auto px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-lg disabled:opacity-50 whitespace-nowrap"
+        >
+          {importing ? '⏳ Импорт…' : '📥 Импорт из Excel'}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".xlsx,.xls"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportFile(f); }}
+        />
       </div>
+      {importMsg && <p className="text-xs text-emerald-600 mb-3">{importMsg}</p>}
 
       <form onSubmit={add} className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-col gap-2">
         <div className="text-xs font-semibold text-gray-500">+ Добавить магазин / адрес</div>

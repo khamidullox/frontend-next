@@ -663,7 +663,7 @@ export async function createShop(input: {
 
 export async function updateShop(
   id: string,
-  patch: { name?: string; address?: string; direction?: string; km?: number; phone?: string }
+  patch: { name?: string; address?: string; direction?: string; km?: number; phone?: string; lat?: number; lng?: number; type?: ShopType }
 ): Promise<Shop> {
   const res = await fetch(`/api/shops/${encodeURIComponent(id)}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
