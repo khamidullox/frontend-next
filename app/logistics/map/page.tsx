@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
 import LogisticsTabs from '@/components/LogisticsTabs';
-import { listShops, listDeliveries, listUsers, updateDelivery, Shop, Delivery, UserInfo } from '@/lib/api';
+import { listShops, listDeliveries, listUsers, updateDelivery, listVehiclePositions, Shop, Delivery, UserInfo } from '@/lib/api';
 
 interface GpsLocation {
   user_name: string;
@@ -16,6 +16,7 @@ interface GpsLocation {
   heart_time: string;
   alarm: number;
   sim_id: string;
+  source?: 'tracker' | 'phone'; // tracker = gps16888.com, phone = телефон водителя
 }
 
 const GPS_POLL_MS = 30_000;
@@ -75,7 +76,8 @@ function MapContent() {
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
   const [shops, setShops] = useState<Shop[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  const [gpsLocations, setGpsLocations] = useState<GpsLocation[]>([]);
+  const [trackerLocations, setTrackerLocations] = useState<GpsLocation[]>([]);
+  const [phoneLocations, setPhoneLocations] = useState<GpsLocation[]>([]);
   const [gpsLoaded, setGpsLoaded] = useState(false);
   const [drivers, setDrivers] = useState<UserInfo[]>([]);
   const [geocodeMap, setGeocodeMap] = useState<Record<string, [number, number]>>({});
@@ -119,9 +121,9 @@ function MapContent() {
               }
             }
             prevGpsRef.current[loc.user_id] = { lat: loc.lat, lng: loc.lng, t: now };
-            return { ...loc, speed };
+            return { ...loc, speed, source: 'tracker' as const };
           });
-          setGpsLocations(withMovement);
+          setTrackerLocations(withMovement);
           setGpsError(false);
         } else {
           setGpsError(true);
@@ -131,11 +133,50 @@ function MapContent() {
       .finally(() => setGpsLoaded(true));
   }, []);
 
+  // Позиции с телефонов водителей (страница «Мои доставки» шлёт их при активном маршруте).
+  const fetchPhone = useCallback(() => {
+    listVehiclePositions()
+      .then((positions) => {
+        const mapped: GpsLocation[] = positions
+          .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+          .map((p) => ({
+            user_name: p.driver_name || p.username,
+            user_id: `phone:${p.username}`,
+            lat: p.lat,
+            lng: p.lng,
+            // geolocation.speed в м/с → км/ч
+            speed: p.speed != null ? Math.round(p.speed * 3.6) : 0,
+            sys_time: p.at || p.updated_at,
+            heart_time: p.updated_at,
+            alarm: 0,
+            sim_id: '',
+            source: 'phone' as const,
+          }));
+        setPhoneLocations(mapped);
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     fetchGps();
-    const id = setInterval(fetchGps, GPS_POLL_MS);
+    fetchPhone();
+    const id = setInterval(() => { fetchGps(); fetchPhone(); }, GPS_POLL_MS);
     return () => clearInterval(id);
-  }, [fetchGps]);
+  }, [fetchGps, fetchPhone]);
+
+  // Объединяем трекеры и телефоны. Если у водителя есть и трекер, и телефон —
+  // показываем трекер (выделенное устройство), телефон не дублируем.
+  const gpsLocations = useMemo(() => {
+    const trackerDriverIds = new Set(
+      drivers.filter((d) => d.gps_user_id && trackerLocations.some((t) => t.user_id === d.gps_user_id))
+        .map((d) => d.username)
+    );
+    const phoneFiltered = phoneLocations.filter((p) => {
+      const username = p.user_id.replace(/^phone:/, '');
+      return !trackerDriverIds.has(username);
+    });
+    return [...trackerLocations, ...phoneFiltered];
+  }, [trackerLocations, phoneLocations, drivers]);
 
   // Обновляем ref синхронно чтобы избежать цикла зависимостей
   geocodeMapRef.current = geocodeMap;
@@ -144,7 +185,10 @@ function MapContent() {
     if (!gpsLocations.length) { setRoutes([]); return; }
     const results: RouteInfo[] = [];
     await Promise.all(gpsLocations.map(async (gps) => {
-      const driver = drivers.find((d) => d.gps_user_id === gps.user_id);
+      // Трекер сопоставляем по gps_user_id, телефон — по username (phone:<username>).
+      const driver = gps.source === 'phone'
+        ? drivers.find((d) => d.username === gps.user_id.replace(/^phone:/, ''))
+        : drivers.find((d) => d.gps_user_id === gps.user_id);
       if (!driver) return;
       const delivery = deliveries.find(
         (d) => d.driver_username === driver.username && d.status === 'on_way'
@@ -337,16 +381,17 @@ function MapContent() {
       const border = isSelected ? '3px solid #93C5FD' : '2px solid rgba(255,255,255,0.9)';
 
       const speedLabel = isMoving ? ` · ${v.speed} км/ч` : '';
+      const vIcon = v.source === 'phone' ? '📱' : '🚚';
       const icon = L.divIcon({
         className: '',
-        html: `<div style="background:${bgColor};color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;border:${border};box-shadow:0 2px 8px rgba(0,0,0,0.3);">🚚 ${v.user_name}${speedLabel}</div>`,
+        html: `<div style="background:${bgColor};color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;border:${border};box-shadow:0 2px 8px rgba(0,0,0,0.3);">${vIcon} ${v.user_name}${speedLabel}</div>`,
         iconAnchor: [0, 14],
       });
 
       const marker = L.marker([v.lat, v.lng], { icon, zIndexOffset: 1000 })
         .addTo(map)
         .bindPopup(
-          `<b>🚚 ${v.user_name}</b><br>` +
+          `<b>${vIcon} ${v.user_name}</b>${v.source === 'phone' ? ' <small style="color:#888">(телефон)</small>' : ''}<br>` +
           `Скорость: ${v.speed} км/ч<br>` +
           (isOffline ? `<span style="color:#EF4444">⚫ Офлайн</span>` :
            isMoving ? `<span style="color:#16A34A">🟢 Едет</span>` :
@@ -448,7 +493,7 @@ function MapContent() {
       {/* GPS-трекеры под картой */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-3">
         <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100 flex items-center gap-2">
-          <span>GPS-трекеры</span>
+          <span>GPS · трекеры и телефоны</span>
           {gpsLoaded && <span className="ml-auto text-gray-400">{gpsLocations.length} устройств</span>}
           {!gpsLoaded && <span className="ml-auto text-gray-300">загрузка…</span>}
         </div>
@@ -456,10 +501,10 @@ function MapContent() {
 
           {!gpsLoaded ? (
             <div className="px-3 py-3 text-xs text-gray-300">⏳ загрузка…</div>
-          ) : gpsError ? (
+          ) : gpsError && sortedGps.length === 0 ? (
             <div className="px-3 py-3 text-xs text-red-400">⚠️ Нет соединения с GPS</div>
           ) : sortedGps.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-gray-400">Нет устройств · Добавьте GPS ID водителям</div>
+            <div className="px-3 py-3 text-xs text-gray-400">Нет устройств · добавьте GPS ID водителю или попросите водителя начать маршрут в приложении (📱)</div>
           ) : (
             sortedGps.map((v) => {
               const lastSeen = parseGpsTime(v.sys_time).getTime();
@@ -467,7 +512,9 @@ function MapContent() {
               const isOffline = ageMs > GPS_OFFLINE_MS;
               const isMoving = v.speed > 2;
               const isSelected = selectedGps === v.user_id;
-              const driver = drivers.find((d) => d.gps_user_id === v.user_id);
+              const driver = v.source === 'phone'
+                ? drivers.find((d) => d.username === v.user_id.replace(/^phone:/, ''))
+                : drivers.find((d) => d.gps_user_id === v.user_id);
               const route = routes.find((r) => r.userId === v.user_id);
               const eta = route ? new Date(Date.now() + route.durationMin * 60_000) : null;
               return (
@@ -478,7 +525,7 @@ function MapContent() {
                 >
                   <span className={`w-2 h-2 rounded-full shrink-0 ${isOffline ? 'bg-gray-400' : isMoving ? 'bg-green-500' : 'bg-amber-400'}`} />
                   <div>
-                    <div className="text-xs font-semibold">{v.user_name}</div>
+                    <div className="text-xs font-semibold">{v.source === 'phone' ? '📱' : '🚚'} {v.user_name}</div>
                     {driver && <div className="text-[10px] text-blue-600">{driver.name} · {driver.car_number}</div>}
                     <div className="text-[10px] text-gray-400">
                       {isOffline ? `⚫ ${Math.round(ageMs / 60_000)} мин назад` : isMoving ? `🟢 ${v.speed} км/ч` : '🟡 стоит'}
