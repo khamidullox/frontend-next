@@ -20,6 +20,16 @@ interface GpsLocation {
 
 const GPS_POLL_MS = 30_000;
 const GPS_OFFLINE_MS = 30 * 60_000;
+const GPS_JITTER_M = 30; // меньше — считаем дрожанием сигнала, не движением
+
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
 
 interface RouteInfo {
   userId: string;
@@ -86,6 +96,8 @@ function MapContent() {
       .finally(() => setLoading(false));
   }, []);
 
+  const prevGpsRef = useRef<Record<string, { lat: number; lng: number; t: number }>>({});
+
   const fetchGps = useCallback(() => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15_000);
@@ -94,7 +106,22 @@ function MapContent() {
       .then((data) => {
         clearTimeout(timer);
         if (data.ok && Array.isArray(data.locations)) {
-          setGpsLocations(data.locations);
+          const now = Date.now();
+          const withMovement: GpsLocation[] = (data.locations as GpsLocation[]).map((loc) => {
+            const prev = prevGpsRef.current[loc.user_id];
+            let speed = loc.speed;
+            if (prev) {
+              const meters = haversineMeters(prev.lat, prev.lng, loc.lat, loc.lng);
+              const seconds = Math.max(1, (now - prev.t) / 1000);
+              if (meters > GPS_JITTER_M) {
+                const kmh = (meters / 1000) / (seconds / 3600);
+                speed = Math.max(speed, Math.round(kmh));
+              }
+            }
+            prevGpsRef.current[loc.user_id] = { lat: loc.lat, lng: loc.lng, t: now };
+            return { ...loc, speed };
+          });
+          setGpsLocations(withMovement);
           setGpsError(false);
         } else {
           setGpsError(true);
