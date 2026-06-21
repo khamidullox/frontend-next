@@ -72,7 +72,6 @@ function ShopsContent() {
 
   // Автодетект
   const [autoInfo, setAutoInfo] = useState<{ dir: string; km: number; baseName: string } | null>(null);
-  const [selectedBaseId, setSelectedBaseId] = useState<string>('');
   const [detectingCity, setDetectingCity] = useState(false);
   const cityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -119,20 +118,14 @@ function ShopsContent() {
   const bases = items.filter(s => s.type === 'warehouse' && s.lat && s.lng);
 
   // Выбранная база
-  const selectedBase = bases.find(b => b.id === selectedBaseId) ?? bases[0] ?? null;
-
-  // Пересчёт км от базы + определение города по координатам (с задержкой).
-  function recalc(latVal: string, lngVal: string, base: Shop | null) {
+  // Определение города по координатам (с задержкой, чтобы не дёргать на каждый символ).
+  function recalc(latVal: string, lngVal: string) {
     const latN = parseFloat(latVal);
     const lngN = parseFloat(lngVal);
     if (isNaN(latN) || isNaN(lngN) || latN === 0 || lngN === 0) {
       setAutoInfo(null);
       return;
     }
-    const distKm = base ? haversineKm(base.lat!, base.lng!, latN, lngN) : 0;
-    if (base) setKm(String(distKm));
-
-    // Город — обратное геокодирование с дебаунсом 700мс (не дёргать на каждый символ).
     if (cityTimer.current) clearTimeout(cityTimer.current);
     setDetectingCity(true);
     cityTimer.current = setTimeout(async () => {
@@ -140,23 +133,18 @@ function ShopsContent() {
       setDetectingCity(false);
       if (city) {
         setDirection(city);
-        setAutoInfo({ dir: city, km: distKm, baseName: base?.name ?? '' });
+        setAutoInfo({ dir: city, km: 0, baseName: '' });
       }
     }, 700);
   }
 
   function onLatChange(v: string) {
     setLat(v);
-    recalc(v, lng, selectedBase);
+    recalc(v, lng);
   }
   function onLngChange(v: string) {
     setLng(v);
-    recalc(lat, v, selectedBase);
-  }
-  function onBaseChange(id: string) {
-    setSelectedBaseId(id);
-    const base = bases.find(b => b.id === id) ?? bases[0] ?? null;
-    recalc(lat, lng, base);
+    recalc(lat, v);
   }
 
   const suggestions = name.trim().length >= 1
@@ -268,21 +256,31 @@ function ShopsContent() {
     } catch (e) { setError((e as Error).message); }
   }
 
-  // Определить города для всех точек с координатами, у которых город пуст/не задан.
+  // Определить города для всех точек с координатами, у которых город не задан
+  // (пусто или старое значение по умолчанию «Центр»).
   async function geocodeAll() {
-    setGeocodingAll(true); setError('');
-    const targets = items.filter(s => s.lat && s.lng && !s.direction);
+    setGeocodingAll(true); setError(''); setImportMsg('');
+    const targets = items.filter(s => s.lat && s.lng && (!s.direction || s.direction === 'Центр'));
+    if (targets.length === 0) {
+      setGeocodingAll(false);
+      setImportMsg('Нет точек с координатами для определения города');
+      return;
+    }
+    let done = 0;
     for (const s of targets) {
       const city = await cityFromCoords(s.lat!, s.lng!);
       if (city) {
         try {
           const upd = await updateShop(s.id, { direction: city });
           setItems(prev => prev.map(x => x.id === upd.id ? upd : x));
+          done++;
+          setImportMsg(`Определено городов: ${done} из ${targets.length}…`);
         } catch { /* ignore */ }
       }
       await new Promise(r => setTimeout(r, 1100));
     }
     setGeocodingAll(false);
+    setImportMsg(`Готово: определено городов — ${done} из ${targets.length}`);
   }
 
   return (
@@ -362,7 +360,7 @@ function ShopsContent() {
             className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
         </div>
 
-        {/* Координаты + база + автодетект */}
+        {/* Координаты + автоопределение города */}
         <div className="flex flex-col sm:flex-row gap-2 items-end">
           <input type="number" step="any" value={lat} onChange={e => onLatChange(e.target.value)}
             placeholder="Широта (40.44513)"
@@ -370,23 +368,6 @@ function ShopsContent() {
           <input type="number" step="any" value={lng} onChange={e => onLngChange(e.target.value)}
             placeholder="Долгота (71.75780)"
             className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
-
-          {bases.length > 0 ? (
-            <select
-              value={selectedBaseId || bases[0]?.id || ''}
-              onChange={e => onBaseChange(e.target.value)}
-              className="flex-1 border-2 border-blue-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400"
-              title="От какой базы считать направление и км"
-            >
-              {bases.map(b => (
-                <option key={b.id} value={b.id}>🏭 от: {b.name}</option>
-              ))}
-            </select>
-          ) : (
-            <div className="text-xs text-amber-500 pb-2 whitespace-nowrap">
-              Добавьте склад (базу) с координатами для автодетекта
-            </div>
-          )}
 
           <button disabled={busy || !name.trim()}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg whitespace-nowrap">
