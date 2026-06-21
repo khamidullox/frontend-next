@@ -16,36 +16,39 @@ function parseWarehouses(v: string): string[] {
   return String(v || '').split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
 }
 
-async function exportUsersExcel(users: UserInfo[]) {
+async function exportUsersExcel(users: UserInfo[], shops: Shop[]) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const XLSX: any = await loadXLSX();
+  const shopName = (id: string) => shops.find((s) => s.id === id)?.name || '';
   const rows = users.map((u, i) => ({
     '№': i + 1,
     'Логин': u.username,
     'Имя': u.name,
     'Роль': ROLE_LABEL[u.role],
     'Склады': u.warehouses.join(', '),
+    'Магазин': u.shop_id ? shopName(u.shop_id) : '',
     'Машина': u.car_number,
     'Транспорт': u.transport,
     'Создан': u.created_at ? new Date(u.created_at).toLocaleString('ru-RU') : '',
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{ wch: 5 }, { wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 20 }];
+  ws['!cols'] = [{ wch: 5 }, { wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 28 }, { wch: 16 }, { wch: 18 }, { wch: 20 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Пользователи');
   XLSX.writeFile(wb, 'polzovateli.xlsx');
 }
 
-// Скачать шаблон для заполнения (Логин/Имя/Роль/Пароль).
+// Скачать шаблон для заполнения (Логин/Имя/Роль/Пароль/Склады/Магазин/Машина/Транспорт).
 async function downloadTemplate() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const XLSX: any = await loadXLSX();
   const ws = XLSX.utils.json_to_sheet([
-    { 'Логин': 'ivan', 'Имя': 'Иван', 'Роль': 'Кладовщик', 'Пароль': '1234', 'Склады': '001,002', 'Машина': '', 'Транспорт': '' },
-    { 'Логин': 'manager1', 'Имя': 'Менеджер', 'Роль': 'Менеджер', 'Пароль': '1234', 'Склады': '', 'Машина': '', 'Транспорт': '' },
-    { 'Логин': '40100uaa', 'Имя': 'Зулфиқоров Шарифжон', 'Роль': 'Водитель', 'Пароль': '1234', 'Склады': '', 'Машина': '40 100 UAA', 'Транспорт': 'Chevrolet COBALT' },
+    { 'Логин': 'ivan', 'Имя': 'Иван', 'Роль': 'Кладовщик', 'Пароль': '1234', 'Склады': '001,002', 'Магазин': '', 'Машина': '', 'Транспорт': '' },
+    { 'Логин': 'magazin1', 'Имя': 'Продавец', 'Роль': 'Магазин', 'Пароль': '1234', 'Склады': '', 'Магазин': '7704 Склад Arzonchi (Andijon)', 'Машина': '', 'Транспорт': '' },
+    { 'Логин': 'manager1', 'Имя': 'Менеджер', 'Роль': 'Менеджер', 'Пароль': '1234', 'Склады': '', 'Магазин': '', 'Машина': '', 'Транспорт': '' },
+    { 'Логин': '40100uaa', 'Имя': 'Зулфиқоров Шарифжон', 'Роль': 'Водитель', 'Пароль': '1234', 'Склады': '', 'Магазин': '', 'Машина': '40 100 UAA', 'Транспорт': 'Chevrolet COBALT' },
   ]);
-  ws['!cols'] = [{ wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 18 }];
+  ws['!cols'] = [{ wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 28 }, { wch: 16 }, { wch: 18 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Шаблон');
   XLSX.writeFile(wb, 'shablon_polzovateli.xlsx');
@@ -219,7 +222,19 @@ function UsersContent() {
       const wb = XLSX.read(buf, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
-      let ok = 0;
+      // Сопоставление магазина из Excel (по названию или id) с точкой из справочника.
+      const matchShopId = (raw: string): string => {
+        const q = raw.trim().toLowerCase();
+        if (!q) return '';
+        const byId = shopList.find((s) => s.id.toLowerCase() === q);
+        if (byId) return byId.id;
+        const byName = shopList.find((s) => s.name.toLowerCase() === q)
+          || shopList.find((s) => s.name.toLowerCase().includes(q) || q.includes(s.name.toLowerCase()));
+        return byName?.id || '';
+      };
+      // Текущие логины — для решения создать/обновить.
+      const existing = new Set(users.map((u) => u.username.toLowerCase()));
+      let created = 0, updated = 0;
       const errs: string[] = [];
       for (const r of rows) {
         const username = pick(r, ['логин', 'login', 'username']).trim();
@@ -230,15 +245,28 @@ function UsersContent() {
         const warehouses = parseWarehouses(pick(r, ['склады', 'склад', 'warehouses', 'warehouse']));
         const car_number = pick(r, ['машина', 'номер машины', 'гос номер', 'госномер', 'номер', 'davlat raqami', 'car', 'car_number']).trim();
         const transport = pick(r, ['транспорт', 'transport', 'rusumi', 'тип транспорта', 'модель']).trim();
+        const shop_id = matchShopId(pick(r, ['магазин', 'магазин (для заказы клиентам)', 'shop', 'do\'kon', 'dokon', 'магазин название']));
         try {
-          await createUser({ username, name, role, password, warehouses, car_number, transport });
-          ok++;
+          if (existing.has(username.toLowerCase())) {
+            // Обновляем существующего: имя, склады, машина, транспорт, магазин и пароль (если задан).
+            await updateUser(username, {
+              name: name || undefined,
+              warehouses,
+              car_number, transport,
+              shop_id,
+              ...(password ? { password } : {}),
+            });
+            updated++;
+          } else {
+            await createUser({ username, name, role, password, warehouses, car_number, transport, shop_id });
+            created++;
+          }
         } catch (err) {
           errs.push(`${username || '—'}: ${(err as Error).message}`);
         }
       }
       await load();
-      setImportMsg(`Создано: ${ok}${errs.length ? ` · Пропущено/ошибок: ${errs.length}` : ''}`);
+      setImportMsg(`Создано: ${created} · Обновлено: ${updated}${errs.length ? ` · Ошибок: ${errs.length}` : ''}`);
       if (errs.length) setError(errs.slice(0, 10).join('; '));
     } catch (err) {
       setImportMsg('');
@@ -273,7 +301,7 @@ function UsersContent() {
             Шаблон
           </button>
           {users.length > 0 && (
-            <button onClick={() => exportUsersExcel(users).catch(e => setError((e as Error).message))}
+            <button onClick={() => exportUsersExcel(users, shopList).catch(e => setError((e as Error).message))}
               className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg">
               📥 Выгрузить
             </button>
@@ -282,7 +310,7 @@ function UsersContent() {
       </div>
 
       <p className="text-xs text-gray-400 mb-3">
-        Колонки в Excel: <b>Логин</b>, <b>Имя</b>, <b>Роль</b> (Магазин/Водитель/Менеджер/Админ), <b>Пароль</b>, <b>Склады</b> (коды через запятую, напр. 001,002), для водителей — <b>Машина</b> и <b>Транспорт</b>. Нажми «Шаблон» для примера.
+        Колонки в Excel: <b>Логин</b>, <b>Имя</b>, <b>Роль</b> (Магазин/Водитель/Менеджер/Админ), <b>Пароль</b>, <b>Склады</b> (коды через запятую, напр. 001,002), <b>Магазин</b> (название точки — для роли «Магазин»), для водителей — <b>Машина</b> и <b>Транспорт</b>. Существующие логины <b>обновляются</b> (пароль меняется только если указан). Нажми «Шаблон» для примера.
       </p>
       {importMsg && <p className="text-sm text-blue-600 mb-3">{importMsg}</p>}
 
