@@ -611,6 +611,8 @@ export interface LogisticsSettings {
   cap_labo_m3: number;
   cap_gazelle_kg: number;
   cap_gazelle_m3: number;
+  cap_other_kg: number;
+  cap_other_m3: number;
 }
 
 const DEFAULT_LOGISTICS_SETTINGS: LogisticsSettings = {
@@ -619,6 +621,8 @@ const DEFAULT_LOGISTICS_SETTINGS: LogisticsSettings = {
   cap_labo_m3: 3,
   cap_gazelle_kg: 1500,
   cap_gazelle_m3: 9,
+  cap_other_kg: 300,
+  cap_other_m3: 2,
 };
 
 export async function fetchLogisticsSettings(): Promise<LogisticsSettings> {

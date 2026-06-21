@@ -59,6 +59,7 @@ const DELIVERY_CATS = ['LABO', 'Газель'];
 
 const DEFAULT_CAP_SETTINGS: LogisticsSettings = {
   fuel_rate_per_km: 0, cap_labo_kg: 600, cap_labo_m3: 3, cap_gazelle_kg: 1500, cap_gazelle_m3: 9,
+  cap_other_kg: 300, cap_other_m3: 2,
 };
 
 // Дефолтная вместимость по типу транспорта (если у водителя не задана вручную).
@@ -68,7 +69,7 @@ function defaultCapacity(transport: string | null | undefined, settings: Logisti
   const cat = vehicleCategory(transport);
   if (cat === 'Газель') return { kg: settings.cap_gazelle_kg, m3: settings.cap_gazelle_m3, pcs: 200 };
   if (cat === 'LABO') return { kg: settings.cap_labo_kg, m3: settings.cap_labo_m3, pcs: 80 };
-  return { kg: 300, m3: 2, pcs: 50 };
+  return { kg: settings.cap_other_kg, m3: settings.cap_other_m3, pcs: 50 };
 }
 
 export default function LogisticsPage() {
@@ -89,7 +90,9 @@ function LogisticsContent() {
   const [fuelRate, setFuelRate] = useState(0);
   const [fuelInput, setFuelInput] = useState('');
   const [capSettings, setCapSettings] = useState<LogisticsSettings>(DEFAULT_CAP_SETTINGS);
-  const [capInputs, setCapInputs] = useState({ labo_kg: '', labo_m3: '', gazelle_kg: '', gazelle_m3: '' });
+  const [capInputs, setCapInputs] = useState({
+    labo_kg: '', labo_m3: '', gazelle_kg: '', gazelle_m3: '', other_kg: '', other_m3: '',
+  });
   const [autoAssigning, setAutoAssigning] = useState(false);
   const [autoMsg, setAutoMsg] = useState('');
   const [driverSearch, setDriverSearch] = useState('');
@@ -148,6 +151,7 @@ function LogisticsContent() {
       setCapInputs({
         labo_kg: String(s.cap_labo_kg), labo_m3: String(s.cap_labo_m3),
         gazelle_kg: String(s.cap_gazelle_kg), gazelle_m3: String(s.cap_gazelle_m3),
+        other_kg: String(s.cap_other_kg), other_m3: String(s.cap_other_m3),
       });
     }).catch(() => {});
   }, []);
@@ -397,6 +401,22 @@ function LogisticsContent() {
             className="w-14 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
           <span className="text-[11px] text-gray-400">м³</span>
         </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-semibold text-gray-600">Прочие</span>
+          <input type="number" min={0} step={1} value={capInputs.other_kg}
+            onChange={(e) => setCapInputs((p) => ({ ...p, other_kg: e.target.value }))}
+            onBlur={(e) => saveCap('cap_other_kg', e.target.value)}
+            className="w-16 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
+          <span className="text-[11px] text-gray-400">кг</span>
+          <input type="number" min={0} step={0.1} value={capInputs.other_m3}
+            onChange={(e) => setCapInputs((p) => ({ ...p, other_m3: e.target.value }))}
+            onBlur={(e) => saveCap('cap_other_m3', e.target.value)}
+            className="w-14 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
+          <span className="text-[11px] text-gray-400">м³</span>
+        </div>
+        <span className="text-[11px] text-gray-400 basis-full">
+          «Прочие» — любая другая машина, указанная в поле «Транспорт» у пользователя (не LABO и не Газель).
+        </span>
       </div>
 
       {/* Заявки магазинов — быстрое создание доставки В магазин из справочника */}
