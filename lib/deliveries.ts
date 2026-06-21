@@ -5,8 +5,49 @@ import { getUserRaw, listDrivers } from './users';
 import { getSession as getCheckSession } from './sessions';
 import { getWarehouseCodeMap, getCachedCatalog } from './products';
 import { DocType } from './document';
+import { listShops, Shop } from './shops';
 
 const COLLECTION = 'deliveries';
+
+// ─── Расчёт километража по координатам точек ──────────────────────────────────
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function normPointName(s: string): string {
+  return String(s || '').replace(/\s*\d{6,}\s*$/, '').trim().toLowerCase();
+}
+
+function shopCoordsByName(name: string | null, shops: Shop[]): [number, number] | null {
+  if (!name) return null;
+  const n = normPointName(name);
+  if (!n) return null;
+  const sh = shops.find((s) => normPointName(s.name) === n)
+    || shops.find((s) => normPointName(s.name).includes(n) || n.includes(normPointName(s.name)));
+  return sh && sh.lat && sh.lng ? [sh.lat, sh.lng] : null;
+}
+
+// Км доставки по координатам: откуда (склад/магазин-источник) → куда (точка/адрес).
+export function computeDeliveryKm(d: Delivery, shops: Shop[]): number | null {
+  let dest: [number, number] | null = (d.lat != null && d.lng != null) ? [d.lat, d.lng] : null;
+  if (!dest && d.shop_id) {
+    const sh = shops.find((s) => s.id === d.shop_id);
+    if (sh?.lat && sh?.lng) dest = [sh.lat, sh.lng];
+  }
+  if (!dest) dest = shopCoordsByName(d.to_name, shops);
+  let src = shopCoordsByName(d.from_name, shops);
+  if (!src && d.shop_id) {
+    const sh = shops.find((s) => s.id === d.shop_id);
+    if (sh?.lat && sh?.lng) src = [sh.lat, sh.lng];
+  }
+  if (!src || !dest) return null;
+  return Math.round(haversineKm(src[0], src[1], dest[0], dest[1]));
+}
 
 // Статусы доставки. «new» — только что создана (водитель ещё не назначен или
 // просто не приступил). Дальше по жизненному циклу.
@@ -378,6 +419,16 @@ export async function setDeliveryStatus(
   delivery.status = status;
   delivery.updated_at = now;
   delivery.history = [...(delivery.history || []), { at: now, status, by: str(by) }].slice(-50);
+
+  // Считаем км по координатам при выезде/доставке, если ещё не заполнен.
+  if ((status === 'on_way' || status === 'delivered') && (!delivery.km || delivery.km <= 0)) {
+    try {
+      const shops = await listShops();
+      const km = computeDeliveryKm(delivery, shops);
+      if (km && km > 0) delivery.km = km;
+    } catch { /* ignore */ }
+  }
+
   await ref.set(delivery);
   return { delivery };
 }
