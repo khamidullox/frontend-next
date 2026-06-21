@@ -173,6 +173,7 @@ export default function MyDeliveriesPage() {
 
   const active = items.filter((d) => d.status !== 'delivered' && d.status !== 'returned');
   const done = items.filter((d) => d.status === 'delivered' || d.status === 'returned');
+  const doneKm = done.reduce((s, d) => s + (d.km || 0), 0);
 
   if (loading) {
     return (
@@ -250,7 +251,10 @@ export default function MyDeliveriesPage() {
 
       {done.length > 0 && (
         <>
-          <div className="text-xs text-gray-400 font-semibold mb-2 uppercase tracking-wide">Завершённые</div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Завершённые ({done.length})</div>
+            {doneKm > 0 && <div className="text-xs font-semibold text-emerald-600">🛣️ всего {doneKm} км</div>}
+          </div>
           <div className="flex flex-col gap-2 opacity-70">
             {done.map((d) => (
               <DeliveryCard key={d.id} d={d} busy={busyId === d.id} onSet={setStatus} />
@@ -287,6 +291,7 @@ function DeliveryCard({
           <div className="font-bold text-base mt-1">{d.client_name || 'Без названия'}</div>
           {d.address && <div className="text-sm text-gray-600 mt-0.5">📍 {d.address}</div>}
           {d.note && <div className="text-xs text-gray-400 mt-0.5">📝 {d.note}</div>}
+          {d.km > 0 && <div className="text-xs text-emerald-600 font-medium mt-0.5">🛣️ {d.km} км</div>}
           {d.address && (
             <div className="flex gap-2 mt-2">
               <a href={`https://yandex.ru/maps/?text=${encodeURIComponent(d.address)}`} target="_blank" rel="noopener noreferrer"
