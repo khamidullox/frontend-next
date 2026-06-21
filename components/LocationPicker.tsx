@@ -34,11 +34,45 @@ interface Props {
 // Кнопка "указать на карте" — раскрывает мини-карту, клик ставит/двигает метку.
 export default function LocationPicker({ lat, lng, onChange }: Props) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchErr, setSearchErr] = useState('');
   const mapDivRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const markerRef = useRef<any>(null);
+
+  function placeMarker(plat: number, plng: number) {
+    const L = getL();
+    if (!mapRef.current) return;
+    if (markerRef.current) markerRef.current.setLatLng([plat, plng]);
+    else markerRef.current = L.marker([plat, plng]).addTo(mapRef.current);
+    mapRef.current.setView([plat, plng], 16);
+    onChange(plat, plng);
+  }
+
+  async function handleSearch() {
+    if (!query.trim() || searching) return;
+    setSearching(true);
+    setSearchErr('');
+    try {
+      const q = encodeURIComponent(`${query.trim()}, Узбекистан`);
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`, {
+        headers: { 'Accept-Language': 'ru' },
+      });
+      const data = await res.json() as { lat: string; lon: string }[];
+      if (data.length > 0) {
+        placeMarker(parseFloat(data[0].lat), parseFloat(data[0].lon));
+      } else {
+        setSearchErr('Не найдено');
+      }
+    } catch {
+      setSearchErr('Ошибка поиска');
+    } finally {
+      setSearching(false);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -75,7 +109,28 @@ export default function LocationPicker({ lat, lng, onChange }: Props) {
         📍 {lat != null && lng != null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : 'Указать на карте'}
       </button>
       {open && (
-        <div ref={mapDivRef} className="rounded-lg mt-2 border-2 border-gray-200" style={{ height: 280 }} />
+        <>
+          <div className="flex gap-2 mt-2">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); setSearchErr(''); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSearch(); } }}
+              placeholder="🔍 Поиск по адресу / городу"
+              className="flex-1 px-3 py-1.5 border-2 border-gray-200 rounded-lg text-sm outline-none focus:border-blue-400"
+            />
+            <button
+              type="button"
+              onClick={handleSearch}
+              disabled={searching || !query.trim()}
+              className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-200 text-white text-sm font-semibold rounded-lg whitespace-nowrap"
+            >
+              {searching ? '⏳' : 'Найти'}
+            </button>
+          </div>
+          {searchErr && <p className="text-xs text-red-500 mt-1">{searchErr}</p>}
+          <div ref={mapDivRef} className="rounded-lg mt-2 border-2 border-gray-200" style={{ height: 280 }} />
+        </>
       )}
     </div>
   );
