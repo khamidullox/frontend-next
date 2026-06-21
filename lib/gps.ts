@@ -60,6 +60,15 @@ function parseGpsJson(text: string): GpsLocation[] {
     }));
 }
 
+function gpsHeaders(token: string): HeadersInit {
+  return {
+    'User-Agent': BASE_UA,
+    'Referer': `https://www.gps16888.com/user/indexp.aspx?mds=${token}`,
+    'Accept': 'text/javascript, application/javascript, */*; q=0.01',
+    'X-Requested-With': 'XMLHttpRequest',
+  };
+}
+
 // Тест: запрос конкретного user_id без сессии — проверяем работает ли mds+user_id
 export async function fetchGpsRawUid(userId: string): Promise<string> {
   const token = process.env.GPS_MDS_TOKEN;
@@ -68,7 +77,7 @@ export async function fetchGpsRawUid(userId: string): Promise<string> {
     const url = `https://www.gps16888.com/GetDataService.aspx?method=loadUser&mds=${token}&callback=loadedCallback&user_id=${userId}&_=${Date.now()}`;
     const res = await fetch(url, {
       cache: 'no-store',
-      headers: { 'User-Agent': BASE_UA },
+      headers: gpsHeaders(token),
     });
     return `status=${res.status} | ` + (await res.text());
   } catch (e) {
@@ -84,13 +93,7 @@ export async function fetchGpsRaw(): Promise<string> {
     const url = `https://www.gps16888.com/GetDataService.aspx?method=loadUser&mds=${token}&callback=loadedCallback&_=${Date.now()}`;
     const res = await fetch(url, {
       cache: 'no-store',
-      headers: {
-        'User-Agent': BASE_UA,
-        'Referer': `https://www.gps16888.com/user/indexp.aspx?mds=${token}`,
-        'Accept': 'text/javascript, application/javascript, */*; q=0.01',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Cookie': cookie,
-      },
+      headers: { ...gpsHeaders(token), 'Cookie': cookie },
     });
     return `cookie=${cookie} | status=${res.status} | ` + (await res.text());
   } catch (e) {
@@ -101,7 +104,7 @@ export async function fetchGpsRaw(): Promise<string> {
 async function fetchOneByUserId(token: string, userId: string): Promise<GpsLocation | null> {
   try {
     const url = `https://www.gps16888.com/GetDataService.aspx?method=loadUser&mds=${token}&callback=loadedCallback&user_id=${userId}&_=${Date.now()}`;
-    const res = await fetch(url, { cache: 'no-store', headers: { 'User-Agent': BASE_UA } });
+    const res = await fetch(url, { cache: 'no-store', headers: gpsHeaders(token) });
     if (!res.ok) return null;
     const locs = parseGpsJson(await res.text());
     return locs[0] ?? null;
