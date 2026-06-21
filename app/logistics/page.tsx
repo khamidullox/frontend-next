@@ -12,7 +12,6 @@ import {
   autoAssign, fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings,
   listRoutes, Route,
   listShops, Shop,
-  updateUser,
 } from '@/lib/api';
 import { useLivePoll } from '@/lib/useLivePoll';
 
@@ -58,12 +57,17 @@ function vehicleCategory(transport: string | null | undefined): string {
 }
 const DELIVERY_CATS = ['LABO', 'Газель'];
 
+const DEFAULT_CAP_SETTINGS: LogisticsSettings = {
+  fuel_rate_per_km: 0, cap_labo_kg: 600, cap_labo_m3: 3, cap_gazelle_kg: 1500, cap_gazelle_m3: 9,
+};
+
 // Дефолтная вместимость по типу транспорта (если у водителя не задана вручную).
+// Кг/м³ берутся из общих настроек (редактируются на этой странице для всех сразу).
 // pcs — ориентировочная вместимость в штуках (для фолбэка, когда нет веса/объёма).
-function defaultCapacity(transport: string | null | undefined): { kg: number; m3: number; pcs: number } {
+function defaultCapacity(transport: string | null | undefined, settings: LogisticsSettings): { kg: number; m3: number; pcs: number } {
   const cat = vehicleCategory(transport);
-  if (cat === 'Газель') return { kg: 1500, m3: 9, pcs: 200 };
-  if (cat === 'LABO') return { kg: 600, m3: 3, pcs: 80 };
+  if (cat === 'Газель') return { kg: settings.cap_gazelle_kg, m3: settings.cap_gazelle_m3, pcs: 200 };
+  if (cat === 'LABO') return { kg: settings.cap_labo_kg, m3: settings.cap_labo_m3, pcs: 80 };
   return { kg: 300, m3: 2, pcs: 50 };
 }
 
@@ -84,6 +88,8 @@ function LogisticsContent() {
   const [hideDone, setHideDone] = useState(true);
   const [fuelRate, setFuelRate] = useState(0);
   const [fuelInput, setFuelInput] = useState('');
+  const [capSettings, setCapSettings] = useState<LogisticsSettings>(DEFAULT_CAP_SETTINGS);
+  const [capInputs, setCapInputs] = useState({ labo_kg: '', labo_m3: '', gazelle_kg: '', gazelle_m3: '' });
   const [autoAssigning, setAutoAssigning] = useState(false);
   const [autoMsg, setAutoMsg] = useState('');
   const [driverSearch, setDriverSearch] = useState('');
@@ -138,6 +144,11 @@ function LogisticsContent() {
     fetchLogisticsSettings().then((s: LogisticsSettings) => {
       setFuelRate(s.fuel_rate_per_km);
       setFuelInput(s.fuel_rate_per_km > 0 ? String(s.fuel_rate_per_km) : '');
+      setCapSettings(s);
+      setCapInputs({
+        labo_kg: String(s.cap_labo_kg), labo_m3: String(s.cap_labo_m3),
+        gazelle_kg: String(s.cap_gazelle_kg), gazelle_m3: String(s.cap_gazelle_m3),
+      });
     }).catch(() => {});
   }, []);
 
@@ -145,6 +156,13 @@ function LogisticsContent() {
     const n = Math.max(0, Number(val) || 0);
     setFuelRate(n);
     await saveLogisticsSettings({ fuel_rate_per_km: n }).catch(() => {});
+  }
+
+  // Вместимость по типу транспорта — общая для всех водителей, меняется здесь сразу для всех.
+  async function saveCap(key: keyof LogisticsSettings, val: string) {
+    const n = Math.max(0, Number(val) || 0);
+    setCapSettings((prev) => ({ ...prev, [key]: n }));
+    await saveLogisticsSettings({ [key]: n }).catch(() => {});
   }
 
   async function doAutoAssign() {
@@ -197,12 +215,6 @@ function LogisticsContent() {
     } catch (err) {
       setError((err as Error).message);
     }
-  }, []);
-
-  // Ручное переопределение вместимости машины (кг/м³) — вместо авто-расчёта по типу транспорта.
-  const updateCapacity = useCallback((username: string, p: { capacity_kg?: number; capacity_m3?: number }) => {
-    setDrivers((prev) => prev.map((d) => (d.username === username ? { ...d, ...p } : d)));
-    updateUser(username, p).catch((err) => setError((err as Error).message));
   }, []);
 
   const remove = useCallback((id: string) => {
@@ -354,6 +366,37 @@ function LogisticsContent() {
           <span className="text-xs text-gray-400">сум/км</span>
         </div>
         {autoMsg && <span className="text-xs text-gray-500">{autoMsg}</span>}
+      </div>
+
+      {/* Вместимость по типам машин — общая для всех водителей этого типа */}
+      <div className="bg-white rounded-xl shadow-sm p-3 mb-3 flex flex-wrap items-center gap-4">
+        <span className="text-xs text-gray-500 whitespace-nowrap">📦 Вместимость по умолчанию:</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-semibold text-gray-600">LABO</span>
+          <input type="number" min={0} step={1} value={capInputs.labo_kg}
+            onChange={(e) => setCapInputs((p) => ({ ...p, labo_kg: e.target.value }))}
+            onBlur={(e) => saveCap('cap_labo_kg', e.target.value)}
+            className="w-16 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
+          <span className="text-[11px] text-gray-400">кг</span>
+          <input type="number" min={0} step={0.1} value={capInputs.labo_m3}
+            onChange={(e) => setCapInputs((p) => ({ ...p, labo_m3: e.target.value }))}
+            onBlur={(e) => saveCap('cap_labo_m3', e.target.value)}
+            className="w-14 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
+          <span className="text-[11px] text-gray-400">м³</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-semibold text-gray-600">Газель</span>
+          <input type="number" min={0} step={1} value={capInputs.gazelle_kg}
+            onChange={(e) => setCapInputs((p) => ({ ...p, gazelle_kg: e.target.value }))}
+            onBlur={(e) => saveCap('cap_gazelle_kg', e.target.value)}
+            className="w-16 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
+          <span className="text-[11px] text-gray-400">кг</span>
+          <input type="number" min={0} step={0.1} value={capInputs.gazelle_m3}
+            onChange={(e) => setCapInputs((p) => ({ ...p, gazelle_m3: e.target.value }))}
+            onBlur={(e) => saveCap('cap_gazelle_m3', e.target.value)}
+            className="w-14 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
+          <span className="text-[11px] text-gray-400">м³</span>
+        </div>
       </div>
 
       {/* Заявки магазинов — быстрое создание доставки В магазин из справочника */}
@@ -614,7 +657,7 @@ function LogisticsContent() {
                   onPatch={patch}
                   onRemove={remove}
                   onAssign={() => setAssignTo(dr)}
-                  onCapacityChange={updateCapacity}
+                  capSettings={capSettings}
                 />
               ))}
             </div>
@@ -644,7 +687,7 @@ function LogisticsContent() {
 
 // ─── Карточка водителя ──────────────────────────────────────────────────────
 function DriverCard({
-  driver, deliveries, allDrivers, hideDone, fuelRate, activeRoute, onPatch, onRemove, onAssign, onCapacityChange,
+  driver, deliveries, allDrivers, hideDone, fuelRate, activeRoute, onPatch, onRemove, onAssign, capSettings,
 }: {
   driver: UserInfo;
   deliveries: Delivery[];
@@ -655,7 +698,7 @@ function DriverCard({
   onPatch: (id: string, p: Parameters<typeof updateDelivery>[1]) => void;
   onRemove: (id: string) => void;
   onAssign: () => void;
-  onCapacityChange: (username: string, p: { capacity_kg?: number; capacity_m3?: number }) => void;
+  capSettings: LogisticsSettings;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -678,8 +721,8 @@ function DriverCard({
   const totalQty = activeDeliveries.reduce((s, d) => s + (d.total_qty || 0), 0);
   const totalKm = activeDeliveries.reduce((s, d) => s + (d.km || 0), 0);
   const fuelCost = totalKm > 0 && fuelRate > 0 ? totalKm * 2 * fuelRate : 0;
-  // Вместимость: своя, иначе дефолт по типу машины.
-  const defCap = defaultCapacity(driver.transport);
+  // Вместимость: своя (если задана в «Пользователи»), иначе общий дефолт по типу машины.
+  const defCap = defaultCapacity(driver.transport, capSettings);
   const capKg = driver.capacity_kg > 0 ? driver.capacity_kg : defCap.kg;
   const capM3 = driver.capacity_m3 > 0 ? driver.capacity_m3 : defCap.m3;
   const loadPctKg = capKg > 0 ? Math.min(100, (totalWeightKg / capKg) * 100) : 0;
@@ -767,26 +810,17 @@ function DriverCard({
               className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold rounded-lg">
               + Назначить накладную / заказ
             </button>
-            <div className="flex items-center gap-1.5 text-[11px] text-gray-400 ml-auto">
-              <span>Вместимость:</span>
-              <input type="number" min={0} step={1} defaultValue={driver.capacity_kg || ''}
-                placeholder={`${defCap.kg} (авто)`}
-                onBlur={(e) => onCapacityChange(driver.username, { capacity_kg: Math.max(0, Number(e.target.value) || 0) })}
-                className="w-20 border border-gray-200 rounded px-1.5 py-1 text-right outline-none focus:border-blue-300" />
-              <span>кг</span>
-              <input type="number" min={0} step={0.1} defaultValue={driver.capacity_m3 || ''}
-                placeholder={`${defCap.m3} (авто)`}
-                onBlur={(e) => onCapacityChange(driver.username, { capacity_m3: Math.max(0, Number(e.target.value) || 0) })}
-                className="w-16 border border-gray-200 rounded px-1.5 py-1 text-right outline-none focus:border-blue-300" />
-              <span>м³</span>
-            </div>
+            <span className="text-[11px] text-gray-400 ml-auto">
+              Вместимость: {capKg} кг · {capM3} м³
+              {driver.capacity_kg > 0 || driver.capacity_m3 > 0 ? ' (своя, из карточки пользователя)' : ` (по умолчанию для ${vehicleCategory(driver.transport)})`}
+            </span>
           </div>
           {shown.length === 0 ? (
             <div className="text-xs text-gray-400 py-1">Нет {hideDone ? 'активных ' : ''}доставок</div>
           ) : (
             <div className="flex flex-col gap-2">
               {shown.map((d) => (
-                <DeliveryRow key={d.id} d={d} drivers={allDrivers} onPatch={onPatch} onRemove={onRemove} compact />
+                <DeliveryRow key={d.id} d={d} drivers={allDrivers} onPatch={onPatch} onRemove={onRemove} compact capSettings={capSettings} />
               ))}
             </div>
           )}
@@ -801,7 +835,7 @@ function DriverCard({
               {showDone && (
                 <div className="flex flex-col gap-2 mt-2 opacity-80">
                   {doneDeliveries.map((d) => (
-                    <DeliveryRow key={d.id} d={d} drivers={allDrivers} onPatch={onPatch} onRemove={onRemove} compact />
+                    <DeliveryRow key={d.id} d={d} drivers={allDrivers} onPatch={onPatch} onRemove={onRemove} compact capSettings={capSettings} />
                   ))}
                 </div>
               )}
@@ -815,13 +849,14 @@ function DriverCard({
 
 // ─── Строка доставки ──────────────────────────────────────────────────────────
 function DeliveryRow({
-  d, drivers, onPatch, onRemove, compact,
+  d, drivers, onPatch, onRemove, compact, capSettings,
 }: {
   d: Delivery;
   drivers: UserInfo[];
   onPatch: (id: string, p: Parameters<typeof updateDelivery>[1]) => void;
   onRemove: (id: string) => void;
   compact?: boolean;
+  capSettings?: LogisticsSettings;
 }) {
   const [editAddr, setEditAddr] = useState(false);
   const [addr, setAddr] = useState(d.address);
@@ -829,7 +864,9 @@ function DeliveryRow({
   const [manualKg, setManualKg] = useState('');
 
   const assignedDriver = drivers.find((dr) => dr.username === d.driver_username);
-  const capKg = assignedDriver?.capacity_kg || 0;
+  const capKg = assignedDriver
+    ? (assignedDriver.capacity_kg > 0 ? assignedDriver.capacity_kg : defaultCapacity(assignedDriver.transport, capSettings || DEFAULT_CAP_SETTINGS).kg)
+    : 0;
   const loadKg = d.total_weight > 0 ? d.total_weight : (Number(manualKg) || 0);
   const loadPct = capKg > 0 && loadKg > 0 ? Math.min(100, Math.round((loadKg / capKg) * 100)) : null;
   const loadColor = loadPct === null ? '' : loadPct > 90 ? 'bg-red-500' : loadPct > 70 ? 'bg-amber-400' : 'bg-green-500';
@@ -906,6 +943,7 @@ function DeliveryRow({
             <span className="text-[10px] text-gray-400">груз кг:</span>
             <input type="number" min={0} value={manualKg}
               onChange={(e) => setManualKg(e.target.value)}
+              onBlur={() => { if (Number(manualKg) > 0) onPatch(d.id, { total_weight: Number(manualKg) }); }}
               placeholder="—"
               className="w-16 border border-gray-100 rounded px-1.5 py-0.5 text-[11px] text-right outline-none focus:border-blue-300"
             />

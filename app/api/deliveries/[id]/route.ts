@@ -58,13 +58,14 @@ export async function PATCH(
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
   }
   if (body.client_name !== undefined || body.address !== undefined || body.note !== undefined ||
-      body.direction !== undefined || body.km !== undefined) {
+      body.direction !== undefined || body.km !== undefined || body.total_weight !== undefined) {
     const res = await updateDeliveryFields(id, {
       client_name: body.client_name,
       address: body.address,
       note: body.note,
       direction: body.direction,
       km: body.km,
+      total_weight: body.total_weight,
     });
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
   }

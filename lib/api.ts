@@ -580,7 +580,7 @@ export async function createDelivery(input: {
 
 export async function updateDelivery(
   id: string,
-  patch: { status?: DeliveryStatus; driver_username?: string | null; client_name?: string; address?: string; note?: string; direction?: string; km?: number }
+  patch: { status?: DeliveryStatus; driver_username?: string | null; client_name?: string; address?: string; note?: string; direction?: string; km?: number; total_weight?: number }
 ): Promise<Delivery> {
   const res = await fetch(`/api/deliveries/${encodeURIComponent(id)}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -605,12 +605,26 @@ export async function autoAssign(): Promise<{ assigned: number; skipped: number 
   return data.data as { assigned: number; skipped: number };
 }
 
-export interface LogisticsSettings { fuel_rate_per_km: number; }
+export interface LogisticsSettings {
+  fuel_rate_per_km: number;
+  cap_labo_kg: number;
+  cap_labo_m3: number;
+  cap_gazelle_kg: number;
+  cap_gazelle_m3: number;
+}
+
+const DEFAULT_LOGISTICS_SETTINGS: LogisticsSettings = {
+  fuel_rate_per_km: 0,
+  cap_labo_kg: 600,
+  cap_labo_m3: 3,
+  cap_gazelle_kg: 1500,
+  cap_gazelle_m3: 9,
+};
 
 export async function fetchLogisticsSettings(): Promise<LogisticsSettings> {
   const res = await fetch('/api/logistics/settings', { cache: 'no-store' });
   const data = await res.json().catch(() => ({}));
-  return (data.data as LogisticsSettings) || { fuel_rate_per_km: 0 };
+  return { ...DEFAULT_LOGISTICS_SETTINGS, ...(data.data as Partial<LogisticsSettings>) };
 }
 
 export async function saveLogisticsSettings(s: Partial<LogisticsSettings>): Promise<void> {

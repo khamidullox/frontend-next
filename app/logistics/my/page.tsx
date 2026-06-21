@@ -177,6 +177,10 @@ export default function MyDeliveriesPage() {
   const done = items.filter((d) => d.status === 'delivered' || d.status === 'returned');
   const doneKm = done.reduce((s, d) => s + (d.km || 0), 0);
 
+  // Сколько всего «взял с собой» в этот выезд — уменьшается по мере доставки по частям.
+  const activeWeight = active.reduce((s, d) => s + (d.total_weight || 0), 0);
+  const activeVolL = active.reduce((s, d) => s + (d.total_volume_l || 0), 0);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh] gap-3 text-gray-500">
@@ -208,6 +212,13 @@ export default function MyDeliveriesPage() {
                 <div className="text-xs text-gray-400 mt-0.5">
                   {routeDeliveries.length} доставок{routeKm > 0 ? ` · 🛣️ ${routeKm * 2} км` : ''}
                 </div>
+                {(activeWeight > 0 || activeVolL > 0) && (
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    🚐 Осталось развезти: {activeWeight > 0 && `${Math.round(activeWeight)} кг`}
+                    {activeWeight > 0 && activeVolL > 0 && ' · '}
+                    {activeVolL > 0 && `${(activeVolL / 1000).toFixed(1)} м³`}
+                  </div>
+                )}
               </div>
               <button onClick={handleFinishRoute} disabled={routeBusy}
                 className="px-3 py-2 bg-red-500 hover:bg-red-600 disabled:bg-gray-200 text-white text-xs font-semibold rounded-lg whitespace-nowrap">
@@ -227,10 +238,19 @@ export default function MyDeliveriesPage() {
           </>
         ) : (
           <div className="flex items-center justify-between gap-2">
-            <div className="text-sm text-gray-500">
-              {unassignedToRoute.length > 0
-                ? `Готовы к выезду: ${unassignedToRoute.length} доставок`
-                : 'Нет назначенных доставок для выезда'}
+            <div>
+              <div className="text-sm text-gray-500">
+                {unassignedToRoute.length > 0
+                  ? `Готовы к выезду: ${unassignedToRoute.length} доставок`
+                  : 'Нет назначенных доставок для выезда'}
+              </div>
+              {(activeWeight > 0 || activeVolL > 0) && (
+                <div className="text-xs text-gray-400 mt-0.5">
+                  🚐 Всего к загрузке: {activeWeight > 0 && `${Math.round(activeWeight)} кг`}
+                  {activeWeight > 0 && activeVolL > 0 && ' · '}
+                  {activeVolL > 0 && `${(activeVolL / 1000).toFixed(1)} м³`}
+                </div>
+              )}
             </div>
             <button onClick={handleStartRoute} disabled={routeBusy}
               className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-200 text-white text-xs font-semibold rounded-lg whitespace-nowrap">

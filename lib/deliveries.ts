@@ -436,7 +436,7 @@ export async function setDeliveryStatus(
 // Правка текстовых полей (адрес/клиент/примечание) — для менеджера.
 export async function updateDeliveryFields(
   id: string,
-  fields: { client_name?: string; address?: string; note?: string; direction?: string; km?: number }
+  fields: { client_name?: string; address?: string; note?: string; direction?: string; km?: number; total_weight?: number }
 ): Promise<{ delivery: Delivery } | { error: string }> {
   const db = getDb();
   const ref = db.collection(COLLECTION).doc(str(id));
@@ -449,6 +449,7 @@ export async function updateDeliveryFields(
   if (fields.note !== undefined) delivery.note = str(fields.note);
   if (fields.direction !== undefined) delivery.direction = str(fields.direction);
   if (fields.km !== undefined) delivery.km = Math.max(0, Number(fields.km) || 0);
+  if (fields.total_weight !== undefined) delivery.total_weight = Math.max(0, Number(fields.total_weight) || 0);
   delivery.updated_at = new Date().toISOString();
   await ref.set(delivery);
   return { delivery };
