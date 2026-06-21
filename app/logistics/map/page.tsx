@@ -71,7 +71,7 @@ function MapContent() {
   const boundsSetRef = useRef(false);
   const routeLayersRef = useRef<unknown[]>([]);
   const geocodeMapRef = useRef<Record<string, [number, number]>>({});
-  const [mapStyle, setMapStyle] = useState<'osm' | 'yandex' | 'satellite'>('yandex');
+  const [mapStyle, setMapStyle] = useState<'osm' | 'yandex' | 'satellite'>('osm');
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
   const [shops, setShops] = useState<Shop[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
