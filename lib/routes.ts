@@ -1,9 +1,53 @@
 import crypto from 'crypto';
 import { getDb } from './firebase';
 import { getUserRaw } from './users';
-import { Delivery, listDeliveriesForDriver, getDeliveriesByIds, attachDeliveriesToRoute } from './deliveries';
+import { Delivery, listDeliveriesForDriver, getDeliveriesByIds, attachDeliveriesToRoute, updateDeliveryFields } from './deliveries';
+import { listShops, Shop } from './shops';
 
 const COLLECTION = 'routes';
+
+// Расстояние между двумя точками (км) по формуле гаверсинусов.
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Имя точки без хвостового номера телефона (для сопоставления с справочником).
+function normPointName(s: string): string {
+  return String(s || '').replace(/\s*\d{6,}\s*$/, '').trim().toLowerCase();
+}
+
+function shopCoordsByName(name: string | null, shops: Shop[]): [number, number] | null {
+  if (!name) return null;
+  const n = normPointName(name);
+  if (!n) return null;
+  const sh = shops.find((s) => normPointName(s.name) === n)
+    || shops.find((s) => normPointName(s.name).includes(n) || n.includes(normPointName(s.name)));
+  return sh && sh.lat && sh.lng ? [sh.lat, sh.lng] : null;
+}
+
+// Км доставки по координатам: откуда (склад/магазин-источник) → куда (точка/адрес).
+function computeDeliveryKm(d: Delivery, shops: Shop[]): number | null {
+  // Назначение: ручная точка на карте → shop_id → to_name.
+  let dest: [number, number] | null = (d.lat != null && d.lng != null) ? [d.lat, d.lng] : null;
+  if (!dest && d.shop_id) {
+    const sh = shops.find((s) => s.id === d.shop_id);
+    if (sh?.lat && sh?.lng) dest = [sh.lat, sh.lng];
+  }
+  if (!dest) dest = shopCoordsByName(d.to_name, shops);
+  // Источник: from_name (склад) → магазин (для заявок магазинов).
+  let src = shopCoordsByName(d.from_name, shops);
+  if (!src && d.shop_id) {
+    const sh = shops.find((s) => s.id === d.shop_id);
+    if (sh?.lat && sh?.lng) src = [sh.lat, sh.lng];
+  }
+  if (!src || !dest) return null;
+  return Math.round(haversineKm(src[0], src[1], dest[0], dest[1]));
+}
 
 export type RouteStatus = 'active' | 'finished';
 
@@ -140,7 +184,22 @@ export async function finishRoute(
   if (route.status === 'finished') return { route };
 
   const deliveries: Delivery[] = await getDeliveriesByIds(route.delivery_ids);
-  const totalKm = deliveries.reduce((s, d) => s + (d.km || 0), 0);
+
+  // Если у доставки км не заполнен — считаем по координатам точек и сохраняем.
+  let shops: Shop[] | null = null;
+  let totalKm = 0;
+  for (const d of deliveries) {
+    let km = d.km || 0;
+    if (km <= 0) {
+      if (!shops) shops = await listShops();
+      const computed = computeDeliveryKm(d, shops);
+      if (computed && computed > 0) {
+        km = computed;
+        await updateDeliveryFields(d.id, { km }).catch(() => {});
+      }
+    }
+    totalKm += km;
+  }
 
   const now = new Date().toISOString();
   route.status = 'finished';
