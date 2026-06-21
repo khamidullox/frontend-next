@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
-import { listRoutes, listDrivers, getRoute, Route, RouteWithDeliveries, UserInfo, Delivery, DeliveryStatus } from '@/lib/api';
+import { listRoutes, listDrivers, getRoute, deleteRouteApi, Route, RouteWithDeliveries, UserInfo, Delivery, DeliveryStatus } from '@/lib/api';
 
 function fmt(iso?: string | null) {
   if (!iso) return '—';
@@ -123,6 +123,26 @@ function ReportsContent() {
     }
   }
 
+  // Пустые маршруты (без привязанных доставок) — кандидаты на удаление.
+  const emptyRoutes = useMemo(() => routes.filter(r => (r.delivery_ids?.length || 0) === 0), [routes]);
+
+  async function removeRoute(id: string) {
+    try {
+      await deleteRouteApi(id);
+      setRoutes(prev => prev.filter(r => r.id !== id));
+    } catch (e) { setError((e as Error).message); }
+  }
+
+  async function removeEmpty() {
+    if (emptyRoutes.length === 0) return;
+    if (!confirm(`Удалить ${emptyRoutes.length} пустых маршрутов (без доставок)?`)) return;
+    const ids = emptyRoutes.map(r => r.id);
+    for (const id of ids) {
+      await deleteRouteApi(id).catch(() => {});
+    }
+    setRoutes(prev => prev.filter(r => !ids.includes(r.id)));
+  }
+
   const periodLabel = quick === 'today' ? 'сегодня' : quick === 'week' ? 'за 7 дней' : quick === 'month' ? 'за 30 дней' : 'за всё время';
 
   return (
@@ -130,7 +150,13 @@ function ReportsContent() {
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <Link href="/logistics" className="text-sm text-gray-500 hover:text-gray-700">← Логистика</Link>
         <h2 className="text-xl font-bold ml-1">📊 Отчёты по водителям</h2>
-        <span className="text-sm text-gray-400 ml-auto">{driverStats.filter(d => d.routes > 0).length} активных · {periodLabel}</span>
+        {emptyRoutes.length > 0 && (
+          <button onClick={removeEmpty}
+            className="ml-auto px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold rounded-lg whitespace-nowrap">
+            🗑 Удалить пустые ({emptyRoutes.length})
+          </button>
+        )}
+        <span className={`text-sm text-gray-400 ${emptyRoutes.length > 0 ? '' : 'ml-auto'}`}>{driverStats.filter(d => d.routes > 0).length} активных · {periodLabel}</span>
       </div>
 
       {/* Быстрые периоды + диапазон дат */}
@@ -214,8 +240,9 @@ function ReportsContent() {
                           const dur = duration(r.started_at, r.finished_at);
                           return (
                             <div key={r.id}>
+                              <div className="flex items-stretch">
                               <button onClick={() => toggleRoute(r.id)}
-                                className="w-full text-left px-4 py-2.5 flex items-start gap-3 hover:bg-white transition-colors">
+                                className="flex-1 text-left px-4 py-2.5 flex items-start gap-3 hover:bg-white transition-colors min-w-0">
                                 <div className="flex-1 min-w-0">
                                   <div className="flex flex-wrap gap-2 items-center">
                                     <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${r.status === 'finished' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -235,6 +262,9 @@ function ReportsContent() {
                                   {loadingRoute === r.id ? '⏳' : routeDetail[r.id] !== undefined ? '▲' : '▼'}
                                 </span>
                               </button>
+                              <button onClick={() => removeRoute(r.id)} title="Удалить маршрут"
+                                className="px-3 text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors">🗑</button>
+                              </div>
                               {routeDetail[r.id] !== undefined && (
                                 <div className="px-4 pb-2">
                                   {detail === null ? (

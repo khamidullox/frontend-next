@@ -721,6 +721,12 @@ export async function getRoute(id: string): Promise<RouteWithDeliveries> {
   return data.data as RouteWithDeliveries;
 }
 
+export async function deleteRouteApi(id: string): Promise<void> {
+  const res = await fetch(`/api/logistics/routes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка удаления маршрута');
+}
+
 export async function startRoute(driver_username?: string): Promise<Route> {
   const res = await fetch('/api/logistics/routes', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

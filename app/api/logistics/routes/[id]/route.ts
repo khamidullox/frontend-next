@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getSession, ROLE_RANK, Session } from '@/lib/auth';
-import { getRoute, addDeliveriesToRoute, finishRoute, Route } from '@/lib/routes';
+import { getRoute, addDeliveriesToRoute, finishRoute, deleteRoute, Route } from '@/lib/routes';
 import { getDeliveriesByIds, listDeliveriesForDriver, Delivery } from '@/lib/deliveries';
 
 // Доставки маршрута: по привязке (delivery_ids), а если их нет (старые маршруты
@@ -58,4 +58,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!updated) return Response.json({ error: 'Маршрут не найден' }, { status: 404 });
   const deliveries = await routeDeliveries(updated);
   return Response.json({ data: { ...updated, deliveries } });
+}
+
+// Удаление маршрута (менеджер+).
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const auth = await authorize(id);
+  if ('error' in auth) return auth.error;
+  if (ROLE_RANK[auth.session.role] < ROLE_RANK['manager']) {
+    return Response.json({ error: 'Недостаточно прав' }, { status: 403 });
+  }
+  const res = await deleteRoute(id);
+  if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
+  return Response.json({ ok: true });
 }

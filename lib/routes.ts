@@ -108,6 +108,22 @@ export async function createRoute(
   return { route };
 }
 
+// Удалить маршрут (отвязав от него доставки). Используется для чистки пустых
+// тестовых заходов в отчёте.
+export async function deleteRoute(id: string): Promise<{ ok: true } | { error: string }> {
+  const db = getDb();
+  const ref = db.collection(COLLECTION).doc(str(id));
+  const snap = await ref.get();
+  if (!snap.exists) return { error: 'Маршрут не найден' };
+  const route = snap.data() as Route;
+  // Отвязываем доставки (если были привязаны), чтобы они не висели с битым route_id.
+  for (const did of route.delivery_ids || []) {
+    await db.collection('deliveries').doc(str(did)).set({ route_id: null }, { merge: true }).catch(() => {});
+  }
+  await ref.delete();
+  return { ok: true };
+}
+
 // Присоединить доставки к уже идущему маршруту (например логист назначил
 // заявку магазина водителю, который уже в пути).
 export async function addDeliveriesToRoute(
