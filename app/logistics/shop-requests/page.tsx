@@ -8,6 +8,7 @@ import {
   Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL, UserInfo, Route, Shop,
 } from '@/lib/api';
 import LocationPicker from '@/components/LocationPicker';
+import MiniMap, { MapPoint } from '@/components/MiniMap';
 
 function statusClass(s: DeliveryStatus): string {
   switch (s) {
@@ -119,6 +120,25 @@ function ShopRequestsContent() {
   const pending = items.filter((d) => !['delivered', 'returned'].includes(d.status));
   const done = items.filter((d) => ['delivered', 'returned'].includes(d.status));
 
+  // Точки на карте: заявки (куда доставлять) — оранжевым, магазины-точки — синим.
+  const mapPoints = useMemo<MapPoint[]>(() => {
+    const pts: MapPoint[] = [];
+    for (const d of pending) {
+      if (typeof d.lat === 'number' && typeof d.lng === 'number') {
+        pts.push({
+          lat: d.lat, lng: d.lng, color: '#f97316',
+          label: `🚚 ${d.client_name || 'Заявка'}${d.address ? '<br/>📍 ' + d.address : ''}`,
+        });
+      }
+    }
+    for (const s of shops) {
+      if (typeof s.lat === 'number' && typeof s.lng === 'number') {
+        pts.push({ lat: s.lat, lng: s.lng, color: '#2563eb', label: `🏪 ${s.name}` });
+      }
+    }
+    return pts;
+  }, [pending, shops]);
+
   return (
     <div>
       <LogisticsTabs />
@@ -189,6 +209,22 @@ function ShopRequestsContent() {
       )}
 
       {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+
+      {/* Карта: куда доставлять (точки доставки + адреса заявок) */}
+      <div className="bg-white rounded-xl shadow-sm p-3 mb-4">
+        <div className="flex items-center gap-3 mb-2 text-xs text-gray-500 flex-wrap">
+          <span className="font-semibold text-gray-700">🗺️ Карта доставки</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#f97316' }} /> заявки</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#2563eb' }} /> точки доставки</span>
+        </div>
+        {mapPoints.length > 0 ? (
+          <MiniMap points={mapPoints} height={300} />
+        ) : (
+          <div className="text-xs text-gray-400 py-6 text-center">
+            Нет координат. Укажите точку на карте при создании заявки или в справочнике точек доставки.
+          </div>
+        )}
+      </div>
 
       {loading ? (
         <div className="text-gray-500 text-sm">Загрузка…</div>
