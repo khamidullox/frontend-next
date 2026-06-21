@@ -76,7 +76,7 @@ export default function MyDeliveriesPage() {
 
   // Автообновление: синхронизируем список доставок каждые 30 секунд.
   useEffect(() => {
-    const id = setInterval(() => { load(); loadRoute(); }, 30_000);
+    const id = setInterval(() => { load(); loadRoute(); }, 90_000);
     return () => clearInterval(id);
   }, [load, loadRoute]);
 

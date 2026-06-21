@@ -116,7 +116,7 @@ function LogisticsContent() {
 
   // Автообновление каждые 30 секунд: видны изменения статусов от водителей.
   useEffect(() => {
-    const id = setInterval(load, 30_000);
+    const id = setInterval(load, 90_000);
     return () => clearInterval(id);
   }, [load]);
 
