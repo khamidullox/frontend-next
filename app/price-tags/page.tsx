@@ -250,15 +250,23 @@ export default function PriceTagsPage() {
     let el = document.getElementById(id) as HTMLStyleElement | null;
     if (!el) { el = document.createElement('style'); el.id = id; document.head.appendChild(el); }
     el.textContent = tab === 'tags'
-      ? `@page { size: A4 portrait; margin: 5mm 2mm; }
-         @media print {
-           .tag-print-wrap { display: block !important; }
-           .tag { page-break-inside: avoid; break-inside: avoid; margin: 0 auto 1mm auto !important; }
-           .tag:last-child { margin-bottom: 0 !important; }
-           ${tagsPerPage === '2'
-             ? '.tag:nth-child(2n) { page-break-after: always; break-after: page; margin-bottom: 0 !important; }'
-             : '.tag { page-break-after: always; break-after: page; }'}
-         }`
+      ? tagsPerPage === '1'
+        // Лейбл: 1 ценник на альбомный (landscape) лист, увеличен зумом почти на всю страницу.
+        ? `@page { size: A4 landscape; margin: 5mm; }
+           @media print {
+             .tag-print-wrap { display: block !important; }
+             .tag { page-break-inside: avoid; break-inside: avoid; zoom: 1.4; margin: 0 auto !important;
+                    page-break-after: always; break-after: page; }
+             .tag:last-child { page-break-after: auto; }
+           }`
+        // 2 ценника на портретный лист (по умолчанию).
+        : `@page { size: A4 portrait; margin: 5mm 2mm; }
+           @media print {
+             .tag-print-wrap { display: block !important; }
+             .tag { page-break-inside: avoid; break-inside: avoid; margin: 0 auto 1mm auto !important; }
+             .tag:last-child { margin-bottom: 0 !important; }
+             .tag:nth-child(2n) { page-break-after: always; break-after: page; margin-bottom: 0 !important; }
+           }`
       : `@page { size: ${bcLabel.w} ${bcLabel.h}; margin: 0; }
          @media print {
            html, body { margin: 0 !important; padding: 0 !important; }
