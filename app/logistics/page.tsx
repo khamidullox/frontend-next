@@ -56,6 +56,15 @@ function vehicleCategory(transport: string | null | undefined): string {
 }
 const DELIVERY_CATS = ['LABO', 'Газель'];
 
+// Дефолтная вместимость по типу транспорта (если у водителя не задана вручную).
+// pcs — ориентировочная вместимость в штуках (для фолбэка, когда нет веса/объёма).
+function defaultCapacity(transport: string | null | undefined): { kg: number; m3: number; pcs: number } {
+  const cat = vehicleCategory(transport);
+  if (cat === 'Газель') return { kg: 1500, m3: 9, pcs: 200 };
+  if (cat === 'LABO') return { kg: 600, m3: 3, pcs: 80 };
+  return { kg: 300, m3: 2, pcs: 50 };
+}
+
 export default function LogisticsPage() {
   return (
     <AdminGate min="manager">
@@ -658,10 +667,18 @@ function DriverCard({
   const activeDeliveries = deliveries.filter((d) => !isDone(d.status));
   const totalWeightKg = activeDeliveries.reduce((s, d) => s + (d.total_weight || 0), 0);
   const totalVolL = activeDeliveries.reduce((s, d) => s + (d.total_volume_l || 0), 0);
+  const totalQty = activeDeliveries.reduce((s, d) => s + (d.total_qty || 0), 0);
   const totalKm = activeDeliveries.reduce((s, d) => s + (d.km || 0), 0);
   const fuelCost = totalKm > 0 && fuelRate > 0 ? totalKm * 2 * fuelRate : 0;
-  const loadPctKg = driver.capacity_kg > 0 ? Math.min(100, (totalWeightKg / driver.capacity_kg) * 100) : 0;
-  const loadPctM3 = driver.capacity_m3 > 0 ? Math.min(100, (totalVolL / (driver.capacity_m3 * 1000)) * 100) : 0;
+  // Вместимость: своя, иначе дефолт по типу машины.
+  const defCap = defaultCapacity(driver.transport);
+  const capKg = driver.capacity_kg > 0 ? driver.capacity_kg : defCap.kg;
+  const capM3 = driver.capacity_m3 > 0 ? driver.capacity_m3 : defCap.m3;
+  const loadPctKg = capKg > 0 ? Math.min(100, (totalWeightKg / capKg) * 100) : 0;
+  const loadPctM3 = capM3 > 0 ? Math.min(100, (totalVolL / (capM3 * 1000)) * 100) : 0;
+  // Если у товаров нет веса/объёма — показываем загрузку по штукам.
+  const noWeightVol = totalWeightKg === 0 && totalVolL === 0;
+  const loadPctPcs = defCap.pcs > 0 ? Math.min(100, (totalQty / defCap.pcs) * 100) : 0;
 
   return (
     <div className="bg-white rounded-xl shadow-sm">
@@ -683,12 +700,12 @@ function DriverCard({
             {totalKm > 0 && <span>🛣️ {totalKm * 2} км</span>}
             {fuelCost > 0 && <span className="text-emerald-600">⛽ {fuelCost.toLocaleString('ru-RU')} сум</span>}
           </div>
-          {/* Загрузка машины */}
-          {(loadPctKg > 0 || loadPctM3 > 0) && (
+          {/* Загрузка машины. Если есть вес/объём — по ним; иначе по штукам. */}
+          {(totalWeightKg > 0 || totalVolL > 0 || totalQty > 0) && (
             <div className="mt-1 flex flex-col gap-0.5">
-              {driver.capacity_kg > 0 && (
+              {totalWeightKg > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-gray-400 w-16 shrink-0">⚖️ {Math.round(totalWeightKg)}/{driver.capacity_kg} кг</span>
+                  <span className="text-[10px] text-gray-400 w-20 shrink-0">⚖️ {Math.round(totalWeightKg)}/{capKg} кг</span>
                   <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                     <div className={`h-full rounded-full transition-all ${loadPctKg > 90 ? 'bg-red-500' : loadPctKg > 70 ? 'bg-amber-400' : 'bg-green-400'}`}
                       style={{ width: `${loadPctKg}%` }} />
@@ -696,14 +713,24 @@ function DriverCard({
                   <span className="text-[10px] text-gray-400 w-8 text-right">{Math.round(loadPctKg)}%</span>
                 </div>
               )}
-              {driver.capacity_m3 > 0 && (
+              {totalVolL > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-gray-400 w-16 shrink-0">📦 {(totalVolL / 1000).toFixed(1)}/{driver.capacity_m3} м³</span>
+                  <span className="text-[10px] text-gray-400 w-20 shrink-0">📦 {(totalVolL / 1000).toFixed(1)}/{capM3} м³</span>
                   <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                     <div className={`h-full rounded-full transition-all ${loadPctM3 > 90 ? 'bg-red-500' : loadPctM3 > 70 ? 'bg-amber-400' : 'bg-blue-400'}`}
                       style={{ width: `${loadPctM3}%` }} />
                   </div>
                   <span className="text-[10px] text-gray-400 w-8 text-right">{Math.round(loadPctM3)}%</span>
+                </div>
+              )}
+              {noWeightVol && totalQty > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-gray-400 w-20 shrink-0">🧺 {totalQty}/{defCap.pcs} шт</span>
+                  <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${loadPctPcs > 90 ? 'bg-red-500' : loadPctPcs > 70 ? 'bg-amber-400' : 'bg-indigo-400'}`}
+                      style={{ width: `${loadPctPcs}%` }} />
+                  </div>
+                  <span className="text-[10px] text-gray-400 w-8 text-right">{Math.round(loadPctPcs)}%</span>
                 </div>
               )}
             </div>

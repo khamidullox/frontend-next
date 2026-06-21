@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
-import { listRoutes, listDrivers, getRoute, deleteRouteApi, Route, RouteWithDeliveries, UserInfo, Delivery, DeliveryStatus } from '@/lib/api';
+import { listRoutes, listDrivers, listDeliveries, deleteRouteApi, Route, UserInfo, Delivery, DeliveryStatus } from '@/lib/api';
 
 function fmt(iso?: string | null) {
   if (!iso) return '—';
@@ -11,19 +11,6 @@ function fmt(iso?: string | null) {
     day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit',
   });
 }
-function fmtDate(iso?: string | null) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
-}
-function duration(start?: string | null, end?: string | null) {
-  if (!start || !end) return null;
-  const ms = new Date(end).getTime() - new Date(start).getTime();
-  if (ms <= 0) return null;
-  const h = Math.floor(ms / 3_600_000);
-  const m = Math.floor((ms % 3_600_000) / 60_000);
-  return h > 0 ? `${h}ч ${m}м` : `${m}м`;
-}
-
 const STATUS_LABEL: Record<DeliveryStatus, string> = {
   new: 'Новая', assigned: 'Назначено', on_way: 'В пути', delivered: 'Доставлено', returned: 'Возврат',
 };
@@ -45,8 +32,15 @@ export default function LogisticsReportsPage() {
   );
 }
 
+// Дата завершения доставки: из истории (delivered/returned), иначе updated_at.
+function completedAt(d: Delivery): string {
+  const h = (d.history || []).filter(x => x.status === 'delivered' || x.status === 'returned');
+  return h.length ? h[h.length - 1].at : d.updated_at;
+}
+
 function ReportsContent() {
   const [routes, setRoutes] = useState<Route[]>([]);
+  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [drivers, setDrivers] = useState<UserInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -55,14 +49,12 @@ function ReportsContent() {
   const [filterTo, setFilterTo] = useState('');
   const [quick, setQuick] = useState<'today' | 'week' | 'month' | 'all'>('all');
 
-  // Раскрытый водитель (username) и детали его маршрутов.
+  // Раскрытый водитель (username).
   const [openDriver, setOpenDriver] = useState<string | null>(null);
-  const [routeDetail, setRouteDetail] = useState<Record<string, RouteWithDeliveries | null>>({});
-  const [loadingRoute, setLoadingRoute] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([listRoutes(), listDrivers()])
-      .then(([r, d]) => { setRoutes(r); setDrivers(d); })
+    Promise.all([listRoutes(), listDrivers(), listDeliveries()])
+      .then(([r, d, dl]) => { setRoutes(r); setDrivers(d); setDeliveries(dl); })
       .catch(e => setError((e as Error).message))
       .finally(() => setLoading(false));
   }, []);
@@ -77,61 +69,50 @@ function ReportsContent() {
     setFilterFrom(isoDate(from)); setFilterTo(isoDate(now));
   }
 
-  // Маршруты в рамках выбранного периода.
+  // Завершённые доставки (доставлено/возврат) в рамках периода — основа отчёта.
+  const periodDeliveries = useMemo(() => deliveries.filter(d => {
+    if (d.status !== 'delivered' && d.status !== 'returned') return false;
+    const when = completedAt(d);
+    if (filterFrom && when < filterFrom) return false;
+    if (filterTo && when > filterTo + 'T23:59:59') return false;
+    return true;
+  }), [deliveries, filterFrom, filterTo]);
+
+  // Маршруты в периоде (для счётчика «маршрутов» и очистки пустых).
   const periodRoutes = useMemo(() => routes.filter(r => {
     if (filterFrom && r.started_at < filterFrom) return false;
     if (filterTo && r.started_at > filterTo + 'T23:59:59') return false;
     return true;
   }), [routes, filterFrom, filterTo]);
 
-  // Агрегация по каждому водителю: маршруты, км, точки.
+  // Агрегация по водителю: доставки, км, маршруты.
   const driverStats = useMemo(() => {
     const m = new Map<string, { username: string; name: string; car: string; routes: number; km: number; points: number }>();
-    // Сначала заводим всех водителей (чтобы показать и тех, у кого 0).
     for (const d of drivers) {
       m.set(d.username, { username: d.username, name: d.name, car: d.car_number || '', routes: 0, km: 0, points: 0 });
     }
-    for (const r of periodRoutes) {
-      const key = r.driver_username || r.driver_name;
-      const cur = m.get(key) || { username: key, name: r.driver_name, car: r.car_number || '', routes: 0, km: 0, points: 0 };
-      cur.routes += 1;
-      cur.km += r.total_km || 0;
-      cur.points += r.delivery_ids.length;
-      if (!cur.car && r.car_number) cur.car = r.car_number;
+    for (const d of periodDeliveries) {
+      const key = d.driver_username || d.driver_name || '—';
+      const cur = m.get(key) || { username: key, name: d.driver_name || key, car: d.car_number || '', routes: 0, km: 0, points: 0 };
+      cur.km += d.km || 0;
+      cur.points += 1;
+      if (!cur.car && d.car_number) cur.car = d.car_number;
       m.set(key, cur);
     }
-    return [...m.values()].sort((a, b) => b.km - a.km || b.routes - a.routes || a.name.localeCompare(b.name, 'ru'));
-  }, [drivers, periodRoutes]);
+    for (const r of periodRoutes) {
+      const key = r.driver_username || r.driver_name;
+      const cur = m.get(key);
+      if (cur) cur.routes += 1;
+    }
+    return [...m.values()].sort((a, b) => b.points - a.points || b.km - a.km || a.name.localeCompare(b.name, 'ru'));
+  }, [drivers, periodDeliveries, periodRoutes]);
 
   const totals = useMemo(() => driverStats.reduce((s, d) => ({
     km: s.km + d.km, routes: s.routes + d.routes, points: s.points + d.points,
   }), { km: 0, routes: 0, points: 0 }), [driverStats]);
 
-  async function toggleRoute(id: string) {
-    if (routeDetail[id] !== undefined) {
-      setRouteDetail(p => { const n = { ...p }; delete n[id]; return n; });
-      return;
-    }
-    setLoadingRoute(id);
-    try {
-      const full = await getRoute(id);
-      setRouteDetail(p => ({ ...p, [id]: full }));
-    } catch {
-      setRouteDetail(p => ({ ...p, [id]: null }));
-    } finally {
-      setLoadingRoute(null);
-    }
-  }
-
   // Пустые маршруты (без привязанных доставок) — кандидаты на удаление.
   const emptyRoutes = useMemo(() => routes.filter(r => (r.delivery_ids?.length || 0) === 0), [routes]);
-
-  async function removeRoute(id: string) {
-    try {
-      await deleteRouteApi(id);
-      setRoutes(prev => prev.filter(r => r.id !== id));
-    } catch (e) { setError((e as Error).message); }
-  }
 
   async function removeEmpty() {
     if (emptyRoutes.length === 0) return;
@@ -178,8 +159,8 @@ function ReportsContent() {
       {/* Сводка по всем */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
         {[
-          { label: 'Водителей', value: driverStats.filter(d => d.routes > 0).length },
-          { label: 'Маршрутов', value: totals.routes },
+          { label: 'Водителей', value: driverStats.filter(d => d.points > 0).length },
+          { label: 'Доставок', value: totals.points },
           { label: 'Км (туда)', value: `${totals.km} км` },
           { label: 'Км (туда-обратно)', value: `${totals.km * 2} км` },
         ].map(({ label, value }) => (
@@ -201,9 +182,9 @@ function ReportsContent() {
         <div className="flex flex-col gap-2">
           {driverStats.map(ds => {
             const isOpen = openDriver === ds.username;
-            const driverRoutes = periodRoutes
-              .filter(r => (r.driver_username || r.driver_name) === ds.username)
-              .sort((a, b) => b.started_at.localeCompare(a.started_at));
+            const driverDeliveries = periodDeliveries
+              .filter(d => (d.driver_username || d.driver_name || '—') === ds.username)
+              .sort((a, b) => completedAt(b).localeCompare(completedAt(a)));
             return (
               <div key={ds.username} className="bg-white rounded-xl shadow-sm overflow-hidden">
                 {/* Строка водителя */}
@@ -215,8 +196,8 @@ function ReportsContent() {
                       {ds.car && <span className="text-xs text-gray-400">🚗 {ds.car}</span>}
                     </div>
                     <div className="flex flex-wrap gap-3 mt-1">
-                      <span className="text-xs text-gray-500">🧭 {ds.routes} маршрутов</span>
-                      <span className="text-xs text-gray-500">📦 {ds.points} точек</span>
+                      <span className="text-xs text-gray-500">📦 {ds.points} доставок</span>
+                      {ds.routes > 0 && <span className="text-xs text-gray-400">🧭 {ds.routes} маршрутов</span>}
                     </div>
                   </div>
                   <div className="text-right shrink-0">
@@ -226,76 +207,32 @@ function ReportsContent() {
                   <span className="text-gray-400 text-sm shrink-0">{isOpen ? '▲' : '▼'}</span>
                 </button>
 
-                {/* Маршруты водителя */}
+                {/* Доставки водителя */}
                 {isOpen && (
                   <div className="border-t border-gray-100 bg-gray-50/50">
-                    {driverRoutes.length === 0 ? (
-                      <p className="text-gray-400 text-sm p-4 text-center">Нет маршрутов за период</p>
+                    {driverDeliveries.length === 0 ? (
+                      <p className="text-gray-400 text-sm p-4 text-center">Нет доставок за период</p>
                     ) : (
                       <div className="flex flex-col divide-y divide-gray-100">
-                        {driverRoutes.map(r => {
-                          const detail = routeDetail[r.id];
-                          const deliveries: Delivery[] = detail?.deliveries || [];
-                          const delivered = deliveries.filter(d => d.status === 'delivered').length;
-                          const dur = duration(r.started_at, r.finished_at);
-                          return (
-                            <div key={r.id}>
-                              <div className="flex items-stretch">
-                              <button onClick={() => toggleRoute(r.id)}
-                                className="flex-1 text-left px-4 py-2.5 flex items-start gap-3 hover:bg-white transition-colors min-w-0">
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex flex-wrap gap-2 items-center">
-                                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${r.status === 'finished' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                                      {r.status === 'finished' ? '✅ Завершён' : '🟢 Активен'}
-                                    </span>
-                                    <span className="text-xs text-gray-400">📅 {fmtDate(r.started_at)}</span>
-                                    <span className="text-xs text-gray-400">🕐 {fmt(r.started_at)}</span>
-                                    {dur && <span className="text-xs text-blue-500">⏱ {dur}</span>}
-                                  </div>
-                                  <div className="flex flex-wrap gap-3 mt-1">
-                                    {r.total_km > 0 && <span className="text-xs font-medium text-emerald-600">🛣️ {r.total_km} км</span>}
-                                    <span className="text-xs text-gray-500">📦 {detail ? deliveries.length : r.delivery_ids.length} точек</span>
-                                    {detail && <span className="text-xs text-green-600">✓ {delivered} доставлено</span>}
-                                  </div>
-                                </div>
-                                <span className="text-gray-400 text-xs shrink-0 mt-1">
-                                  {loadingRoute === r.id ? '⏳' : routeDetail[r.id] !== undefined ? '▲' : '▼'}
-                                </span>
-                              </button>
-                              <button onClick={() => removeRoute(r.id)} title="Удалить маршрут"
-                                className="px-3 text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors">🗑</button>
+                        {driverDeliveries.map((d, i) => (
+                          <div key={d.id} className="px-4 py-2.5 flex items-start gap-2">
+                            <span className="text-xs text-gray-300 w-5 shrink-0">{i + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium truncate">
+                                {d.doc_number ? `№ ${d.doc_number} · ` : ''}{d.client_name || d.to_name || d.from_name || '—'}
                               </div>
-                              {routeDetail[r.id] !== undefined && (
-                                <div className="px-4 pb-2">
-                                  {detail === null ? (
-                                    <p className="text-red-500 text-xs py-2">Ошибка загрузки</p>
-                                  ) : deliveries.length === 0 ? (
-                                    <p className="text-gray-400 text-xs py-2 text-center">Нет доставок</p>
-                                  ) : (
-                                    <div className="flex flex-col divide-y divide-gray-100 bg-white rounded-lg border border-gray-100">
-                                      {deliveries.map((d, i) => (
-                                        <div key={d.id} className="px-3 py-2 flex items-start gap-2">
-                                          <span className="text-xs text-gray-300 w-4 shrink-0">{i + 1}</span>
-                                          <div className="flex-1 min-w-0">
-                                            <div className="text-sm font-medium truncate">{d.client_name || d.to_name || '—'}</div>
-                                            {d.address && <div className="text-xs text-gray-400 truncate">📍 {d.address}</div>}
-                                            <div className="flex flex-wrap gap-2 mt-0.5">
-                                              {d.km > 0 && <span className="text-xs text-gray-400">🛣️ {d.km} км</span>}
-                                              {d.direction && <span className="text-xs text-sky-500">{d.direction}</span>}
-                                            </div>
-                                          </div>
-                                          <span className={`text-xs font-medium shrink-0 ${STATUS_COLOR[d.status]}`}>
-                                            {STATUS_LABEL[d.status]}
-                                          </span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
+                              {d.address && <div className="text-xs text-gray-400 truncate">📍 {d.address}</div>}
+                              <div className="flex flex-wrap gap-2 mt-0.5">
+                                <span className="text-xs text-gray-400">📅 {fmt(completedAt(d))}</span>
+                                {d.km > 0 && <span className="text-xs text-emerald-600">🛣️ {d.km} км</span>}
+                                {d.direction && <span className="text-xs text-sky-500">{d.direction}</span>}
+                              </div>
                             </div>
-                          );
-                        })}
+                            <span className={`text-xs font-medium shrink-0 ${STATUS_COLOR[d.status]}`}>
+                              {STATUS_LABEL[d.status]}
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
