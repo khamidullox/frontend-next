@@ -14,6 +14,7 @@ import {
   listShops, Shop,
   updateUser,
 } from '@/lib/api';
+import { useLivePoll } from '@/lib/useLivePoll';
 
 function fmtTime(iso?: string | null) {
   if (!iso) return '';
@@ -125,10 +126,8 @@ function LogisticsContent() {
   useEffect(() => { load(); }, [load]);
 
   // Автообновление: видны изменения статусов от водителей без ручного F5.
-  useEffect(() => {
-    const id = setInterval(load, 20_000);
-    return () => clearInterval(id);
-  }, [load]);
+  // Опрос идёт только пока вкладка видима — бережёт квоту чтений Firestore.
+  useLivePoll(load, 60_000);
 
   useEffect(() => { listDrivers().then(setDrivers).catch(() => {}); }, []);
   useEffect(() => { listShops().then(setShops).catch(() => {}); }, []);

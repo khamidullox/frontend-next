@@ -8,6 +8,7 @@ import {
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 import PushSubscribe from '@/components/PushSubscribe';
+import { useLivePoll } from '@/lib/useLivePoll';
 
 const TRACK_INTERVAL_MS = 45_000;
 
@@ -75,11 +76,11 @@ export default function MyDeliveriesPage() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadRoute(); }, [loadRoute]);
 
-  // Автообновление: синхронизируем список доставок без ручного F5 — каждые 20 секунд.
-  useEffect(() => {
-    const id = setInterval(() => { load(); loadRoute(); }, 20_000);
-    return () => clearInterval(id);
-  }, [load, loadRoute]);
+  const refresh = useCallback(() => { load(); loadRoute(); }, [load, loadRoute]);
+
+  // Автообновление без ручного F5. Push уже уведомляет о новых назначениях,
+  // поэтому опрос реже и только пока вкладка видима — бережёт квоту Firestore.
+  useLivePoll(refresh, 60_000);
 
   async function setStatus(id: string, status: DeliveryStatus) {
     setBusyId(id);
