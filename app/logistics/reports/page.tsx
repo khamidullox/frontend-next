@@ -38,6 +38,15 @@ function completedAt(d: Delivery): string {
   return h.length ? h[h.length - 1].at : d.updated_at;
 }
 
+// Ключ «выезда»: реальный маршрут (route_id), либо — если доставка завершена
+// напрямую без маршрута — группируем по водителю + минуте завершения (такие
+// накладные обычно отмечают «Доставлено» одной пачкой за один выезд).
+function tripKey(d: Delivery): string {
+  if (d.route_id) return `r:${d.route_id}`;
+  const driverKey = d.driver_username || d.driver_name || '—';
+  return `t:${driverKey}:${completedAt(d).slice(0, 16)}`;
+}
+
 function ReportsContent() {
   const [routes, setRoutes] = useState<Route[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
@@ -78,38 +87,29 @@ function ReportsContent() {
     return true;
   }), [deliveries, filterFrom, filterTo]);
 
-  // Маршруты в периоде (для счётчика «маршрутов» и очистки пустых).
-  const periodRoutes = useMemo(() => routes.filter(r => {
-    if (filterFrom && r.started_at < filterFrom) return false;
-    if (filterTo && r.started_at > filterTo + 'T23:59:59') return false;
-    return true;
-  }), [routes, filterFrom, filterTo]);
-
-  // Агрегация по водителю: доставки, км, маршруты.
+  // Агрегация по водителю: доставки, км, выезды (уникальные tripKey).
   const driverStats = useMemo(() => {
-    const m = new Map<string, { username: string; name: string; car: string; routes: number; km: number; points: number }>();
+    const m = new Map<string, { username: string; name: string; car: string; trips: Set<string>; km: number; points: number }>();
     for (const d of drivers) {
-      m.set(d.username, { username: d.username, name: d.name, car: d.car_number || '', routes: 0, km: 0, points: 0 });
+      m.set(d.username, { username: d.username, name: d.name, car: d.car_number || '', trips: new Set(), km: 0, points: 0 });
     }
     for (const d of periodDeliveries) {
       const key = d.driver_username || d.driver_name || '—';
-      const cur = m.get(key) || { username: key, name: d.driver_name || key, car: d.car_number || '', routes: 0, km: 0, points: 0 };
+      const cur = m.get(key) || { username: key, name: d.driver_name || key, car: d.car_number || '', trips: new Set<string>(), km: 0, points: 0 };
       cur.km += d.km || 0;
       cur.points += 1;
+      cur.trips.add(tripKey(d));
       if (!cur.car && d.car_number) cur.car = d.car_number;
       m.set(key, cur);
     }
-    for (const r of periodRoutes) {
-      const key = r.driver_username || r.driver_name;
-      const cur = m.get(key);
-      if (cur) cur.routes += 1;
-    }
-    return [...m.values()].sort((a, b) => b.points - a.points || b.km - a.km || a.name.localeCompare(b.name, 'ru'));
-  }, [drivers, periodDeliveries, periodRoutes]);
+    return [...m.values()]
+      .map(d => ({ username: d.username, name: d.name, car: d.car, km: d.km, points: d.points, trips: d.trips.size }))
+      .sort((a, b) => b.points - a.points || b.km - a.km || a.name.localeCompare(b.name, 'ru'));
+  }, [drivers, periodDeliveries]);
 
   const totals = useMemo(() => driverStats.reduce((s, d) => ({
-    km: s.km + d.km, routes: s.routes + d.routes, points: s.points + d.points,
-  }), { km: 0, routes: 0, points: 0 }), [driverStats]);
+    km: s.km + d.km, trips: s.trips + d.trips, points: s.points + d.points,
+  }), { km: 0, trips: 0, points: 0 }), [driverStats]);
 
   // Пустые маршруты (без привязанных доставок) — кандидаты на удаление.
   const emptyRoutes = useMemo(() => routes.filter(r => (r.delivery_ids?.length || 0) === 0), [routes]);
@@ -137,7 +137,7 @@ function ReportsContent() {
             🗑 Удалить пустые ({emptyRoutes.length})
           </button>
         )}
-        <span className={`text-sm text-gray-400 ${emptyRoutes.length > 0 ? '' : 'ml-auto'}`}>{driverStats.filter(d => d.routes > 0).length} активных · {periodLabel}</span>
+        <span className={`text-sm text-gray-400 ${emptyRoutes.length > 0 ? '' : 'ml-auto'}`}>{driverStats.filter(d => d.trips > 0).length} активных · {periodLabel}</span>
       </div>
 
       {/* Быстрые периоды + диапазон дат */}
@@ -160,8 +160,8 @@ function ReportsContent() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
         {[
           { label: 'Водителей', value: driverStats.filter(d => d.points > 0).length },
+          { label: 'Выездов', value: totals.trips },
           { label: 'Доставок', value: totals.points },
-          { label: 'Км (туда)', value: `${totals.km} км` },
           { label: 'Км (туда-обратно)', value: `${totals.km * 2} км` },
         ].map(({ label, value }) => (
           <div key={label} className="bg-white rounded-xl shadow-sm p-3 text-center">
@@ -185,6 +185,16 @@ function ReportsContent() {
             const driverDeliveries = periodDeliveries
               .filter(d => (d.driver_username || d.driver_name || '—') === ds.username)
               .sort((a, b) => completedAt(b).localeCompare(completedAt(a)));
+            // Группируем доставки в «выезды»: по реальному маршруту, либо синтетически
+            // по времени завершения (см. tripKey) — так видно сколько было заходов.
+            const tripMap = new Map<string, Delivery[]>();
+            for (const d of driverDeliveries) {
+              const k = tripKey(d);
+              const arr = tripMap.get(k) || [];
+              arr.push(d);
+              tripMap.set(k, arr);
+            }
+            const trips = [...tripMap.values()];
             return (
               <div key={ds.username} className="bg-white rounded-xl shadow-sm overflow-hidden">
                 {/* Строка водителя */}
@@ -197,7 +207,7 @@ function ReportsContent() {
                     </div>
                     <div className="flex flex-wrap gap-3 mt-1">
                       <span className="text-xs text-gray-500">📦 {ds.points} доставок</span>
-                      {ds.routes > 0 && <span className="text-xs text-gray-400">🧭 {ds.routes} маршрутов</span>}
+                      {ds.trips > 0 && <span className="text-xs text-gray-400">🚐 {ds.trips} выездов</span>}
                     </div>
                   </div>
                   <div className="text-right shrink-0">
@@ -207,33 +217,45 @@ function ReportsContent() {
                   <span className="text-gray-400 text-sm shrink-0">{isOpen ? '▲' : '▼'}</span>
                 </button>
 
-                {/* Доставки водителя */}
+                {/* Доставки водителя, сгруппированные по выездам */}
                 {isOpen && (
-                  <div className="border-t border-gray-100 bg-gray-50/50">
-                    {driverDeliveries.length === 0 ? (
-                      <p className="text-gray-400 text-sm p-4 text-center">Нет доставок за период</p>
+                  <div className="border-t border-gray-100 bg-gray-50/50 p-2.5 flex flex-col gap-2">
+                    {trips.length === 0 ? (
+                      <p className="text-gray-400 text-sm py-4 text-center">Нет доставок за период</p>
                     ) : (
-                      <div className="flex flex-col divide-y divide-gray-100">
-                        {driverDeliveries.map((d, i) => (
-                          <div key={d.id} className="px-4 py-2.5 flex items-start gap-2">
-                            <span className="text-xs text-gray-300 w-5 shrink-0">{i + 1}</span>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium truncate">
-                                {d.doc_number ? `№ ${d.doc_number} · ` : ''}{d.client_name || d.to_name || d.from_name || '—'}
-                              </div>
-                              {d.address && <div className="text-xs text-gray-400 truncate">📍 {d.address}</div>}
-                              <div className="flex flex-wrap gap-2 mt-0.5">
-                                <span className="text-xs text-gray-400">📅 {fmt(completedAt(d))}</span>
-                                {d.km > 0 && <span className="text-xs text-emerald-600">🛣️ {d.km} км</span>}
-                                {d.direction && <span className="text-xs text-sky-500">{d.direction}</span>}
-                              </div>
+                      trips.map((group, gi) => {
+                        const tripKm = group.reduce((s, d) => s + (d.km || 0), 0);
+                        return (
+                          <div key={tripKey(group[0])} className="rounded-lg border border-gray-100 overflow-hidden bg-white">
+                            <div className="px-3 py-1.5 bg-gray-100 flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-semibold text-gray-600">🚐 Выезд {gi + 1}</span>
+                              <span className="text-[11px] text-gray-400">· {group.length} {group.length === 1 ? 'накладная' : 'накладных'}</span>
+                              {tripKm > 0 && <span className="text-[11px] text-emerald-600">🛣️ {tripKm} км</span>}
+                              <span className="text-[11px] text-gray-400 ml-auto">📅 {fmt(completedAt(group[0]))}</span>
                             </div>
-                            <span className={`text-xs font-medium shrink-0 ${STATUS_COLOR[d.status]}`}>
-                              {STATUS_LABEL[d.status]}
-                            </span>
+                            <div className="flex flex-col divide-y divide-gray-100">
+                              {group.map((d, i) => (
+                                <div key={d.id} className="px-3 py-2 flex items-start gap-2">
+                                  <span className="text-xs text-gray-300 w-5 shrink-0">{i + 1}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium truncate">
+                                      {d.doc_number ? `№ ${d.doc_number} · ` : ''}{d.client_name || d.to_name || d.from_name || '—'}
+                                    </div>
+                                    {d.address && <div className="text-xs text-gray-400 truncate">📍 {d.address}</div>}
+                                    <div className="flex flex-wrap gap-2 mt-0.5">
+                                      {d.km > 0 && <span className="text-xs text-emerald-600">🛣️ {d.km} км</span>}
+                                      {d.direction && <span className="text-xs text-sky-500">{d.direction}</span>}
+                                    </div>
+                                  </div>
+                                  <span className={`text-xs font-medium shrink-0 ${STATUS_COLOR[d.status]}`}>
+                                    {STATUS_LABEL[d.status]}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        ))}
-                      </div>
+                        );
+                      })
                     )}
                   </div>
                 )}

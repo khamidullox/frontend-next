@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getSession, withRole, ROLE_RANK } from '@/lib/auth';
 import { listDeliveries, listDeliveriesForDriver, createDelivery } from '@/lib/deliveries';
+import { notifyDriverAssigned } from '@/lib/push';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -49,6 +50,9 @@ export async function POST(request: NextRequest) {
       created_by: session.name || session.username,
     });
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
+    if (res.delivery.driver_username) {
+      notifyDriverAssigned(res.delivery.driver_username, res.delivery.client_name || res.delivery.address || 'новая доставка').catch(() => {});
+    }
     return Response.json({ data: res.delivery });
   });
 }

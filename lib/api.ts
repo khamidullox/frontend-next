@@ -591,6 +591,13 @@ export async function updateDelivery(
   return data.data as Delivery;
 }
 
+export async function subscribePush(sub: { endpoint: string; keys: { p256dh: string; auth: string } }): Promise<void> {
+  await fetch('/api/push/subscribe', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(sub),
+  }).catch(() => {});
+}
+
 export async function autoAssign(): Promise<{ assigned: number; skipped: number }> {
   const res = await fetch('/api/logistics/auto-assign', { method: 'POST' });
   const data = await res.json().catch(() => ({}));

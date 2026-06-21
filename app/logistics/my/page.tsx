@@ -7,6 +7,7 @@ import {
   listRoutes, startRoute, finishRoute, sendTrackPoint, addDeliveriesToRoute, Route,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
+import PushSubscribe from '@/components/PushSubscribe';
 
 const TRACK_INTERVAL_MS = 45_000;
 
@@ -74,9 +75,9 @@ export default function MyDeliveriesPage() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadRoute(); }, [loadRoute]);
 
-  // Автообновление: синхронизируем список доставок каждые 30 секунд.
+  // Автообновление: синхронизируем список доставок без ручного F5 — каждые 20 секунд.
   useEffect(() => {
-    const id = setInterval(() => { load(); loadRoute(); }, 90_000);
+    const id = setInterval(() => { load(); loadRoute(); }, 20_000);
     return () => clearInterval(id);
   }, [load, loadRoute]);
 
@@ -186,6 +187,7 @@ export default function MyDeliveriesPage() {
 
   return (
     <div>
+      <PushSubscribe />
       <div className="mb-4">
         <h2 className="text-xl font-bold">🚚 Мои доставки</h2>
         {session && (

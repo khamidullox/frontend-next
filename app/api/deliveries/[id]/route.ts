@@ -8,6 +8,7 @@ import {
   deleteDelivery,
   DeliveryStatus,
 } from '@/lib/deliveries';
+import { notifyDriverAssigned } from '@/lib/push';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -48,6 +49,9 @@ export async function PATCH(
   if (body.driver_username !== undefined) {
     const res = await assignDriver(id, body.driver_username || null);
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
+    if (body.driver_username) {
+      notifyDriverAssigned(body.driver_username, res.delivery.client_name || res.delivery.address || 'новая доставка').catch(() => {});
+    }
   }
   if (typeof body.status === 'string') {
     const res = await setDeliveryStatus(id, body.status as DeliveryStatus, s.name || s.username);

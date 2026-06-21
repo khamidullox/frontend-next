@@ -12,6 +12,7 @@ import {
   autoAssign, fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings,
   listRoutes, Route,
   listShops, Shop,
+  updateUser,
 } from '@/lib/api';
 
 function fmtTime(iso?: string | null) {
@@ -123,9 +124,9 @@ function LogisticsContent() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Автообновление каждые 30 секунд: видны изменения статусов от водителей.
+  // Автообновление: видны изменения статусов от водителей без ручного F5.
   useEffect(() => {
-    const id = setInterval(load, 90_000);
+    const id = setInterval(load, 20_000);
     return () => clearInterval(id);
   }, [load]);
 
@@ -197,6 +198,12 @@ function LogisticsContent() {
     } catch (err) {
       setError((err as Error).message);
     }
+  }, []);
+
+  // Ручное переопределение вместимости машины (кг/м³) — вместо авто-расчёта по типу транспорта.
+  const updateCapacity = useCallback((username: string, p: { capacity_kg?: number; capacity_m3?: number }) => {
+    setDrivers((prev) => prev.map((d) => (d.username === username ? { ...d, ...p } : d)));
+    updateUser(username, p).catch((err) => setError((err as Error).message));
   }, []);
 
   const remove = useCallback((id: string) => {
@@ -608,6 +615,7 @@ function LogisticsContent() {
                   onPatch={patch}
                   onRemove={remove}
                   onAssign={() => setAssignTo(dr)}
+                  onCapacityChange={updateCapacity}
                 />
               ))}
             </div>
@@ -637,7 +645,7 @@ function LogisticsContent() {
 
 // ─── Карточка водителя ──────────────────────────────────────────────────────
 function DriverCard({
-  driver, deliveries, allDrivers, hideDone, fuelRate, activeRoute, onPatch, onRemove, onAssign,
+  driver, deliveries, allDrivers, hideDone, fuelRate, activeRoute, onPatch, onRemove, onAssign, onCapacityChange,
 }: {
   driver: UserInfo;
   deliveries: Delivery[];
@@ -648,6 +656,7 @@ function DriverCard({
   onPatch: (id: string, p: Parameters<typeof updateDelivery>[1]) => void;
   onRemove: (id: string) => void;
   onAssign: () => void;
+  onCapacityChange: (username: string, p: { capacity_kg?: number; capacity_m3?: number }) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -754,10 +763,25 @@ function DriverCard({
 
       {open && (
         <div className="px-3.5 pb-3.5 border-t border-gray-100 pt-2.5">
-          <button onClick={onAssign}
-            className="mb-2.5 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold rounded-lg">
-            + Назначить накладную / заказ
-          </button>
+          <div className="flex items-center gap-2 flex-wrap mb-2.5">
+            <button onClick={onAssign}
+              className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold rounded-lg">
+              + Назначить накладную / заказ
+            </button>
+            <div className="flex items-center gap-1.5 text-[11px] text-gray-400 ml-auto">
+              <span>Вместимость:</span>
+              <input type="number" min={0} step={1} defaultValue={driver.capacity_kg || ''}
+                placeholder={`${defCap.kg} (авто)`}
+                onBlur={(e) => onCapacityChange(driver.username, { capacity_kg: Math.max(0, Number(e.target.value) || 0) })}
+                className="w-20 border border-gray-200 rounded px-1.5 py-1 text-right outline-none focus:border-blue-300" />
+              <span>кг</span>
+              <input type="number" min={0} step={0.1} defaultValue={driver.capacity_m3 || ''}
+                placeholder={`${defCap.m3} (авто)`}
+                onBlur={(e) => onCapacityChange(driver.username, { capacity_m3: Math.max(0, Number(e.target.value) || 0) })}
+                className="w-16 border border-gray-200 rounded px-1.5 py-1 text-right outline-none focus:border-blue-300" />
+              <span>м³</span>
+            </div>
+          </div>
           {shown.length === 0 ? (
             <div className="text-xs text-gray-400 py-1">Нет {hideDone ? 'активных ' : ''}доставок</div>
           ) : (
