@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { listUsers, createUser, deleteUserApi, updateUser, listAllWarehouses, listShops, WarehouseSummary, Shop, UserInfo, Role, ROLE_LABEL, DIRECTIONS } from '@/lib/api';
+import { listUsers, createUser, deleteUserApi, updateUser, listAllWarehouses, listShops, WarehouseSummary, Shop, UserInfo, Role, ROLE_LABEL } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
 import { loadXLSX } from '@/lib/xlsx';
 import Pager from '@/components/Pager';
@@ -326,11 +326,10 @@ function UsersContent() {
               <input type="number" min={0} value={capKg} onChange={(e) => setCapKg(e.target.value)}
                 placeholder="Вес, кг"
                 className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
-              <select value={direction} onChange={(e) => setDirection(e.target.value)}
-                className="border-2 border-gray-200 rounded-lg px-2 py-2 text-sm bg-white outline-none focus:border-blue-400">
-                <option value="">Направление</option>
-                {DIRECTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
+              <input value={direction} onChange={(e) => setDirection(e.target.value)}
+                placeholder="Город (напр. Фергана)"
+                title="Город, который обслуживает водитель — для автораспределения"
+                className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
             </div>
           </div>
         )}
@@ -548,12 +547,10 @@ function EditUserModal({
                   className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
               </div>
               <div className="sm:col-span-2">
-                <label className="text-xs text-gray-500 mb-1 block">Направление</label>
-                <select value={direction} onChange={(e) => setDirection(e.target.value)}
-                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
-                  <option value="">— не указано —</option>
-                  {DIRECTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
-                </select>
+                <label className="text-xs text-gray-500 mb-1 block">Город (обслуживаемый)</label>
+                <input value={direction} onChange={(e) => setDirection(e.target.value)}
+                  placeholder="напр. Фергана, Маргилан"
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
               </div>
               <div className="sm:col-span-2">
                 <label className="text-xs text-gray-500 mb-1 block">GPS ID (gps16888.com user_id)</label>

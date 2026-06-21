@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
-import { listShops, createShop, updateShop, deleteShopApi, listAllWarehouses, Shop, WarehouseSummary, DIRECTIONS, ShopType } from '@/lib/api';
+import { listShops, createShop, updateShop, deleteShopApi, listAllWarehouses, Shop, WarehouseSummary, ShopType } from '@/lib/api';
 import ConfirmModal from '@/components/ConfirmModal';
 import * as XLSX from 'xlsx';
 
@@ -16,19 +16,19 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-function calcDirection(baseLat: number, baseLng: number, lat: number, lng: number): string {
-  const dist = haversineKm(baseLat, baseLng, lat, lng);
-  if (dist < 3) return 'Центр';
-  const dLng = (lng - baseLng) * Math.PI / 180;
-  const lat1R = baseLat * Math.PI / 180;
-  const lat2R = lat * Math.PI / 180;
-  const y = Math.sin(dLng) * Math.cos(lat2R);
-  const x = Math.cos(lat1R) * Math.sin(lat2R) - Math.sin(lat1R) * Math.cos(lat2R) * Math.cos(dLng);
-  const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-  if (bearing >= 315 || bearing < 45) return 'Север';
-  if (bearing >= 45 && bearing < 135) return 'Восток';
-  if (bearing >= 135 && bearing < 225) return 'Юг';
-  return 'Запад';
+// Определяет город/населённый пункт по координатам (обратное геокодирование OSM).
+async function cityFromCoords(lat: number, lng: number): Promise<string> {
+  try {
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ru&zoom=12`,
+      { headers: { 'Accept-Language': 'ru' } }
+    );
+    const data = (await r.json()) as { address?: Record<string, string> };
+    const a = data.address || {};
+    return a.city || a.town || a.municipality || a.village || a.county || a.state || '';
+  } catch {
+    return '';
+  }
 }
 
 // Сравниваем точки без учёта хвостового номера телефона в названии
@@ -63,7 +63,7 @@ function ShopsContent() {
   // Форма добавления
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
-  const [direction, setDirection] = useState<string>('Центр');
+  const [direction, setDirection] = useState<string>('');
   const [km, setKm] = useState('');
   const [phone, setPhone] = useState('');
   const [lat, setLat] = useState('');
@@ -73,6 +73,8 @@ function ShopsContent() {
   // Автодетект
   const [autoInfo, setAutoInfo] = useState<{ dir: string; km: number; baseName: string } | null>(null);
   const [selectedBaseId, setSelectedBaseId] = useState<string>('');
+  const [detectingCity, setDetectingCity] = useState(false);
+  const cityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Список складов Smartup (для подсказки названия)
   const [warehouses, setWarehouses] = useState<WarehouseSummary[]>([]);
@@ -83,6 +85,12 @@ function ShopsContent() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState('');
+
+  // Редактирование точки
+  const [editShop, setEditShop] = useState<Shop | null>(null);
+
+  // Массовое определение городов
+  const [geocodingAll, setGeocodingAll] = useState(false);
 
   useEffect(() => {
     listAllWarehouses().then(setWarehouses).catch(() => {});
@@ -113,19 +121,28 @@ function ShopsContent() {
   // Выбранная база
   const selectedBase = bases.find(b => b.id === selectedBaseId) ?? bases[0] ?? null;
 
-  // Пересчёт при смене координат или базы
+  // Пересчёт км от базы + определение города по координатам (с задержкой).
   function recalc(latVal: string, lngVal: string, base: Shop | null) {
     const latN = parseFloat(latVal);
     const lngN = parseFloat(lngVal);
-    if (!base || isNaN(latN) || isNaN(lngN) || latN === 0 || lngN === 0) {
+    if (isNaN(latN) || isNaN(lngN) || latN === 0 || lngN === 0) {
       setAutoInfo(null);
       return;
     }
-    const dir = calcDirection(base.lat!, base.lng!, latN, lngN);
-    const distKm = haversineKm(base.lat!, base.lng!, latN, lngN);
-    setDirection(dir);
-    setKm(String(distKm));
-    setAutoInfo({ dir, km: distKm, baseName: base.name });
+    const distKm = base ? haversineKm(base.lat!, base.lng!, latN, lngN) : 0;
+    if (base) setKm(String(distKm));
+
+    // Город — обратное геокодирование с дебаунсом 700мс (не дёргать на каждый символ).
+    if (cityTimer.current) clearTimeout(cityTimer.current);
+    setDetectingCity(true);
+    cityTimer.current = setTimeout(async () => {
+      const city = await cityFromCoords(latN, lngN);
+      setDetectingCity(false);
+      if (city) {
+        setDirection(city);
+        setAutoInfo({ dir: city, km: distKm, baseName: base?.name ?? '' });
+      }
+    }, 700);
   }
 
   function onLatChange(v: string) {
@@ -159,7 +176,7 @@ function ShopsContent() {
       });
       setItems(prev => [...prev, shop].sort((a, b) => a.name.localeCompare(b.name, 'ru')));
       setName(''); setAddress(''); setKm(''); setPhone(''); setLat(''); setLng('');
-      setAutoInfo(null); setDirection('Центр');
+      setAutoInfo(null); setDirection('');
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
@@ -206,9 +223,11 @@ function ShopsContent() {
           } catch { skipped++; }
         } else {
           let direction: string | undefined, km: number | undefined;
-          if (base && base.lat && base.lng && lat !== undefined && lng !== undefined && type === 'shop') {
-            direction = calcDirection(base.lat, base.lng, lat, lng);
-            km = haversineKm(base.lat, base.lng, lat, lng);
+          if (lat !== undefined && lng !== undefined) {
+            if (base && base.lat && base.lng) km = haversineKm(base.lat, base.lng, lat, lng);
+            // Город по координатам (Nominatim ~1 запрос/сек — ставим паузу).
+            direction = await cityFromCoords(lat, lng);
+            await new Promise((r) => setTimeout(r, 1100));
           }
           try {
             const created_shop = await createShop({ name: rawName, phone, type, lat, lng, direction, km });
@@ -239,15 +258,50 @@ function ShopsContent() {
     });
   }
 
+  // Сохранение изменений из модалки.
+  async function saveEdit(patch: { name: string; address: string; direction: string; km: number; phone: string; lat?: number; lng?: number; type: ShopType }) {
+    if (!editShop) return;
+    try {
+      const upd = await updateShop(editShop.id, patch);
+      setItems(prev => prev.map(s => s.id === upd.id ? upd : s).sort((a, b) => a.name.localeCompare(b.name, 'ru')));
+      setEditShop(null);
+    } catch (e) { setError((e as Error).message); }
+  }
+
+  // Определить города для всех точек с координатами, у которых город пуст/не задан.
+  async function geocodeAll() {
+    setGeocodingAll(true); setError('');
+    const targets = items.filter(s => s.lat && s.lng && !s.direction);
+    for (const s of targets) {
+      const city = await cityFromCoords(s.lat!, s.lng!);
+      if (city) {
+        try {
+          const upd = await updateShop(s.id, { direction: city });
+          setItems(prev => prev.map(x => x.id === upd.id ? upd : x));
+        } catch { /* ignore */ }
+      }
+      await new Promise(r => setTimeout(r, 1100));
+    }
+    setGeocodingAll(false);
+  }
+
   return (
     <div>
       <div className="flex items-center gap-2 mb-3">
         <Link href="/logistics" className="text-sm text-gray-500 hover:text-gray-700">← Логистика</Link>
         <h2 className="text-xl font-bold ml-1">🏪 Точки доставки <span className="text-sm text-gray-400 font-normal">({items.length})</span></h2>
         <button
+          onClick={geocodeAll}
+          disabled={geocodingAll}
+          title="Определить города по координатам для точек без города"
+          className="ml-auto px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-semibold rounded-lg disabled:opacity-50 whitespace-nowrap"
+        >
+          {geocodingAll ? '⏳ Определяю…' : '🌍 Определить города'}
+        </button>
+        <button
           onClick={() => fileRef.current?.click()}
           disabled={importing}
-          className="ml-auto px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-lg disabled:opacity-50 whitespace-nowrap"
+          className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-lg disabled:opacity-50 whitespace-nowrap"
         >
           {importing ? '⏳ Импорт…' : '📥 Импорт из Excel'}
         </button>
@@ -298,10 +352,10 @@ function ShopsContent() {
             <option value="shop">🏪 Магазин</option>
             <option value="warehouse">🏭 Склад (база)</option>
           </select>
-          <select value={direction} onChange={e => { setDirection(e.target.value); setAutoInfo(null); }}
-            className="sm:w-36 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
-            {DIRECTIONS.map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
+          <input value={direction} onChange={e => { setDirection(e.target.value); setAutoInfo(null); }}
+            placeholder={detectingCity ? 'Определяю город…' : 'Город'}
+            title="Заполняется автоматически по координатам, можно изменить"
+            className="sm:w-40 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
           <input type="number" min={0} step="0.1" value={km} onChange={e => setKm(e.target.value)} placeholder="Км"
             className="sm:w-24 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
           <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Телефон"
@@ -342,7 +396,7 @@ function ShopsContent() {
 
         {autoInfo && (
           <div className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-1.5">
-            ✓ От «{autoInfo.baseName}»: <strong>{autoInfo.dir}</strong> · {autoInfo.km} км
+            ✓ Город: <strong>{autoInfo.dir}</strong>{autoInfo.km > 0 ? ` · ${autoInfo.km} км от «${autoInfo.baseName}»` : ''}
           </div>
         )}
       </form>
@@ -370,24 +424,19 @@ function ShopsContent() {
                     <span className="text-emerald-600"> · 📍 {s.lat.toFixed(4)}, {s.lng.toFixed(4)}</span>
                   )}
                 </div>
-                {/* Направление от каждой базы */}
-                {s.lat && s.lng && bases.length > 1 && (
-                  <div className="flex flex-wrap gap-1 mt-0.5">
-                    {bases.map(b => b.id !== s.id && b.lat && b.lng ? (
-                      <span key={b.id} className="text-[10px] text-gray-400">
-                        {b.name.split(' ')[0]}: <strong>{calcDirection(b.lat, b.lng, s.lat!, s.lng!)}</strong> {haversineKm(b.lat, b.lng, s.lat!, s.lng!)}км
-                      </span>
-                    ) : null)}
-                  </div>
-                )}
               </div>
-              <span className={`text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap ${DIR_COLOR[s.direction] || 'bg-gray-100 text-gray-600'}`}>
-                {s.direction}
+              <span className={`text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap ${DIR_COLOR[s.direction] || 'bg-sky-100 text-sky-700'}`}>
+                {s.direction || '—'}
               </span>
+              <button onClick={() => setEditShop(s)} className="text-gray-400 hover:text-blue-600 text-base px-1" title="Изменить">✏️</button>
               <button onClick={() => remove(s.id)} className="text-red-400 hover:text-red-600 text-lg px-1">✕</button>
             </div>
           ))}
         </div>
+      )}
+
+      {editShop && (
+        <EditShopModal shop={editShop} onClose={() => setEditShop(null)} onSave={saveEdit} />
       )}
 
       {confirmState && (
@@ -397,6 +446,94 @@ function ShopsContent() {
           onCancel={() => setConfirmState(null)}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Модалка редактирования точки ────────────────────────────────────────────
+function EditShopModal({
+  shop, onClose, onSave,
+}: {
+  shop: Shop;
+  onClose: () => void;
+  onSave: (patch: { name: string; address: string; direction: string; km: number; phone: string; lat?: number; lng?: number; type: ShopType }) => void;
+}) {
+  const [name, setName] = useState(shop.name);
+  const [address, setAddress] = useState(shop.address || '');
+  const [direction, setDirection] = useState(shop.direction || '');
+  const [km, setKm] = useState(String(shop.km || ''));
+  const [phone, setPhone] = useState(shop.phone || '');
+  const [lat, setLat] = useState(shop.lat != null ? String(shop.lat) : '');
+  const [lng, setLng] = useState(shop.lng != null ? String(shop.lng) : '');
+  const [type, setType] = useState<ShopType>(shop.type === 'warehouse' ? 'warehouse' : 'shop');
+  const [detecting, setDetecting] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function detectCity() {
+    const latN = parseFloat(lat), lngN = parseFloat(lng);
+    if (isNaN(latN) || isNaN(lngN)) return;
+    setDetecting(true);
+    const city = await cityFromCoords(latN, lngN);
+    setDetecting(false);
+    if (city) setDirection(city);
+  }
+
+  function submit() {
+    if (!name.trim()) return;
+    setBusy(true);
+    onSave({
+      name: name.trim(), address: address.trim(), direction: direction.trim(),
+      km: Number(km) || 0, phone: phone.trim(),
+      lat: lat ? Number(lat) : undefined, lng: lng ? Number(lng) : undefined, type,
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl p-5 w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-lg">Изменить точку</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+        </div>
+        <div className="flex flex-col gap-2">
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Название"
+            className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <input value={address} onChange={e => setAddress(e.target.value)} placeholder="Адрес"
+            className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <div className="flex gap-2">
+            <select value={type} onChange={e => setType(e.target.value as ShopType)}
+              className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
+              <option value="shop">🏪 Магазин</option>
+              <option value="warehouse">🏭 Склад (база)</option>
+            </select>
+            <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Телефон"
+              className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          </div>
+          <div className="flex gap-2">
+            <input value={direction} onChange={e => setDirection(e.target.value)} placeholder="Город"
+              className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            <input type="number" min={0} step="0.1" value={km} onChange={e => setKm(e.target.value)} placeholder="Км"
+              className="w-24 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          </div>
+          <div className="flex gap-2 items-end">
+            <input type="number" step="any" value={lat} onChange={e => setLat(e.target.value)} placeholder="Широта"
+              className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            <input type="number" step="any" value={lng} onChange={e => setLng(e.target.value)} placeholder="Долгота"
+              className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            <button type="button" onClick={detectCity} disabled={detecting || !lat || !lng}
+              className="px-3 py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-semibold rounded-lg disabled:opacity-50 whitespace-nowrap">
+              {detecting ? '⏳' : '🌍 город'}
+            </button>
+          </div>
+        </div>
+        <div className="flex gap-2 mt-4">
+          <button onClick={submit} disabled={busy || !name.trim()}
+            className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg">
+            {busy ? '⏳…' : 'Сохранить'}
+          </button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-sm font-semibold rounded-lg">Отмена</button>
+        </div>
+      </div>
     </div>
   );
 }

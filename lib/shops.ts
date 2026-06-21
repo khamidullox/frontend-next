@@ -3,9 +3,10 @@ import { getDb } from './firebase';
 
 const COLLECTION = 'logistics_shops';
 
-// Направления (стороны света) — для группировки точек и подбора машины.
+// Направления (стороны света) — оставлены для обратной совместимости.
 export const DIRECTIONS = ['Север', 'Юг', 'Восток', 'Запад', 'Центр'] as const;
-export type Direction = (typeof DIRECTIONS)[number];
+// direction теперь хранит произвольную строку (город/зона), а не только сторону света.
+export type Direction = string;
 
 export type ShopType = 'warehouse' | 'shop';
 
@@ -27,8 +28,9 @@ function str(v: unknown): string {
 }
 
 function normDirection(v: unknown): Direction {
-  const s = str(v) as Direction;
-  return (DIRECTIONS as readonly string[]).includes(s) ? s : 'Центр';
+  // Раньше ограничивали сторонами света; теперь принимаем любой текст (город/зона).
+  const s = str(v);
+  return s || 'Центр';
 }
 
 export async function getShop(id: string): Promise<Shop | null> {

@@ -628,7 +628,8 @@ export async function listDrivers(): Promise<UserInfo[]> {
 
 // ─── Логистика: справочник точек доставки (магазины/адреса) ───────────────────
 export const DIRECTIONS = ['Север', 'Юг', 'Восток', 'Запад', 'Центр'] as const;
-export type Direction = (typeof DIRECTIONS)[number];
+// direction теперь произвольная строка (город/зона), а не только сторона света.
+export type Direction = string;
 
 export type ShopType = 'warehouse' | 'shop';
 
