@@ -80,7 +80,11 @@ export async function createRoute(
   if (!driver || driver.role !== 'driver') return { error: 'Водитель не найден' };
 
   const myDeliveries = await listDeliveriesForDriver(username);
-  const pending = myDeliveries.filter((d) => !d.route_id && d.status === 'assigned');
+  // Берём ВСЕ активные доставки водителя (не только assigned, но и new/on_way),
+  // у которых ещё нет маршрута — заход формируется как один с внутренними доставками.
+  const pending = myDeliveries.filter(
+    (d) => !d.route_id && ['new', 'assigned', 'on_way'].includes(d.status)
+  );
 
   const now = new Date().toISOString();
   const route: Route = {

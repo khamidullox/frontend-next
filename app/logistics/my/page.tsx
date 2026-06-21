@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   listDeliveries, updateDelivery, Delivery, DeliveryStatus,
   DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL,
-  listRoutes, startRoute, finishRoute, sendTrackPoint, Route,
+  listRoutes, startRoute, finishRoute, sendTrackPoint, addDeliveriesToRoute, Route,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 
@@ -154,7 +154,22 @@ export default function MyDeliveriesPage() {
 
   const routeDeliveries = route ? items.filter((d) => d.route_id === route.id) : [];
   const routeKm = routeDeliveries.reduce((s, d) => s + (d.km || 0), 0);
-  const unassignedToRoute = items.filter((d) => !d.route_id && (d.status === 'assigned' || d.status === 'on_way'));
+  const unassignedToRoute = items.filter((d) => !d.route_id && ['new', 'assigned', 'on_way'].includes(d.status));
+
+  // Авто-присоединение: пока маршрут активен, все активные доставки водителя
+  // (в т.ч. назначенные логистом после старта) подтягиваем в этот заход — один
+  // маршрут с внутренними доставками, а не отдельные.
+  const attachingRef = useRef(false);
+  useEffect(() => {
+    if (!route || attachingRef.current) return;
+    const orphans = items.filter((d) => !d.route_id && ['new', 'assigned', 'on_way'].includes(d.status));
+    if (orphans.length === 0) return;
+    attachingRef.current = true;
+    addDeliveriesToRoute(route.id, orphans.map((d) => d.id))
+      .then(() => load())
+      .catch(() => {})
+      .finally(() => { attachingRef.current = false; });
+  }, [route, items, load]);
 
   const active = items.filter((d) => d.status !== 'delivered' && d.status !== 'returned');
   const done = items.filter((d) => d.status === 'delivered' || d.status === 'returned');
@@ -202,7 +217,7 @@ export default function MyDeliveriesPage() {
             )}
             {unassignedToRoute.length > 0 && (
               <p className="text-xs text-gray-400 mt-1">
-                Есть ещё {unassignedToRoute.length} назначенных доставок — обновите страницу, если логист добавил их в этот заход.
+                Добавляю {unassignedToRoute.length} новых доставок в этот заход…
               </p>
             )}
           </>
