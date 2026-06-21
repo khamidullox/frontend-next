@@ -31,17 +31,22 @@ interface Props {
   onChange: (lat: number, lng: number) => void;
 }
 
+interface Suggestion { display_name: string; lat: string; lon: string }
+
 // Кнопка "указать на карте" — раскрывает мини-карту, клик ставит/двигает метку.
 export default function LocationPicker({ lat, lng, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchErr, setSearchErr] = useState('');
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const mapDivRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const markerRef = useRef<any>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function placeMarker(plat: number, plng: number) {
     const L = getL();
@@ -52,16 +57,43 @@ export default function LocationPicker({ lat, lng, onChange }: Props) {
     onChange(plat, plng);
   }
 
+  async function fetchSuggestions(text: string) {
+    try {
+      const q = encodeURIComponent(text);
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=5&countrycodes=uz`, {
+        headers: { 'Accept-Language': 'ru' },
+      });
+      const data = await res.json() as Suggestion[];
+      setSuggestions(data);
+      setShowSuggestions(data.length > 0);
+    } catch { /* ignore */ }
+  }
+
+  function handleQueryChange(text: string) {
+    setQuery(text);
+    setSearchErr('');
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (text.trim().length < 3) { setSuggestions([]); setShowSuggestions(false); return; }
+    debounceRef.current = setTimeout(() => fetchSuggestions(text.trim()), 350);
+  }
+
+  function pickSuggestion(s: Suggestion) {
+    setQuery(s.display_name);
+    setShowSuggestions(false);
+    placeMarker(parseFloat(s.lat), parseFloat(s.lon));
+  }
+
   async function handleSearch() {
     if (!query.trim() || searching) return;
     setSearching(true);
     setSearchErr('');
+    setShowSuggestions(false);
     try {
-      const q = encodeURIComponent(`${query.trim()}, Узбекистан`);
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`, {
+      const q = encodeURIComponent(query.trim());
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=uz`, {
         headers: { 'Accept-Language': 'ru' },
       });
-      const data = await res.json() as { lat: string; lon: string }[];
+      const data = await res.json() as Suggestion[];
       if (data.length > 0) {
         placeMarker(parseFloat(data[0].lat), parseFloat(data[0].lon));
       } else {
@@ -110,23 +142,45 @@ export default function LocationPicker({ lat, lng, onChange }: Props) {
       </button>
       {open && (
         <>
-          <div className="flex gap-2 mt-2">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => { setQuery(e.target.value); setSearchErr(''); }}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSearch(); } }}
-              placeholder="🔍 Поиск по адресу / городу"
-              className="flex-1 px-3 py-1.5 border-2 border-gray-200 rounded-lg text-sm outline-none focus:border-blue-400"
-            />
-            <button
-              type="button"
-              onClick={handleSearch}
-              disabled={searching || !query.trim()}
-              className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-200 text-white text-sm font-semibold rounded-lg whitespace-nowrap"
-            >
-              {searching ? '⏳' : 'Найти'}
-            </button>
+          <div className="relative mt-2">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => handleQueryChange(e.target.value)}
+                onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); handleSearch(); }
+                  if (e.key === 'Escape') setShowSuggestions(false);
+                }}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                placeholder="🔍 Поиск по адресу / городу (Узбекистан)"
+                className="flex-1 px-3 py-1.5 border-2 border-gray-200 rounded-lg text-sm outline-none focus:border-blue-400"
+              />
+              <button
+                type="button"
+                onClick={handleSearch}
+                disabled={searching || !query.trim()}
+                className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-200 text-white text-sm font-semibold rounded-lg whitespace-nowrap"
+              >
+                {searching ? '⏳' : 'Найти'}
+              </button>
+            </div>
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="absolute z-10 left-0 right-0 mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                {suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => pickSuggestion(s)}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-100 last:border-0"
+                  >
+                    📍 {s.display_name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           {searchErr && <p className="text-xs text-red-500 mt-1">{searchErr}</p>}
           <div ref={mapDivRef} className="rounded-lg mt-2 border-2 border-gray-200" style={{ height: 280 }} />
