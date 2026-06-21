@@ -227,7 +227,7 @@ function ReportsContent() {
                                   </div>
                                   <div className="flex flex-wrap gap-3 mt-1">
                                     {r.total_km > 0 && <span className="text-xs font-medium text-emerald-600">🛣️ {r.total_km} км</span>}
-                                    <span className="text-xs text-gray-500">📦 {r.delivery_ids.length} точек</span>
+                                    <span className="text-xs text-gray-500">📦 {detail ? deliveries.length : r.delivery_ids.length} точек</span>
                                     {detail && <span className="text-xs text-green-600">✓ {delivered} доставлено</span>}
                                   </div>
                                 </div>

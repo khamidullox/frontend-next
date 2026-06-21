@@ -1,7 +1,18 @@
 import { NextRequest } from 'next/server';
 import { getSession, ROLE_RANK, Session } from '@/lib/auth';
 import { getRoute, addDeliveriesToRoute, finishRoute, Route } from '@/lib/routes';
-import { getDeliveriesByIds } from '@/lib/deliveries';
+import { getDeliveriesByIds, listDeliveriesForDriver, Delivery } from '@/lib/deliveries';
+
+// Доставки маршрута: по привязке (delivery_ids), а если их нет (старые маршруты
+// без привязки) — по водителю и времени маршрута (история статусов в окне).
+async function routeDeliveries(route: Route): Promise<Delivery[]> {
+  const linked = await getDeliveriesByIds(route.delivery_ids);
+  if (linked.length > 0) return linked;
+  const all = await listDeliveriesForDriver(route.driver_username);
+  const start = route.started_at;
+  const end = route.finished_at || new Date().toISOString();
+  return all.filter((d) => (d.history || []).some((h) => h.at >= start && h.at <= end));
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,7 +33,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const { id } = await params;
   const auth = await authorize(id);
   if ('error' in auth) return auth.error;
-  const deliveries = await getDeliveriesByIds(auth.route.delivery_ids);
+  const deliveries = await routeDeliveries(auth.route);
   return Response.json({ data: { ...auth.route, deliveries } });
 }
 
@@ -45,6 +56,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const updated = await getRoute(id);
   if (!updated) return Response.json({ error: 'Маршрут не найден' }, { status: 404 });
-  const deliveries = await getDeliveriesByIds(updated.delivery_ids);
+  const deliveries = await routeDeliveries(updated);
   return Response.json({ data: { ...updated, deliveries } });
 }
