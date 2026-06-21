@@ -5,7 +5,18 @@ import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
 import LogisticsTabs from '@/components/LogisticsTabs';
 import { listShops, listDeliveries, listUsers, updateDelivery, Shop, Delivery, UserInfo } from '@/lib/api';
-import { fetchGpsLocationsClient, type GpsLocation } from '@/lib/gpsClient';
+
+interface GpsLocation {
+  user_name: string;
+  user_id: string;
+  lat: number;
+  lng: number;
+  speed: number;
+  sys_time: string;
+  heart_time: string;
+  alarm: number;
+  sim_id: string;
+}
 
 const GPS_POLL_MS = 30_000;
 const GPS_OFFLINE_MS = 30 * 60_000;
@@ -76,20 +87,28 @@ function MapContent() {
   }, []);
 
   const fetchGps = useCallback(() => {
-    const ids = drivers.filter((d) => d.gps_user_id).map((d) => d.gps_user_id as string);
-    if (ids.length === 0) { setGpsLocations([]); setGpsLoaded(true); return; }
-    fetchGpsLocationsClient(ids)
-      .then((locs) => { setGpsLocations(locs); setGpsError(locs.length === 0); })
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    fetch('/api/gps', { cache: 'no-store', signal: controller.signal })
+      .then((r) => r.json())
+      .then((data) => {
+        clearTimeout(timer);
+        if (data.ok && Array.isArray(data.locations)) {
+          setGpsLocations(data.locations);
+          setGpsError(false);
+        } else {
+          setGpsError(true);
+        }
+      })
       .catch(() => setGpsError(true))
       .finally(() => setGpsLoaded(true));
-  }, [drivers]);
+  }, []);
 
   useEffect(() => {
-    if (drivers.length === 0) return;
     fetchGps();
     const id = setInterval(fetchGps, GPS_POLL_MS);
     return () => clearInterval(id);
-  }, [fetchGps, drivers]);
+  }, [fetchGps]);
 
   // Обновляем ref синхронно чтобы избежать цикла зависимостей
   geocodeMapRef.current = geocodeMap;
