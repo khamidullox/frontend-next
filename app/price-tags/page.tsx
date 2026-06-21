@@ -93,6 +93,9 @@ export default function PriceTagsPage() {
   const [customPct, setCustomPct] = useState(INSTALLMENT.defaultPct);
   const installmentPct = pctMode === 'custom' ? customPct : Number(pctMode);
 
+  // Раскладка на листе A4: по умолчанию 2 ценника, либо 1 (лабельный вариант — по одному на лист).
+  const [tagsPerPage, setTagsPerPage] = useState<'2' | '1'>('2');
+
   // Шаблон магазина: по умолчанию подбираем по названию склада. Доступны все шаблоны.
   const [storeId, setStoreId] = useState<string>(STORES[0].id);
   useEffect(() => {
@@ -252,7 +255,9 @@ export default function PriceTagsPage() {
            .tag-print-wrap { display: block !important; }
            .tag { page-break-inside: avoid; break-inside: avoid; margin: 0 auto 1mm auto !important; }
            .tag:last-child { margin-bottom: 0 !important; }
-           .tag:nth-child(2n) { page-break-after: always; break-after: page; margin-bottom: 0 !important; }
+           ${tagsPerPage === '2'
+             ? '.tag:nth-child(2n) { page-break-after: always; break-after: page; margin-bottom: 0 !important; }'
+             : '.tag { page-break-after: always; break-after: page; }'}
          }`
       : `@page { size: ${bcLabel.w} ${bcLabel.h}; margin: 0; }
          @media print {
@@ -263,7 +268,7 @@ export default function PriceTagsPage() {
            .bclabel:last-child { page-break-after: auto; }
          }`;
     return () => { el?.remove(); };
-  }, [tab, bcLabel.w, bcLabel.h]);
+  }, [tab, bcLabel.w, bcLabel.h, tagsPerPage]);
 
   return (
     <div>
@@ -323,6 +328,15 @@ export default function PriceTagsPage() {
                   className="w-full mt-2 border-2 border-gray-200 rounded-lg px-3 py-1.5 text-sm text-right outline-none focus:border-blue-400"
                 />
               )}
+              <label className="block text-xs font-semibold text-gray-500 mb-1 mt-2">На листе A4</label>
+              <select
+                value={tagsPerPage}
+                onChange={e => setTagsPerPage(e.target.value as '2' | '1')}
+                className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400"
+              >
+                <option value="2">2 ценника на лист</option>
+                <option value="1">1 ценник на лист (лейбл)</option>
+              </select>
             </div>
           ) : (
             <div className="flex-1">

@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminGate from '@/components/AdminGate';
 import LogisticsTabs from '@/components/LogisticsTabs';
 import {
-  listShopRequests, updateDelivery, addDeliveriesToRoute, listDrivers, listRoutes,
-  Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL, UserInfo, Route,
+  listShopRequests, updateDelivery, addDeliveriesToRoute, listDrivers, listRoutes, createShopRequest, listShops,
+  Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL, UserInfo, Route, Shop,
 } from '@/lib/api';
+import LocationPicker from '@/components/LocationPicker';
 
 function statusClass(s: DeliveryStatus): string {
   switch (s) {
@@ -36,17 +37,29 @@ export default function ShopRequestsManagerPage() {
 function ShopRequestsContent() {
   const [items, setItems] = useState<Delivery[]>([]);
   const [drivers, setDrivers] = useState<UserInfo[]>([]);
+  const [shops, setShops] = useState<Shop[]>([]);
   const [activeRoutes, setActiveRoutes] = useState<Route[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  // Форма создания заявки (от имени магазина) — для админа/менеджера.
+  const [showForm, setShowForm] = useState(false);
+  const [formShopId, setFormShopId] = useState('');
+  const [formClient, setFormClient] = useState('');
+  const [formAddress, setFormAddress] = useState('');
+  const [formNote, setFormNote] = useState('');
+  const [formLat, setFormLat] = useState<number | undefined>(undefined);
+  const [formLng, setFormLng] = useState<number | undefined>(undefined);
+  const [formBusy, setFormBusy] = useState(false);
+
   const load = useCallback(async () => {
     try {
-      const [reqs, drv, routes] = await Promise.all([listShopRequests(), listDrivers(), listRoutes()]);
+      const [reqs, drv, routes, shopList] = await Promise.all([listShopRequests(), listDrivers(), listRoutes(), listShops()]);
       setItems(reqs);
       setDrivers(drv);
       setActiveRoutes(routes.filter((r) => r.status === 'active'));
+      setShops(shopList.filter((s) => s.type !== 'warehouse'));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -55,6 +68,24 @@ function ShopRequestsContent() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  async function createForShop(e: React.FormEvent) {
+    e.preventDefault();
+    if (!formShopId || !formClient.trim() || !formAddress.trim()) return;
+    setFormBusy(true); setError('');
+    try {
+      const created = await createShopRequest({
+        shop_id: formShopId, client_name: formClient.trim(), address: formAddress.trim(),
+        note: formNote.trim(), lat: formLat, lng: formLng,
+      });
+      setItems((prev) => [created, ...prev]);
+      setFormClient(''); setFormAddress(''); setFormNote(''); setFormLat(undefined); setFormLng(undefined);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setFormBusy(false);
+    }
+  }
 
   const routeByDriver = useMemo(() => {
     const m = new Map<string, Route>();
@@ -88,7 +119,37 @@ function ShopRequestsContent() {
   return (
     <div>
       <LogisticsTabs />
-      <h2 className="text-xl font-bold mb-3">🏪 Заявки магазинов <span className="text-sm text-gray-400 font-normal">({pending.length})</span></h2>
+      <div className="flex items-center gap-2 mb-3">
+        <h2 className="text-xl font-bold">🏪 Заявки магазинов <span className="text-sm text-gray-400 font-normal">({pending.length})</span></h2>
+        <button onClick={() => setShowForm((v) => !v)}
+          className="ml-auto px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg whitespace-nowrap">
+          {showForm ? '✕ Закрыть' : '+ Создать заявку'}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={createForShop} className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-col gap-2">
+          <select value={formShopId} onChange={(e) => setFormShopId(e.target.value)} required
+            className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
+            <option value="">— выберите магазин —</option>
+            {shops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <input value={formClient} onChange={(e) => setFormClient(e.target.value)} autoComplete="off"
+            placeholder="Имя клиента"
+            className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <input value={formAddress} onChange={(e) => setFormAddress(e.target.value)} autoComplete="off"
+            placeholder="Адрес доставки"
+            className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <input value={formNote} onChange={(e) => setFormNote(e.target.value)} autoComplete="off"
+            placeholder="Примечание (необязательно)"
+            className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <LocationPicker lat={formLat} lng={formLng} onChange={(la, ln) => { setFormLat(la); setFormLng(ln); }} />
+          <button type="submit" disabled={formBusy || !formShopId || !formClient.trim() || !formAddress.trim()}
+            className="self-start px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg">
+            {formBusy ? '⏳…' : '+ Создать заявку'}
+          </button>
+        </form>
+      )}
 
       {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
 
@@ -115,6 +176,10 @@ function ShopRequestsContent() {
                     {d.note && <div className="text-xs text-gray-400 mt-0.5">📝 {d.note}</div>}
                     <div className="text-xs text-gray-400 mt-0.5">
                       {d.direction && <span className="mr-2">🧭 {d.direction}</span>}
+                      {d.lat != null && d.lng != null && (
+                        <a href={`https://yandex.ru/maps/?pt=${d.lng},${d.lat}&z=16&l=map`} target="_blank" rel="noopener noreferrer"
+                          className="text-emerald-600 mr-2 hover:underline">📌 на карте</a>
+                      )}
                       создано {fmt(d.created_at)}
                     </div>
                   </div>

@@ -22,20 +22,31 @@ export async function GET() {
   return Response.json({ data: await listShopRequests() });
 }
 
-// Магазин создаёт заявку. direction/km наследуются от точки магазина — сам
-// воркер их не указывает (машина едет в направлении этого магазина).
+// Магазин создаёт заявку (или менеджер/админ — от имени любого магазина).
+// direction/km наследуются от точки магазина — сам воркер их не указывает
+// (машина едет в направлении этого магазина).
 export async function POST(request: NextRequest) {
   const s = await getSession();
   if (!s) return Response.json({ error: 'Не авторизован' }, { status: 401 });
-  if (s.role !== 'worker') return Response.json({ error: 'Недостаточно прав' }, { status: 403 });
-  if (!s.shop_id) {
-    return Response.json({ error: 'Ваш аккаунт не привязан к магазину — обратитесь к администратору' }, { status: 403 });
-  }
-
-  const shop = await getShop(s.shop_id);
-  if (!shop) return Response.json({ error: 'Магазин не найден' }, { status: 400 });
 
   const body = await request.json().catch(() => ({}));
+
+  let shopId: string;
+  if (s.role === 'worker') {
+    if (!s.shop_id) {
+      return Response.json({ error: 'Ваш аккаунт не привязан к магазину — обратитесь к администратору' }, { status: 403 });
+    }
+    shopId = s.shop_id;
+  } else if (ROLE_RANK[s.role] >= ROLE_RANK['manager']) {
+    shopId = String(body.shop_id || '');
+    if (!shopId) return Response.json({ error: 'Укажите магазин' }, { status: 400 });
+  } else {
+    return Response.json({ error: 'Недостаточно прав' }, { status: 403 });
+  }
+
+  const shop = await getShop(shopId);
+  if (!shop) return Response.json({ error: 'Магазин не найден' }, { status: 400 });
+
   const res = await createDelivery({
     kind: 'shop_to_client',
     shop_id: shop.id,
@@ -45,6 +56,8 @@ export async function POST(request: NextRequest) {
     note: body.note,
     direction: shop.direction,
     km: shop.km,
+    lat: body.lat != null ? Number(body.lat) : undefined,
+    lng: body.lng != null ? Number(body.lng) : undefined,
     created_by: s.name || s.username,
   });
   if ('error' in res) return Response.json({ error: res.error }, { status: 400 });

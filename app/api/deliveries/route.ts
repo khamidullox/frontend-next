@@ -44,6 +44,8 @@ export async function POST(request: NextRequest) {
       external_car: body.external_car,
       weight_kg: body.weight_kg != null ? Number(body.weight_kg) : undefined,
       volume_m3: body.volume_m3 != null ? Number(body.volume_m3) : undefined,
+      lat: body.lat != null ? Number(body.lat) : undefined,
+      lng: body.lng != null ? Number(body.lng) : undefined,
       created_by: session.name || session.username,
     });
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });

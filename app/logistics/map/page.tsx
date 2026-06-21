@@ -152,12 +152,14 @@ function MapContent() {
       if (!delivery) return;
 
       let dest: [number, number] | null = null;
-      // 1. По shop_id
-      if (delivery.shop_id) {
+      // 1. Координаты, указанные вручную на карте при создании заявки
+      if (delivery.lat != null && delivery.lng != null) dest = [delivery.lat, delivery.lng];
+      // 2. По shop_id
+      if (!dest && delivery.shop_id) {
         const shop = shops.find((s) => s.id === delivery.shop_id);
         if (shop?.lat && shop?.lng) dest = [shop.lat, shop.lng];
       }
-      // 2. По to_name или shop_name (складские перемещения)
+      // 3. По to_name или shop_name (складские перемещения)
       if (!dest) {
         const destName = delivery.to_name || delivery.shop_name;
         if (destName) {
@@ -165,9 +167,9 @@ function MapContent() {
           if (shop?.lat && shop?.lng) dest = [shop.lat, shop.lng];
         }
       }
-      // 3. Из geocodeMap
+      // 4. Из geocodeMap
       if (!dest) dest = geocodeMapRef.current[delivery.id] ?? null;
-      // 4. Геокодинг адреса
+      // 5. Геокодинг адреса
       if (!dest && delivery.address) {
         try {
           const q = encodeURIComponent(`${delivery.address}, Андижан, Узбекистан`);

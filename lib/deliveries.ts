@@ -58,6 +58,10 @@ export interface Delivery {
   shop_id: string | null;
   shop_name: string | null;
 
+  // Точка на карте, указанная вручную при создании заявки (если адрес не геокодируется).
+  lat: number | null;
+  lng: number | null;
+
   // Назначенный водитель (снимок данных на момент назначения).
   driver_username: string | null;
   driver_name: string | null;
@@ -88,6 +92,8 @@ function normalizeDelivery(d: Delivery): Delivery {
     shop_id: d.shop_id ?? null,
     shop_name: d.shop_name ?? null,
     route_id: d.route_id ?? null,
+    lat: d.lat ?? null,
+    lng: d.lng ?? null,
   };
 }
 
@@ -129,6 +135,8 @@ interface CreateInput {
   note?: string;
   shop_id?: string;       // заявка магазина (kind = shop_to_client)
   shop_name?: string;
+  lat?: number;
+  lng?: number;
   driver_username?: string;      // штатный водитель (есть аккаунт)
   external_driver?: string;      // внешний водитель «со стороны» — имя
   external_car?: string;         // его машина
@@ -218,6 +226,8 @@ export async function createDelivery(
     to_name,
     shop_id: input.shop_id ? str(input.shop_id) : null,
     shop_name: input.shop_name ? str(input.shop_name) : null,
+    lat: input.lat != null ? Number(input.lat) : null,
+    lng: input.lng != null ? Number(input.lng) : null,
     total_weight: input.weight_kg != null ? input.weight_kg : dims.weight,
     total_volume_l: input.volume_m3 != null ? input.volume_m3 * 1000 : dims.volume_l,
     total_qty: dims.qty,

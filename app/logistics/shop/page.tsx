@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import AdminGate from '@/components/AdminGate';
 import { useAuth } from '@/components/AuthProvider';
 import { listShopRequests, createShopRequest, Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL } from '@/lib/api';
+import LocationPicker from '@/components/LocationPicker';
 
 function statusClass(s: DeliveryStatus): string {
   switch (s) {
@@ -40,6 +41,8 @@ function ShopRequestContent() {
   const [client, setClient] = useState('');
   const [address, setAddress] = useState('');
   const [note, setNote] = useState('');
+  const [lat, setLat] = useState<number | undefined>(undefined);
+  const [lng, setLng] = useState<number | undefined>(undefined);
 
   const load = useCallback(async () => {
     try {
@@ -66,8 +69,8 @@ function ShopRequestContent() {
     setBusy(true);
     setError('');
     try {
-      await createShopRequest({ client_name: client.trim(), address: address.trim(), note: note.trim() });
-      setClient(''); setAddress(''); setNote('');
+      await createShopRequest({ client_name: client.trim(), address: address.trim(), note: note.trim(), lat, lng });
+      setClient(''); setAddress(''); setNote(''); setLat(undefined); setLng(undefined);
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -93,6 +96,7 @@ function ShopRequestContent() {
         <input value={note} onChange={(e) => setNote(e.target.value)} autoComplete="off"
           placeholder="Примечание (необязательно)"
           className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+        <LocationPicker lat={lat} lng={lng} onChange={(la, ln) => { setLat(la); setLng(ln); }} />
         <button type="submit" disabled={busy || !client.trim() || !address.trim()}
           className="self-start px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg">
           {busy ? '⏳…' : '+ Создать заявку'}
@@ -114,6 +118,7 @@ function ShopRequestContent() {
                 {d.address && <div className="text-xs text-gray-400 mt-0.5 truncate">📍 {d.address}</div>}
                 <div className="text-xs text-gray-400 mt-0.5 flex flex-wrap gap-2">
                   {d.driver_name && <span>👤 {d.driver_name}</span>}
+                  {d.lat != null && d.lng != null && <span className="text-emerald-600">📌 на карте</span>}
                   <span>{fmt(d.created_at)}</span>
                 </div>
               </div>

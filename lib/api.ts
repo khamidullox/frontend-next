@@ -523,6 +523,8 @@ export interface Delivery {
   to_name: string | null;
   shop_id: string | null;
   shop_name: string | null;
+  lat: number | null;
+  lng: number | null;
   total_weight: number;
   total_volume_l: number;
   total_qty: number;
@@ -564,6 +566,8 @@ export async function createDelivery(input: {
   driver_username?: string;
   external_driver?: string;
   external_car?: string;
+  lat?: number;
+  lng?: number;
 }): Promise<Delivery> {
   const res = await fetch('/api/deliveries', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -785,7 +789,7 @@ export async function listShopRequests(): Promise<Delivery[]> {
 }
 
 export async function createShopRequest(input: {
-  client_name: string; address: string; note?: string;
+  client_name: string; address: string; note?: string; lat?: number; lng?: number; shop_id?: string;
 }): Promise<Delivery> {
   const res = await fetch('/api/logistics/shop-requests', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
