@@ -52,6 +52,8 @@ function ShopRequestsContent() {
   const [formLat, setFormLat] = useState<number | undefined>(undefined);
   const [formLng, setFormLng] = useState<number | undefined>(undefined);
   const [formBusy, setFormBusy] = useState(false);
+  const [shopSearch, setShopSearch] = useState('');
+  const [showShopList, setShowShopList] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -80,6 +82,7 @@ function ShopRequestsContent() {
       });
       setItems((prev) => [created, ...prev]);
       setFormClient(''); setFormAddress(''); setFormNote(''); setFormLat(undefined); setFormLng(undefined);
+      setFormShopId(''); setShopSearch('');
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -129,11 +132,45 @@ function ShopRequestsContent() {
 
       {showForm && (
         <form onSubmit={createForShop} className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-col gap-2">
-          <select value={formShopId} onChange={(e) => setFormShopId(e.target.value)} required
-            className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
-            <option value="">— выберите магазин —</option>
-            {shops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+          <div className="relative">
+            <input
+              value={shopSearch}
+              onChange={(e) => { setShopSearch(e.target.value); setShowShopList(true); setFormShopId(''); }}
+              onFocus={() => setShowShopList(true)}
+              onBlur={() => setTimeout(() => setShowShopList(false), 150)}
+              placeholder="🔍 Магазин — поиск по названию или городу"
+              autoComplete="off"
+              className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            {formShopId && !showShopList && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-600 text-xs">✓ выбран</span>
+            )}
+            {showShopList && (
+              <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                {shops
+                  .filter((s) => {
+                    const q = shopSearch.trim().toLowerCase();
+                    if (!q) return true;
+                    return s.name.toLowerCase().includes(q) || (s.direction || '').toLowerCase().includes(q);
+                  })
+                  .slice(0, 30)
+                  .map((s) => (
+                    <button key={s.id} type="button"
+                      onMouseDown={() => { setFormShopId(s.id); setShopSearch(s.name); setShowShopList(false); }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 last:border-0 flex items-center justify-between gap-2">
+                      <span className="truncate">🏪 {s.name}</span>
+                      {s.direction && <span className="text-[10px] text-sky-600 shrink-0">{s.direction}</span>}
+                    </button>
+                  ))}
+                {shops.filter((s) => {
+                  const q = shopSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return s.name.toLowerCase().includes(q) || (s.direction || '').toLowerCase().includes(q);
+                }).length === 0 && (
+                  <div className="px-3 py-2 text-xs text-gray-400">Ничего не найдено</div>
+                )}
+              </div>
+            )}
+          </div>
           <input value={formClient} onChange={(e) => setFormClient(e.target.value)} autoComplete="off"
             placeholder="Имя клиента"
             className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
