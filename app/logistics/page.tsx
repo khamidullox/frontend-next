@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
 import ConfirmModal from '@/components/ConfirmModal';
@@ -9,7 +9,7 @@ import {
   listDeliveries, createDelivery, updateDelivery, deleteDeliveryApi, listDrivers,
   listMovements, listOrders, listTransfers, MovementListItem, OrderListItem, TransferListItem, MOVEMENT_STATUS_LABEL,
   Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL, UserInfo,
-  autoAssign, fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings,
+  autoAssign, fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings, CAP_DEFAULT_KEY,
   listRoutes, Route,
   listShops, Shop,
 } from '@/lib/api';
@@ -47,29 +47,32 @@ function fmt(iso?: string | null) {
   } catch { return ''; }
 }
 
-// Категория транспорта для фильтра. LABO/Газель — доставочные, остальное — служебные.
+// Категория транспорта для фильтра — точное значение поля «Транспорт» у водителя.
 function vehicleCategory(transport: string | null | undefined): string {
-  const t = (transport || '').toLowerCase();
-  if (t.includes('labo')) return 'LABO';
-  if (t.includes('gaz') || t.includes('газел') || t.includes('33021')) return 'Газель';
-  if (!t.trim()) return 'Без типа';
-  return 'Служебная';
+  const t = (transport || '').trim();
+  return t || 'Без типа';
 }
 const DELIVERY_CATS = ['LABO', 'Газель'];
 
 const DEFAULT_CAP_SETTINGS: LogisticsSettings = {
-  fuel_rate_per_km: 0, cap_labo_kg: 600, cap_labo_m3: 3, cap_gazelle_kg: 1500, cap_gazelle_m3: 9,
-  cap_other_kg: 300, cap_other_m3: 2,
+  fuel_rate_per_km: 0,
+  cap_by_type: {
+    LABO: { kg: 600, m3: 3 },
+    'Газель': { kg: 1500, m3: 9 },
+    [CAP_DEFAULT_KEY]: { kg: 300, m3: 2 },
+  },
 };
 
-// Дефолтная вместимость по типу транспорта (если у водителя не задана вручную).
-// Кг/м³ берутся из общих настроек (редактируются на этой странице для всех сразу).
+// Дефолтная вместимость по виду транспорта (если у водителя не задана вручную).
+// Кг/м³ берутся из общих настроек, ключ — точное значение «Транспорт» у водителя;
+// если для этого вида ничего не настроено — берём «Прочие» (CAP_DEFAULT_KEY).
 // pcs — ориентировочная вместимость в штуках (для фолбэка, когда нет веса/объёма).
 function defaultCapacity(transport: string | null | undefined, settings: LogisticsSettings): { kg: number; m3: number; pcs: number } {
-  const cat = vehicleCategory(transport);
-  if (cat === 'Газель') return { kg: settings.cap_gazelle_kg, m3: settings.cap_gazelle_m3, pcs: 200 };
-  if (cat === 'LABO') return { kg: settings.cap_labo_kg, m3: settings.cap_labo_m3, pcs: 80 };
-  return { kg: settings.cap_other_kg, m3: settings.cap_other_m3, pcs: 50 };
+  const key = (transport || '').trim();
+  const t = key.toLowerCase();
+  const cap = (key && settings.cap_by_type[key]) || settings.cap_by_type[CAP_DEFAULT_KEY] || { kg: 0, m3: 0 };
+  const pcs = t.includes('labo') ? 80 : (t.includes('gaz') || t.includes('газел')) ? 200 : 50;
+  return { kg: cap.kg, m3: cap.m3, pcs };
 }
 
 export default function LogisticsPage() {
@@ -90,9 +93,9 @@ function LogisticsContent() {
   const [fuelRate, setFuelRate] = useState(0);
   const [fuelInput, setFuelInput] = useState('');
   const [capSettings, setCapSettings] = useState<LogisticsSettings>(DEFAULT_CAP_SETTINGS);
-  const [capInputs, setCapInputs] = useState({
-    labo_kg: '', labo_m3: '', gazelle_kg: '', gazelle_m3: '', other_kg: '', other_m3: '',
-  });
+  const [capType, setCapType] = useState<string>(CAP_DEFAULT_KEY);
+  const capKgRef = useRef<HTMLInputElement>(null);
+  const capM3Ref = useRef<HTMLInputElement>(null);
   const [autoAssigning, setAutoAssigning] = useState(false);
   const [autoMsg, setAutoMsg] = useState('');
   const [driverSearch, setDriverSearch] = useState('');
@@ -148,13 +151,22 @@ function LogisticsContent() {
       setFuelRate(s.fuel_rate_per_km);
       setFuelInput(s.fuel_rate_per_km > 0 ? String(s.fuel_rate_per_km) : '');
       setCapSettings(s);
-      setCapInputs({
-        labo_kg: String(s.cap_labo_kg), labo_m3: String(s.cap_labo_m3),
-        gazelle_kg: String(s.cap_gazelle_kg), gazelle_m3: String(s.cap_gazelle_m3),
-        other_kg: String(s.cap_other_kg), other_m3: String(s.cap_other_m3),
-      });
     }).catch(() => {});
   }, []);
+
+  // Список видов транспорта берётся из реальных значений поля «Транспорт» у водителей.
+  const vehicleTypes = useMemo(() => {
+    const set = new Set<string>();
+    for (const d of drivers) {
+      const t = (d.transport || '').trim();
+      if (t) set.add(t);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, 'ru'));
+  }, [drivers]);
+
+  // Если выбранный вид транспорта пропал из списка (например, изменили у водителя) — показываем «Прочие».
+  const effectiveCapType = capType === CAP_DEFAULT_KEY || vehicleTypes.includes(capType) ? capType : CAP_DEFAULT_KEY;
+  const currentCap = capSettings.cap_by_type[effectiveCapType] || { kg: 0, m3: 0 };
 
   async function saveFuelRate(val: string) {
     const n = Math.max(0, Number(val) || 0);
@@ -162,11 +174,13 @@ function LogisticsContent() {
     await saveLogisticsSettings({ fuel_rate_per_km: n }).catch(() => {});
   }
 
-  // Вместимость по типу транспорта — общая для всех водителей, меняется здесь сразу для всех.
-  async function saveCap(key: keyof LogisticsSettings, val: string) {
-    const n = Math.max(0, Number(val) || 0);
-    setCapSettings((prev) => ({ ...prev, [key]: n }));
-    await saveLogisticsSettings({ [key]: n }).catch(() => {});
+  // Вместимость по выбранному виду транспорта — общая для всех водителей этого вида.
+  async function saveCapType(kgVal: string, m3Val: string) {
+    const kg = Math.max(0, Number(kgVal) || 0);
+    const m3 = Math.max(0, Number(m3Val) || 0);
+    const next = { ...capSettings.cap_by_type, [effectiveCapType]: { kg, m3 } };
+    setCapSettings((prev) => ({ ...prev, cap_by_type: next }));
+    await saveLogisticsSettings({ cap_by_type: next }).catch(() => {});
   }
 
   async function doAutoAssign() {
@@ -372,50 +386,29 @@ function LogisticsContent() {
         {autoMsg && <span className="text-xs text-gray-500">{autoMsg}</span>}
       </div>
 
-      {/* Вместимость по типам машин — общая для всех водителей этого типа */}
-      <div className="bg-white rounded-xl shadow-sm p-3 mb-3 flex flex-wrap items-center gap-4">
+      {/* Вместимость по виду транспорта — список видов берётся из карточек водителей */}
+      <div className="bg-white rounded-xl shadow-sm p-3 mb-3 flex flex-wrap items-center gap-3">
         <span className="text-xs text-gray-500 whitespace-nowrap">📦 Вместимость по умолчанию:</span>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-semibold text-gray-600">LABO</span>
-          <input type="number" min={0} step={1} value={capInputs.labo_kg}
-            onChange={(e) => setCapInputs((p) => ({ ...p, labo_kg: e.target.value }))}
-            onBlur={(e) => saveCap('cap_labo_kg', e.target.value)}
-            className="w-16 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
+        <select value={effectiveCapType} onChange={(e) => setCapType(e.target.value)}
+          className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:border-blue-400 max-w-[200px]">
+          <option value={CAP_DEFAULT_KEY}>Прочие (по умолчанию)</option>
+          {vehicleTypes.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+        <div key={effectiveCapType} className="flex items-center gap-1.5">
+          <input ref={capKgRef} type="number" min={0} step={1} defaultValue={currentCap.kg}
+            onBlur={(e) => saveCapType(e.target.value, capM3Ref.current?.value ?? String(currentCap.m3))}
+            className="w-20 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
           <span className="text-[11px] text-gray-400">кг</span>
-          <input type="number" min={0} step={0.1} value={capInputs.labo_m3}
-            onChange={(e) => setCapInputs((p) => ({ ...p, labo_m3: e.target.value }))}
-            onBlur={(e) => saveCap('cap_labo_m3', e.target.value)}
-            className="w-14 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
-          <span className="text-[11px] text-gray-400">м³</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-semibold text-gray-600">Газель</span>
-          <input type="number" min={0} step={1} value={capInputs.gazelle_kg}
-            onChange={(e) => setCapInputs((p) => ({ ...p, gazelle_kg: e.target.value }))}
-            onBlur={(e) => saveCap('cap_gazelle_kg', e.target.value)}
+          <input ref={capM3Ref} type="number" min={0} step={0.1} defaultValue={currentCap.m3}
+            onBlur={(e) => saveCapType(capKgRef.current?.value ?? String(currentCap.kg), e.target.value)}
             className="w-16 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
-          <span className="text-[11px] text-gray-400">кг</span>
-          <input type="number" min={0} step={0.1} value={capInputs.gazelle_m3}
-            onChange={(e) => setCapInputs((p) => ({ ...p, gazelle_m3: e.target.value }))}
-            onBlur={(e) => saveCap('cap_gazelle_m3', e.target.value)}
-            className="w-14 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
-          <span className="text-[11px] text-gray-400">м³</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-semibold text-gray-600">Прочие</span>
-          <input type="number" min={0} step={1} value={capInputs.other_kg}
-            onChange={(e) => setCapInputs((p) => ({ ...p, other_kg: e.target.value }))}
-            onBlur={(e) => saveCap('cap_other_kg', e.target.value)}
-            className="w-16 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
-          <span className="text-[11px] text-gray-400">кг</span>
-          <input type="number" min={0} step={0.1} value={capInputs.other_m3}
-            onChange={(e) => setCapInputs((p) => ({ ...p, other_m3: e.target.value }))}
-            onBlur={(e) => saveCap('cap_other_m3', e.target.value)}
-            className="w-14 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
           <span className="text-[11px] text-gray-400">м³</span>
         </div>
         <span className="text-[11px] text-gray-400 basis-full">
-          «Прочие» — любая другая машина, указанная в поле «Транспорт» у пользователя (не LABO и не Газель).
+          Виды транспорта в списке — из поля «Транспорт» у водителей. «Прочие» — вместимость для видов без своей настройки.
+          {vehicleTypes.length === 0 && ' Сейчас ни у одного водителя не указан транспорт.'}
         </span>
       </div>
 

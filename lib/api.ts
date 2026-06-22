@@ -605,30 +605,32 @@ export async function autoAssign(): Promise<{ assigned: number; skipped: number 
   return data.data as { assigned: number; skipped: number };
 }
 
+export const CAP_DEFAULT_KEY = '__default__';
+
 export interface LogisticsSettings {
   fuel_rate_per_km: number;
-  cap_labo_kg: number;
-  cap_labo_m3: number;
-  cap_gazelle_kg: number;
-  cap_gazelle_m3: number;
-  cap_other_kg: number;
-  cap_other_m3: number;
+  // Вместимость по умолчанию по виду транспорта — ключ — точное значение поля
+  // «Транспорт» у водителя; CAP_DEFAULT_KEY — для видов без своей настройки.
+  cap_by_type: Record<string, { kg: number; m3: number }>;
 }
 
 const DEFAULT_LOGISTICS_SETTINGS: LogisticsSettings = {
   fuel_rate_per_km: 0,
-  cap_labo_kg: 600,
-  cap_labo_m3: 3,
-  cap_gazelle_kg: 1500,
-  cap_gazelle_m3: 9,
-  cap_other_kg: 300,
-  cap_other_m3: 2,
+  cap_by_type: {
+    LABO: { kg: 600, m3: 3 },
+    'Газель': { kg: 1500, m3: 9 },
+    [CAP_DEFAULT_KEY]: { kg: 300, m3: 2 },
+  },
 };
 
 export async function fetchLogisticsSettings(): Promise<LogisticsSettings> {
   const res = await fetch('/api/logistics/settings', { cache: 'no-store' });
   const data = await res.json().catch(() => ({}));
-  return { ...DEFAULT_LOGISTICS_SETTINGS, ...(data.data as Partial<LogisticsSettings>) };
+  const d = data.data as Partial<LogisticsSettings> | undefined;
+  return {
+    fuel_rate_per_km: d?.fuel_rate_per_km ?? DEFAULT_LOGISTICS_SETTINGS.fuel_rate_per_km,
+    cap_by_type: d?.cap_by_type && Object.keys(d.cap_by_type).length ? d.cap_by_type : DEFAULT_LOGISTICS_SETTINGS.cap_by_type,
+  };
 }
 
 export async function saveLogisticsSettings(s: Partial<LogisticsSettings>): Promise<void> {
