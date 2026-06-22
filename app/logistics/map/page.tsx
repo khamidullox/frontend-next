@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
 import LogisticsTabs from '@/components/LogisticsTabs';
-import { listShops, listDeliveries, listUsers, updateDelivery, listVehiclePositions, Shop, Delivery, UserInfo } from '@/lib/api';
+import { listShops, listDeliveries, listUsers, listVehiclePositions, Shop, Delivery, UserInfo } from '@/lib/api';
 
 interface GpsLocation {
   user_name: string;
@@ -32,13 +32,18 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+interface RouteStop {
+  coords: [number, number];
+  label: string;
+  order: number; // порядок объезда от OSRM Trip (1, 2, 3… без учёта текущей позиции = 0)
+}
+
 interface RouteInfo {
   userId: string;
   path: [number, number][];
   durationMin: number;
   distanceKm: number;
-  destCoords: [number, number];
-  deliveryLabel: string;
+  stops: RouteStop[];
 }
 
 const TYPE_ICON: Record<string, string> = { warehouse: '🏭', shop: '🏪' };
@@ -181,6 +186,42 @@ function MapContent() {
   // Обновляем ref синхронно чтобы избежать цикла зависимостей
   geocodeMapRef.current = geocodeMap;
 
+  // Резолвит точку назначения доставки (как на карте водителя): ручные координаты →
+  // shop_id → название склада/магазина → ранее геокодированный адрес → геокодинг адреса.
+  const resolveDest = useCallback(async (delivery: Delivery): Promise<[number, number] | null> => {
+    if (delivery.lat != null && delivery.lng != null) return [delivery.lat, delivery.lng];
+    if (delivery.shop_id) {
+      const shop = shops.find((s) => s.id === delivery.shop_id);
+      if (shop?.lat && shop?.lng) return [shop.lat, shop.lng];
+    }
+    const destName = delivery.to_name || delivery.shop_name;
+    if (destName) {
+      const shop = shops.find((s) => s.name === destName || s.name.includes(destName) || destName.includes(s.name));
+      if (shop?.lat && shop?.lng) return [shop.lat, shop.lng];
+    }
+    const cached = geocodeMapRef.current[delivery.id];
+    if (cached) return cached;
+    if (delivery.address) {
+      try {
+        const q = encodeURIComponent(`${delivery.address}, Андижан, Узбекистан`);
+        const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`, {
+          headers: { 'Accept-Language': 'ru' },
+        });
+        const geo = (await r.json()) as { lat: string; lon: string }[];
+        if (geo.length > 0) {
+          const dest: [number, number] = [parseFloat(geo[0].lat), parseFloat(geo[0].lon)];
+          geocodeMapRef.current = { ...geocodeMapRef.current, [delivery.id]: dest };
+          setGeocodeMap((prev) => ({ ...prev, [delivery.id]: dest }));
+          return dest;
+        }
+      } catch { /* ignore */ }
+    }
+    return null;
+  }, [shops]);
+
+  // Строит маршрут водителя по ВСЕМ его текущим «в пути» доставкам сразу (а не только
+  // по одной первой): один запрос к OSRM Trip даёт и оптимальный порядок объезда точек,
+  // и путь по реальным дорогам (а не прямую линию через горы/границы).
   const computeRoutes = useCallback(async () => {
     if (!gpsLocations.length) { setRoutes([]); return; }
     const results: RouteInfo[] = [];
@@ -190,70 +231,46 @@ function MapContent() {
         ? drivers.find((d) => d.username === gps.user_id.replace(/^phone:/, ''))
         : drivers.find((d) => d.gps_user_id === gps.user_id);
       if (!driver) return;
-      const delivery = deliveries.find(
-        (d) => d.driver_username === driver.username && d.status === 'on_way'
-      );
-      if (!delivery) return;
+      const onWay = deliveries.filter((d) => d.driver_username === driver.username && d.status === 'on_way');
+      if (!onWay.length) return;
 
-      let dest: [number, number] | null = null;
-      // 1. Координаты, указанные вручную на карте при создании заявки
-      if (delivery.lat != null && delivery.lng != null) dest = [delivery.lat, delivery.lng];
-      // 2. По shop_id
-      if (!dest && delivery.shop_id) {
-        const shop = shops.find((s) => s.id === delivery.shop_id);
-        if (shop?.lat && shop?.lng) dest = [shop.lat, shop.lng];
-      }
-      // 3. По to_name или shop_name (складские перемещения)
-      if (!dest) {
-        const destName = delivery.to_name || delivery.shop_name;
-        if (destName) {
-          const shop = shops.find((s) => s.name === destName || s.name.includes(destName) || destName.includes(s.name));
-          if (shop?.lat && shop?.lng) dest = [shop.lat, shop.lng];
+      // Одна и та же точка назначения у нескольких накладных — одна остановка на карте.
+      const stopsMap = new Map<string, { coords: [number, number]; label: string }>();
+      for (const delivery of onWay) {
+        const dest = await resolveDest(delivery);
+        if (!dest) continue;
+        const key = delivery.shop_id || `${dest[0].toFixed(3)},${dest[1].toFixed(3)}`;
+        if (!stopsMap.has(key)) {
+          stopsMap.set(key, { coords: dest, label: delivery.to_name || delivery.shop_name || delivery.client_name || '' });
         }
       }
-      // 4. Из geocodeMap
-      if (!dest) dest = geocodeMapRef.current[delivery.id] ?? null;
-      // 5. Геокодинг адреса
-      if (!dest && delivery.address) {
-        try {
-          const q = encodeURIComponent(`${delivery.address}, Андижан, Узбекистан`);
-          const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`, {
-            headers: { 'Accept-Language': 'ru' },
-          });
-          const geo = (await r.json()) as { lat: string; lon: string }[];
-          if (geo.length > 0) {
-            dest = [parseFloat(geo[0].lat), parseFloat(geo[0].lon)];
-            geocodeMapRef.current = { ...geocodeMapRef.current, [delivery.id]: dest };
-            setGeocodeMap((prev) => ({ ...prev, [delivery.id]: dest! }));
-          }
-        } catch { /* ignore */ }
-      }
-      if (!dest) return;
+      const stops = [...stopsMap.values()];
+      if (!stops.length) return;
 
       try {
+        const coordsParam = [`${gps.lng},${gps.lat}`, ...stops.map((s) => `${s.coords[1]},${s.coords[0]}`)].join(';');
         const r = await fetch(
-          `https://router.project-osrm.org/route/v1/driving/${gps.lng},${gps.lat};${dest[1]},${dest[0]}?overview=full&geometries=geojson`
+          `https://router.project-osrm.org/trip/v1/driving/${coordsParam}?source=first&roundtrip=false&geometries=geojson&overview=full`
         );
         const j = await r.json();
-        const ro = j.routes?.[0];
-        if (!ro) return;
-        const distanceKm = Math.round(ro.distance / 100) / 10;
-        // Автосохраняем км в доставку если ещё не заполнено
-        if (!delivery.km) {
-          updateDelivery(delivery.id, { km: Math.round(distanceKm) }).catch(() => {});
-        }
+        const trip = j.trips?.[0];
+        if (!trip || !Array.isArray(j.waypoints)) return;
+        // waypoints[0] — текущая позиция водителя; дальше — наши stops в том же порядке ввода.
+        const orderedStops: RouteStop[] = stops.map((s, i) => ({
+          ...s,
+          order: j.waypoints[i + 1]?.waypoint_index ?? i + 1,
+        })).sort((a, b) => a.order - b.order);
         results.push({
           userId: gps.user_id,
-          path: (ro.geometry.coordinates as number[][]).map(([ln, la]) => [la, ln] as [number, number]),
-          durationMin: Math.round(ro.duration / 60),
-          distanceKm,
-          destCoords: dest,
-          deliveryLabel: delivery.to_name || delivery.shop_name || delivery.client_name || '',
+          path: (trip.geometry.coordinates as number[][]).map(([ln, la]) => [la, ln] as [number, number]),
+          durationMin: Math.round(trip.duration / 60),
+          distanceKm: Math.round(trip.distance / 100) / 10,
+          stops: orderedStops,
         });
       } catch { /* ignore */ }
     }));
     setRoutes(results);
-  }, [gpsLocations, drivers, deliveries, shops]);
+  }, [gpsLocations, drivers, deliveries, resolveDest]);
 
   useEffect(() => { computeRoutes(); }, [computeRoutes]);
 
@@ -315,22 +332,31 @@ function MapContent() {
     routeLayersRef.current = [];
     const coords: [number, number][] = [];
 
-    // Маршруты водителей
+    // Маршруты водителей — путь по дорогам через ВСЕ их текущие остановки в оптимальном порядке (OSRM Trip).
     routes.forEach((route) => {
       const eta = new Date(Date.now() + route.durationMin * 60_000);
       const etaStr = eta.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      const stopsList = route.stops.map((s) => `${s.order}. ${s.label || 'без названия'}`).join('<br>');
 
       const poly = L.polyline(route.path, { color: '#2563EB', weight: 5, opacity: 0.75, dashArray: '12,6' })
-        .bindPopup(`<b>🗺 Маршрут</b><br>${route.deliveryLabel}<br>${route.distanceKm} км · ~${route.durationMin} мин<br>Прибытие около <b>${etaStr}</b>`)
+        .bindPopup(
+          `<b>🗺 Маршрут · ${route.stops.length} ${route.stops.length === 1 ? 'остановка' : 'остановок'}</b><br>` +
+          `${stopsList}<br>${route.distanceKm} км · ~${route.durationMin} мин<br>Прибытие к последней около <b>${etaStr}</b>`
+        )
         .addTo(map);
+      routeLayersRef.current.push(poly);
 
-      const destIcon = L.divIcon({
-        className: '',
-        html: `<div style="background:#1D4ED8;color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;border:2px solid rgba(255,255,255,0.9);box-shadow:0 2px 6px rgba(0,0,0,0.3);">🏁 ~${route.durationMin} мин · ${etaStr}</div>`,
-        iconAnchor: [0, 14],
+      route.stops.forEach((stop) => {
+        const stopIcon = L.divIcon({
+          className: '',
+          html: `<div style="background:#1D4ED8;color:#fff;width:22px;height:22px;border-radius:50%;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.35)">${stop.order}</div>`,
+          iconSize: [22, 22], iconAnchor: [11, 11],
+        });
+        const stopM = L.marker(stop.coords, { icon: stopIcon, zIndexOffset: 500 })
+          .bindPopup(`<b>${stop.order}. ${stop.label || 'без названия'}</b>`)
+          .addTo(map);
+        routeLayersRef.current.push(stopM);
       });
-      const destM = L.marker(route.destCoords, { icon: destIcon, zIndexOffset: 500 }).addTo(map);
-      routeLayersRef.current.push(poly, destM);
     });
 
     // Точки (склады, магазины)
