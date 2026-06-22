@@ -90,7 +90,8 @@ function MapContent() {
   const [leafletReady, setLeafletReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [gpsError, setGpsError] = useState(false);
-  const [selectedGps, setSelectedGps] = useState<string | null>(null);
+  // Выбранные машины (user_id) — клик переключает; пусто = показываем все маршруты.
+  const [selectedGps, setSelectedGps] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     Promise.all([listShops(), listDeliveries(), listUsers()])
@@ -354,7 +355,9 @@ function MapContent() {
     const coords: [number, number][] = [];
 
     // Маршруты водителей — путь по дорогам через ВСЕ их текущие остановки в оптимальном порядке (OSRM Trip).
-    routes.forEach((route) => {
+    // Если что-то выбрано в списке устройств — показываем только маршруты выбранных машин.
+    const visibleRoutes = selectedGps.size > 0 ? routes.filter((r) => selectedGps.has(r.userId)) : routes;
+    visibleRoutes.forEach((route) => {
       const eta = new Date(Date.now() + route.durationMin * 60_000);
       const etaStr = eta.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
       const stopsList = route.stops.map((s) => `${s.order}. ${s.label || 'без названия'}`).join('<br>');
@@ -368,10 +371,11 @@ function MapContent() {
       routeLayersRef.current.push(poly);
 
       route.stops.forEach((stop) => {
+        // Контрастный цвет относительно синей линии маршрута — иначе номер сливается с ней.
         const stopIcon = L.divIcon({
           className: '',
-          html: `<div style="background:#1D4ED8;color:#fff;width:22px;height:22px;border-radius:50%;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.35)">${stop.order}</div>`,
-          iconSize: [22, 22], iconAnchor: [11, 11],
+          html: `<div style="background:#EA580C;color:#fff;width:24px;height:24px;border-radius:50%;border:2.5px solid #fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;box-shadow:0 2px 6px rgba(0,0,0,0.45)">${stop.order}</div>`,
+          iconSize: [24, 24], iconAnchor: [12, 12],
         });
         const stopM = L.marker(stop.coords, { icon: stopIcon, zIndexOffset: 500 })
           .bindPopup(`<b>${stop.order}. ${stop.label || 'без названия'}</b>`)
@@ -421,7 +425,7 @@ function MapContent() {
       const ageMs = now - lastSeen;
       const isOffline = ageMs > GPS_OFFLINE_MS;
       const isMoving = v.speed > 2;
-      const isSelected = selectedGps === v.user_id;
+      const isSelected = selectedGps.has(v.user_id);
 
       let bgColor = isOffline ? '#9CA3AF' : isMoving ? '#16A34A' : '#D97706';
       if (isSelected) bgColor = '#2563EB';
@@ -461,14 +465,24 @@ function MapContent() {
     if (leafletReady && mapRef.current) renderMarkers();
   }, [leafletReady, renderMarkers]);
 
-  // Центрирование карты при клике на машину в списке
+  // Клик по машине в списке — переключает её в выборе (можно выбрать несколько,
+  // тогда на карте остаются только их маршруты) и центрирует карту на ней.
   function focusVehicle(v: GpsLocation) {
-    setSelectedGps(v.user_id);
+    setSelectedGps((prev) => {
+      const next = new Set(prev);
+      if (next.has(v.user_id)) next.delete(v.user_id);
+      else next.add(v.user_id);
+      return next;
+    });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const map = mapRef.current as any;
     if (map && v.lat && v.lng) {
       map.setView([v.lat, v.lng], 15, { animate: true });
     }
+  }
+
+  function clearSelection() {
+    setSelectedGps(new Set());
   }
 
   async function geocodeDelivery(d: Delivery) {
@@ -541,8 +555,16 @@ function MapContent() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-3">
         <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100 flex items-center gap-2">
           <span>GPS · трекеры и телефоны</span>
-          {gpsLoaded && <span className="ml-auto text-gray-400">{gpsLocations.length} устройств</span>}
-          {!gpsLoaded && <span className="ml-auto text-gray-300">загрузка…</span>}
+          <span className="text-[10px] text-gray-400 font-normal">(клик — показать маршрут, можно выбрать несколько)</span>
+          <div className="ml-auto flex items-center gap-2">
+            {selectedGps.size > 0 && (
+              <button onClick={clearSelection} className="text-blue-500 hover:underline font-semibold whitespace-nowrap">
+                ✕ Показать все ({selectedGps.size})
+              </button>
+            )}
+            {gpsLoaded && <span className="text-gray-400 whitespace-nowrap">{gpsLocations.length} устройств</span>}
+            {!gpsLoaded && <span className="text-gray-300 whitespace-nowrap">загрузка…</span>}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2 p-2">
 
@@ -558,7 +580,7 @@ function MapContent() {
               const ageMs = now - lastSeen;
               const isOffline = ageMs > GPS_OFFLINE_MS;
               const isMoving = v.speed > 2;
-              const isSelected = selectedGps === v.user_id;
+              const isSelected = selectedGps.has(v.user_id);
               const driver = v.source === 'phone'
                 ? drivers.find((d) => d.username === v.user_id.replace(/^phone:/, ''))
                 : drivers.find((d) => d.gps_user_id === v.user_id);

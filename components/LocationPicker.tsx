@@ -113,7 +113,10 @@ export default function LocationPicker({ lat, lng, onChange }: Props) {
       if (cancelled || !mapDivRef.current || mapRef.current) return;
       const L = getL();
       const startLat = lat ?? 40.461, startLng = lng ?? 71.755;
-      const map = L.map(mapDivRef.current).setView([startLat, startLng], lat && lng ? 15 : 12);
+      // zoomControl: false + ручное добавление снизу справа — иначе кнопки +/- (по умолчанию
+      // в левом верхнем углу) перекрывают список подсказок адреса над картой.
+      const map = L.map(mapDivRef.current, { zoomControl: false }).setView([startLat, startLng], lat && lng ? 15 : 12);
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(map);
       if (lat && lng) markerRef.current = L.marker([lat, lng]).addTo(map);
       map.on('click', (e: { latlng: { lat: number; lng: number } }) => {
@@ -167,7 +170,7 @@ export default function LocationPicker({ lat, lng, onChange }: Props) {
               </button>
             </div>
             {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute left-0 right-0 mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto" style={{ zIndex: 1000 }}>
+              <div className="absolute left-0 right-0 mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto" style={{ zIndex: 2000 }}>
                 {suggestions.map((s, i) => (
                   <button
                     key={i}
