@@ -1,5 +1,6 @@
 import { initializeApp, getApps, cert, ServiceAccount } from 'firebase-admin/app';
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
+import { getDatabase, Database } from 'firebase-admin/database';
 
 // Сервис-аккаунт читаем из переменных окружения (на Vercel — Environment Variables).
 function getServiceAccount(): ServiceAccount | null {
@@ -21,22 +22,27 @@ function getServiceAccount(): ServiceAccount | null {
   return null;
 }
 
+// Инициализирует приложение один раз (общее для Firestore и Realtime Database —
+// databaseURL должен быть передан сюда же, при первой инициализации).
+function ensureApp(): void {
+  if (getApps().length) return;
+  const serviceAccount = getServiceAccount();
+  if (!serviceAccount) {
+    throw new Error(
+      'Firebase не настроена: задайте FIREBASE_SERVICE_ACCOUNT_JSON или FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY'
+    );
+  }
+  initializeApp({
+    credential: cert(serviceAccount),
+    ...(process.env.FIREBASE_DATABASE_URL ? { databaseURL: process.env.FIREBASE_DATABASE_URL } : {}),
+  });
+}
+
 let firestore: Firestore | null = null;
 
 export function getDb(): Firestore {
   if (firestore) return firestore;
-
-  if (!getApps().length) {
-    const serviceAccount = getServiceAccount();
-
-    if (!serviceAccount) {
-      throw new Error(
-        'Firebase не настроена: задайте FIREBASE_SERVICE_ACCOUNT_JSON или FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY'
-      );
-    }
-
-    initializeApp({ credential: cert(serviceAccount) });
-  }
+  ensureApp();
 
   const db = getFirestore();
   // settings() можно вызвать только один раз на инстанс Firestore.
@@ -49,4 +55,18 @@ export function getDb(): Firestore {
   firestore = db;
 
   return db;
+}
+
+let rtdb: Database | null = null;
+
+// Realtime Database — для часто обновляемых мелких данных (позиции GPS), у которых
+// отдельная от Firestore бесплатная квота (тарификация по трафику, а не по числу чтений).
+export function getRtdb(): Database {
+  if (rtdb) return rtdb;
+  ensureApp();
+  if (!process.env.FIREBASE_DATABASE_URL) {
+    throw new Error('Realtime Database не настроена: задайте FIREBASE_DATABASE_URL');
+  }
+  rtdb = getDatabase();
+  return rtdb;
 }

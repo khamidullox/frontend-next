@@ -1,6 +1,8 @@
-import { getDb } from './firebase';
+import { getRtdb } from './firebase';
 
-const COLLECTION = 'vehicle_positions';
+// Realtime Database, не Firestore — координаты пишутся/читаются часто (раз в 30-45 сек
+// с каждого активного водителя), и в Firestore это быстро жрало квоту чтений/записей.
+const PATH = 'vehicle_positions';
 
 // Одна перезаписываемая позиция на водителя (doc id = username) — для живой
 // карты менеджера. История точек не хранится: км маршрута считается по
@@ -52,10 +54,11 @@ export async function upsertVehiclePosition(input: {
     updated_at: new Date().toISOString(),
     route_id: input.route_id ?? null,
   };
-  await getDb().collection(COLLECTION).doc(username).set(pos);
+  await getRtdb().ref(`${PATH}/${username}`).set(pos);
 }
 
 export async function listVehiclePositions(): Promise<VehiclePosition[]> {
-  const snap = await getDb().collection(COLLECTION).get();
-  return snap.docs.map((d) => d.data() as VehiclePosition);
+  const snap = await getRtdb().ref(PATH).get();
+  const val = snap.val() as Record<string, VehiclePosition> | null;
+  return val ? Object.values(val) : [];
 }
