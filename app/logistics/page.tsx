@@ -7,7 +7,7 @@ import ConfirmModal from '@/components/ConfirmModal';
 import LogisticsTabs from '@/components/LogisticsTabs';
 import {
   listDeliveries, createDelivery, updateDelivery, deleteDeliveryApi, listDrivers,
-  listMovements, listOrders, listTransfers, MovementListItem, OrderListItem, TransferListItem, MOVEMENT_STATUS_LABEL,
+  listMovements, listOrders, listTransfers, listSessions, MovementListItem, OrderListItem, TransferListItem, MOVEMENT_STATUS_LABEL,
   Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL, UserInfo,
   autoAssign, fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings, CAP_DEFAULT_KEY,
   listRoutes, Route,
@@ -1087,6 +1087,9 @@ function AssignDocModal({
   const [movements, setMovements] = useState<MovementListItem[]>([]);
   const [orders, setOrders] = useState<OrderListItem[]>([]);
   const [transfers, setTransfers] = useState<TransferListItem[]>([]);
+  // Документы с завершённой проверкой (доступно через sessions.doc_id) — считаем «собранными».
+  const [pickedDocIds, setPickedDocIds] = useState<Set<string>>(new Set());
+  const [onlyPicked, setOnlyPicked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [err, setErr] = useState('');
@@ -1100,8 +1103,12 @@ function AssignDocModal({
       listMovements().catch(() => []),
       listOrders().catch(() => []),
       listTransfers().catch(() => []),
+      listSessions().catch(() => []),
     ])
-      .then(([m, o, t]) => { setMovements(m); setOrders(o); setTransfers(t); })
+      .then(([m, o, t, sessions]) => {
+        setMovements(m); setOrders(o); setTransfers(t);
+        setPickedDocIds(new Set(sessions.filter((s) => s.status === 'finished').map((s) => s.doc_id)));
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -1154,11 +1161,14 @@ function AssignDocModal({
 
   const needle = q.trim().toLowerCase();
   const shownMovements = movements.filter((m) =>
-    !needle || `${m.movement_number} ${m.from_warehouse_name || ''} ${m.to_warehouse_name || ''}`.toLowerCase().includes(needle));
+    (!needle || `${m.movement_number} ${m.from_warehouse_name || ''} ${m.to_warehouse_name || ''}`.toLowerCase().includes(needle)) &&
+    (!onlyPicked || pickedDocIds.has(m.movement_id)));
   const shownOrders = orders.filter((o) =>
-    !needle || `${o.doc_number} ${o.client_name}`.toLowerCase().includes(needle));
+    (!needle || `${o.doc_number} ${o.client_name}`.toLowerCase().includes(needle)) &&
+    (!onlyPicked || pickedDocIds.has(o.deal_id)));
   const shownTransfers = transfers.filter((t) =>
-    !needle || `${t.number} ${t.from_filial || ''} ${t.to_filial || ''}`.toLowerCase().includes(needle));
+    (!needle || `${t.number} ${t.from_filial || ''} ${t.to_filial || ''}`.toLowerCase().includes(needle)) &&
+    (!onlyPicked || pickedDocIds.has(t.transfer_id)));
 
   const rowCls = (id: string) =>
     `w-full text-left border rounded-lg px-3 py-2 transition-colors flex items-start gap-2.5 ${
@@ -1195,10 +1205,14 @@ function AssignDocModal({
           {tabBtn('transfer', `🔄 Перемещения (${transfers.length})`)}
         </div>
 
-        <div className="px-4 pt-2">
+        <div className="px-4 pt-2 flex items-center gap-2">
           <input value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off"
             placeholder="🔍 поиск по номеру / складу / клиенту"
-            className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer whitespace-nowrap">
+            <input type="checkbox" checked={onlyPicked} onChange={(e) => setOnlyPicked(e.target.checked)} />
+            Только собранные
+          </label>
         </div>
 
         {err && <div className="px-4 pt-2 text-red-500 text-sm">{err}</div>}
@@ -1215,6 +1229,7 @@ function AssignDocModal({
                 <span className="min-w-0">
                   <span className="text-sm font-semibold block">№ {m.movement_number}
                     <span className="ml-2 text-[11px] font-normal text-gray-400">{MOVEMENT_STATUS_LABEL[m.status] || m.status}</span>
+                    {pickedDocIds.has(m.movement_id) && <span className="ml-2 text-[11px] font-semibold text-emerald-600">✓ Собрано</span>}
                   </span>
                   <span className="text-xs text-gray-500 block">🏬 {m.from_warehouse_name || m.from_warehouse_code || '—'} → {m.to_warehouse_name || m.to_warehouse_code || '—'}</span>
                   <span className="text-[11px] text-gray-400 block">{m.items_count} поз. · {m.total_quantity} шт · {m.from_movement_date}</span>
@@ -1228,7 +1243,9 @@ function AssignDocModal({
               <button key={o.deal_id} onClick={() => toggle(o.deal_id, { deal_id: o.deal_id }, o.client_name || '')} className={rowCls(o.deal_id)}>
                 {checkbox(o.deal_id)}
                 <span className="min-w-0">
-                  <span className="text-sm font-semibold block">№ {o.doc_number}</span>
+                  <span className="text-sm font-semibold block">№ {o.doc_number}
+                    {pickedDocIds.has(o.deal_id) && <span className="ml-2 text-[11px] font-semibold text-emerald-600">✓ Собрано</span>}
+                  </span>
                   <span className="text-xs text-gray-500 block">🚚 {o.client_name || '—'}</span>
                   <span className="text-[11px] text-gray-400 block">{o.items_count} поз. · {o.total_quantity} шт · {o.date}</span>
                 </span>
@@ -1241,7 +1258,9 @@ function AssignDocModal({
               <button key={t.transfer_id} onClick={() => toggle(t.transfer_id, { transfer_id: t.transfer_id }, t.to_filial || '')} className={rowCls(t.transfer_id)}>
                 {checkbox(t.transfer_id)}
                 <span className="min-w-0">
-                  <span className="text-sm font-semibold block">№ {t.number}</span>
+                  <span className="text-sm font-semibold block">№ {t.number}
+                    {pickedDocIds.has(t.transfer_id) && <span className="ml-2 text-[11px] font-semibold text-emerald-600">✓ Собрано</span>}
+                  </span>
                   <span className="text-xs text-gray-500 block">🏬 {t.from_filial || '—'} → {t.to_filial || '—'}</span>
                   <span className="text-[11px] text-gray-400 block">{t.items_count} поз. · {t.total_quantity} шт · {t.date}</span>
                 </span>

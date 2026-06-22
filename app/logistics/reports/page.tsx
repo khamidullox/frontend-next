@@ -156,7 +156,7 @@ function ReportsContent() {
     return [...m.values()]
       .map(d => ({
         username: d.username, name: d.name, car: d.car, km: d.km, points: d.points, trips: d.trips.size,
-        kpi: Math.round(d.km * 2 * rateForType(d.transport, rates)),
+        kpi: Math.round(d.km * rateForType(d.transport, rates)),
       }))
       .sort((a, b) => b.points - a.points || b.km - a.km || a.name.localeCompare(b.name, 'ru'));
   }, [drivers, periodDeliveries, settings]);
@@ -229,7 +229,7 @@ function ReportsContent() {
             className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-right outline-none focus:border-blue-400" />
           <span className="text-[11px] text-gray-400">сум/км</span>
           <span className="text-[11px] text-gray-400 basis-full">
-            КПИ считается как пройденный км (туда-обратно) × ставка для вида транспорта водителя.
+            КПИ считается как пройденный км (в одну сторону) × ставка для вида транспорта водителя.
           </span>
         </div>
       )}
