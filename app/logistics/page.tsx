@@ -47,12 +47,20 @@ function fmt(iso?: string | null) {
   } catch { return ''; }
 }
 
-// Категория транспорта для фильтра — точное значение поля «Транспорт» у водителя.
+// Категория транспорта для фильтра/подписей — точное значение поля «Транспорт» у водителя.
 function vehicleCategory(transport: string | null | undefined): string {
   const t = (transport || '').trim();
   return t || 'Без типа';
 }
-const DELIVERY_CATS = ['LABO', 'Газель'];
+
+// Семейство транспорта по подстроке в названии (любая модель LABO/Газели — независимо
+// от точного названия модели, например «Chevrolet LABO» или «GAZ 33021»).
+function vehicleFamily(transport: string | null | undefined): 'LABO' | 'Газель' | null {
+  const t = (transport || '').toLowerCase();
+  if (t.includes('labo')) return 'LABO';
+  if (t.includes('gaz') || t.includes('газел') || t.includes('33021')) return 'Газель';
+  return null;
+}
 
 const DEFAULT_CAP_SETTINGS: LogisticsSettings = {
   fuel_rate_per_km: 0,
@@ -64,14 +72,18 @@ const DEFAULT_CAP_SETTINGS: LogisticsSettings = {
 };
 
 // Дефолтная вместимость по виду транспорта (если у водителя не задана вручную).
-// Кг/м³ берутся из общих настроек, ключ — точное значение «Транспорт» у водителя;
-// если для этого вида ничего не настроено — берём «Прочие» (CAP_DEFAULT_KEY).
+// Порядок поиска: точное название модели → семейство (LABO/Газель по подстроке) →
+// «Прочие» (CAP_DEFAULT_KEY). Это позволяет настроить вместимость один раз для всего
+// семейства, не вводя её отдельно для каждой точной модели машины.
 // pcs — ориентировочная вместимость в штуках (для фолбэка, когда нет веса/объёма).
 function defaultCapacity(transport: string | null | undefined, settings: LogisticsSettings): { kg: number; m3: number; pcs: number } {
   const key = (transport || '').trim();
-  const t = key.toLowerCase();
-  const cap = (key && settings.cap_by_type[key]) || settings.cap_by_type[CAP_DEFAULT_KEY] || { kg: 0, m3: 0 };
-  const pcs = t.includes('labo') ? 80 : (t.includes('gaz') || t.includes('газел')) ? 200 : 50;
+  const family = vehicleFamily(key);
+  const cap = (key && settings.cap_by_type[key])
+    || (family && settings.cap_by_type[family])
+    || settings.cap_by_type[CAP_DEFAULT_KEY]
+    || { kg: 0, m3: 0 };
+  const pcs = family === 'LABO' ? 80 : family === 'Газель' ? 200 : 50;
   return { kg: cap.kg, m3: cap.m3, pcs };
 }
 
@@ -164,8 +176,12 @@ function LogisticsContent() {
     return [...set].sort((a, b) => a.localeCompare(b, 'ru'));
   }, [drivers]);
 
+  // Помимо точных моделей — два общих семейства (LABO/Газель), их вместимость применяется
+  // ко всем машинам этого семейства сразу, если для точной модели не задано своё значение.
+  const FAMILY_TYPES = ['LABO', 'Газель'];
+  const capTypeOptions = [CAP_DEFAULT_KEY, ...FAMILY_TYPES, ...vehicleTypes];
   // Если выбранный вид транспорта пропал из списка (например, изменили у водителя) — показываем «Прочие».
-  const effectiveCapType = capType === CAP_DEFAULT_KEY || vehicleTypes.includes(capType) ? capType : CAP_DEFAULT_KEY;
+  const effectiveCapType = capTypeOptions.includes(capType) ? capType : CAP_DEFAULT_KEY;
   const currentCap = capSettings.cap_by_type[effectiveCapType] || { kg: 0, m3: 0 };
 
   async function saveFuelRate(val: string) {
@@ -320,7 +336,8 @@ function LogisticsContent() {
   }, [drivers]);
 
   const allCats = categories.map(([c]) => c);
-  const defaultCats = allCats.filter((c) => DELIVERY_CATS.includes(c));
+  // По умолчанию открыты все виды транспорта семейства LABO/Газель (по подстроке в названии модели).
+  const defaultCats = allCats.filter((c) => vehicleFamily(c) !== null);
   // Активные категории фильтра: явный выбор пользователя, иначе доставочные по умолчанию.
   const selCats = vehSel ?? (defaultCats.length ? defaultCats : allCats);
 
@@ -390,8 +407,11 @@ function LogisticsContent() {
       <div className="bg-white rounded-xl shadow-sm p-3 mb-3 flex flex-wrap items-center gap-3">
         <span className="text-xs text-gray-500 whitespace-nowrap">📦 Вместимость по умолчанию:</span>
         <select value={effectiveCapType} onChange={(e) => setCapType(e.target.value)}
-          className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:border-blue-400 max-w-[200px]">
+          className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:border-blue-400 max-w-[220px]">
           <option value={CAP_DEFAULT_KEY}>Прочие (по умолчанию)</option>
+          {FAMILY_TYPES.map((t) => (
+            <option key={t} value={t}>{t} (все модели)</option>
+          ))}
           {vehicleTypes.map((t) => (
             <option key={t} value={t}>{t}</option>
           ))}
@@ -407,7 +427,8 @@ function LogisticsContent() {
           <span className="text-[11px] text-gray-400">м³</span>
         </div>
         <span className="text-[11px] text-gray-400 basis-full">
-          Виды транспорта в списке — из поля «Транспорт» у водителей. «Прочие» — вместимость для видов без своей настройки.
+          Точные модели — из поля «Транспорт» у водителей; для конкретной модели можно задать свою вместимость.
+          Если для модели своя вместимость не задана — берётся вместимость её семейства (LABO/Газель), иначе «Прочие».
           {vehicleTypes.length === 0 && ' Сейчас ни у одного водителя не указан транспорт.'}
         </span>
       </div>
