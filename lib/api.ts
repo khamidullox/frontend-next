@@ -558,8 +558,9 @@ export function resolveDeliveryPoint(d: Delivery, shops: Shop[]): { lat: number;
   return sh?.lat && sh?.lng ? { lat: sh.lat, lng: sh.lng } : null;
 }
 
-export async function listDeliveries(): Promise<Delivery[]> {
-  const res = await fetch('/api/deliveries', { cache: 'no-store' });
+export async function listDeliveries(sinceIso?: string): Promise<Delivery[]> {
+  const url = sinceIso ? `/api/deliveries?since=${encodeURIComponent(sinceIso)}` : '/api/deliveries';
+  const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
   const data = await res.json();
   return data.data || [];

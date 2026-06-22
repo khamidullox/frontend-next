@@ -137,9 +137,20 @@ function LogisticsContent() {
   const [shopsLoading, setShopsLoading] = useState(false);
   const [shopBusyId, setShopBusyId] = useState<string | null>(null);
 
+  // Отметка последнего известного updated_at — опрос дальше читает только то, что
+  // изменилось после неё, а не всю коллекцию заново (была причина исчерпания квоты
+  // Firestore: до 200 чтений на каждый тик при открытой странице).
+  const syncedAtRef = useRef('1970-01-01T00:00:00.000Z');
+
+  function bumpSyncedAt(list: Delivery[]) {
+    for (const d of list) if (d.updated_at > syncedAtRef.current) syncedAtRef.current = d.updated_at;
+  }
+
   const load = useCallback(async () => {
     try {
-      setItems(await listDeliveries());
+      const fresh = await listDeliveries();
+      setItems(fresh);
+      bumpSyncedAt(fresh);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -147,11 +158,24 @@ function LogisticsContent() {
     }
   }, []);
 
+  const poll = useCallback(async () => {
+    try {
+      const changed = await listDeliveries(syncedAtRef.current);
+      if (!changed.length) return;
+      bumpSyncedAt(changed);
+      setItems((prev) => {
+        const map = new Map(prev.map((d) => [d.id, d]));
+        for (const d of changed) map.set(d.id, d);
+        return [...map.values()];
+      });
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => { load(); }, [load]);
 
   // Автообновление: видны изменения статусов от водителей без ручного F5.
-  // Опрос идёт только пока вкладка видима — бережёт квоту чтений Firestore.
-  useLivePoll(load, 60_000);
+  // Опрос идёт только пока вкладка видима и читает только изменённое — бережёт квоту чтений Firestore.
+  useLivePoll(poll, 60_000);
 
   useEffect(() => { listDrivers().then(setDrivers).catch(() => {}); }, []);
   useEffect(() => { listShops().then(setShops).catch(() => {}); }, []);

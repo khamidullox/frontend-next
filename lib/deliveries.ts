@@ -392,12 +392,14 @@ async function applyDriver(delivery: Delivery, username: string): Promise<void> 
 
 // ─── Чтение ────────────────────────────────────────────────────────────────
 
-export async function listDeliveries(limit = 200): Promise<Delivery[]> {
-  const snap = await getDb()
-    .collection(COLLECTION)
-    .orderBy('created_at', 'desc')
-    .limit(limit)
-    .get();
+// sinceIso — для опроса по тикам (см. useLivePoll на странице логиста): читаем только
+// доставки, изменённые после прошлого опроса, вместо всей коллекции каждые 60 секунд —
+// это была основная причина быстрого исчерпания дневной квоты чтений Firestore.
+export async function listDeliveries(limit = 200, sinceIso?: string): Promise<Delivery[]> {
+  const col = getDb().collection(COLLECTION);
+  const snap = sinceIso
+    ? await col.where('updated_at', '>', sinceIso).orderBy('updated_at', 'desc').limit(limit).get()
+    : await col.orderBy('created_at', 'desc').limit(limit).get();
   return snap.docs.map((d) => normalizeDelivery(d.data() as Delivery));
 }
 

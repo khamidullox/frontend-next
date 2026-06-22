@@ -7,7 +7,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // Водитель видит только свои доставки; менеджер/админ — все.
-export async function GET() {
+// ?since=ISO — отдать только изменённые после этого момента (для опроса без перечитывания
+// всей коллекции каждый раз, см. listDeliveries в lib/deliveries.ts).
+export async function GET(request: NextRequest) {
   const s = await getSession();
   if (!s) return Response.json({ error: 'Не авторизован' }, { status: 401 });
 
@@ -17,7 +19,8 @@ export async function GET() {
   if (ROLE_RANK[s.role] < ROLE_RANK['manager']) {
     return Response.json({ error: 'Недостаточно прав' }, { status: 403 });
   }
-  return Response.json({ data: await listDeliveries() });
+  const since = request.nextUrl.searchParams.get('since') || undefined;
+  return Response.json({ data: await listDeliveries(200, since) });
 }
 
 // Создание доставки (менеджер+): вручную, из документа (query) или из проверки (session_id).
