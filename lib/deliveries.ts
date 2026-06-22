@@ -138,6 +138,14 @@ export const DELIVERY_STATUS_LABEL: Record<DeliveryStatus, string> = {
   returned: 'Возврат',
 };
 
+// Товар в заявке «магазин → клиент» — снимок названия/цены на момент создания
+// (выбирается из справочника ТМЦ, см. lib/products.ts).
+export interface DeliveryItem {
+  code: string;
+  name: string;
+  qty: number;
+}
+
 export type DeliverySource = 'document' | 'session' | 'manual';
 
 // warehouse_dispatch — раздел 1 (склад → магазин/клиент, из накладной/заказа).
@@ -165,8 +173,12 @@ export interface Delivery {
 
   // Кому/куда везём.
   client_name: string;
+  client_phone: string | null;
   address: string;
   note: string;
+
+  // Товары к доставке (заявка магазина → клиент): что именно отдать.
+  items: DeliveryItem[];
 
   // Маршрут склад → склад (для накладных/перемещений; у заказов — пусто).
   from_name: string | null;
@@ -216,6 +228,8 @@ function normalizeDelivery(d: Delivery): Delivery {
     lat: d.lat ?? null,
     lng: d.lng ?? null,
     km_auto: d.km_auto ?? true,
+    client_phone: d.client_phone ?? null,
+    items: d.items ?? [],
   };
 }
 
@@ -253,8 +267,10 @@ interface CreateInput {
   receipt_id?: string;   // явная приёмка
   session_id?: string;   // ID проверки — подтянем данные из неё
   client_name?: string;
+  client_phone?: string;
   address?: string;
   note?: string;
+  items?: DeliveryItem[]; // заявка магазина (kind = shop_to_client): что отдать клиенту
   shop_id?: string;       // заявка магазина (kind = shop_to_client)
   shop_name?: string;
   lat?: number;
@@ -342,8 +358,10 @@ export async function createDelivery(
     doc_id: base.doc_id ?? null,
     doc_number: base.doc_number ?? null,
     client_name: base.client_name ?? '',
+    client_phone: input.client_phone ? str(input.client_phone) : null,
     address: base.address ?? '',
     note: base.note ?? '',
+    items: input.items ?? [],
     from_name,
     to_name,
     shop_id: input.shop_id ? str(input.shop_id) : null,

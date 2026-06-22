@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import AdminGate from '@/components/AdminGate';
 import { useAuth } from '@/components/AuthProvider';
-import { listShopRequests, createShopRequest, Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL } from '@/lib/api';
+import { listShopRequests, createShopRequest, Delivery, DeliveryItem, DeliveryStatus, DELIVERY_STATUS_LABEL } from '@/lib/api';
 import LocationPicker from '@/components/LocationPicker';
+import ProductPicker from '@/components/ProductPicker';
 
 function statusClass(s: DeliveryStatus): string {
   switch (s) {
@@ -39,8 +40,10 @@ function ShopRequestContent() {
   const [busy, setBusy] = useState(false);
 
   const [client, setClient] = useState('');
+  const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [note, setNote] = useState('');
+  const [orderItems, setOrderItems] = useState<DeliveryItem[]>([]);
   const [lat, setLat] = useState<number | undefined>(undefined);
   const [lng, setLng] = useState<number | undefined>(undefined);
 
@@ -69,8 +72,11 @@ function ShopRequestContent() {
     setBusy(true);
     setError('');
     try {
-      await createShopRequest({ client_name: client.trim(), address: address.trim(), note: note.trim(), lat, lng });
-      setClient(''); setAddress(''); setNote(''); setLat(undefined); setLng(undefined);
+      await createShopRequest({
+        client_name: client.trim(), client_phone: phone.trim(), address: address.trim(), note: note.trim(),
+        items: orderItems, lat, lng,
+      });
+      setClient(''); setPhone(''); setAddress(''); setNote(''); setOrderItems([]); setLat(undefined); setLng(undefined);
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -87,15 +93,21 @@ function ShopRequestContent() {
       </div>
 
       <form onSubmit={add} className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-col gap-2">
-        <input value={client} onChange={(e) => setClient(e.target.value)} autoComplete="off"
-          placeholder="Имя клиента"
-          className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input value={client} onChange={(e) => setClient(e.target.value)} autoComplete="off"
+            placeholder="Имя клиента"
+            className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="off" type="tel"
+            placeholder="Телефон клиента"
+            className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+        </div>
         <input value={address} onChange={(e) => setAddress(e.target.value)} autoComplete="off"
           placeholder="Адрес доставки"
           className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
         <input value={note} onChange={(e) => setNote(e.target.value)} autoComplete="off"
           placeholder="Примечание (необязательно)"
           className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+        <ProductPicker items={orderItems} onChange={setOrderItems} />
         <LocationPicker lat={lat} lng={lng} onChange={(la, ln) => { setLat(la); setLng(ln); }} />
         <button type="submit" disabled={busy || !client.trim() || !address.trim()}
           className="self-start px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg">
@@ -116,6 +128,12 @@ function ShopRequestContent() {
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold truncate">{d.client_name || '—'}</div>
                 {d.address && <div className="text-xs text-gray-400 mt-0.5 truncate">📍 {d.address}</div>}
+                {d.client_phone && <div className="text-xs text-gray-400 mt-0.5">📞 {d.client_phone}</div>}
+                {d.items.length > 0 && (
+                  <div className="text-xs text-gray-400 mt-0.5 truncate">
+                    📦 {d.items.map((it) => `${it.name} ×${it.qty}`).join(', ')}
+                  </div>
+                )}
                 <div className="text-xs text-gray-400 mt-0.5 flex flex-wrap gap-2">
                   {d.driver_name && <span>👤 {d.driver_name}</span>}
                   {d.lat != null && d.lng != null && <span className="text-emerald-600">📌 на карте</span>}

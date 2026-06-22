@@ -5,10 +5,11 @@ import AdminGate from '@/components/AdminGate';
 import LogisticsTabs from '@/components/LogisticsTabs';
 import {
   listShopRequests, updateDelivery, addDeliveriesToRoute, listDrivers, listRoutes, createShopRequest, listShops,
-  Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL, UserInfo, Route, Shop,
+  Delivery, DeliveryItem, DeliveryStatus, DELIVERY_STATUS_LABEL, UserInfo, Route, Shop,
 } from '@/lib/api';
 import LocationPicker from '@/components/LocationPicker';
 import MiniMap, { MapPoint } from '@/components/MiniMap';
+import ProductPicker from '@/components/ProductPicker';
 
 function statusClass(s: DeliveryStatus): string {
   switch (s) {
@@ -48,8 +49,10 @@ function ShopRequestsContent() {
   const [showForm, setShowForm] = useState(false);
   const [formShopId, setFormShopId] = useState('');
   const [formClient, setFormClient] = useState('');
+  const [formPhone, setFormPhone] = useState('');
   const [formAddress, setFormAddress] = useState('');
   const [formNote, setFormNote] = useState('');
+  const [formItems, setFormItems] = useState<DeliveryItem[]>([]);
   const [formLat, setFormLat] = useState<number | undefined>(undefined);
   const [formLng, setFormLng] = useState<number | undefined>(undefined);
   const [formBusy, setFormBusy] = useState(false);
@@ -78,11 +81,12 @@ function ShopRequestsContent() {
     setFormBusy(true); setError('');
     try {
       const created = await createShopRequest({
-        shop_id: formShopId, client_name: formClient.trim(), address: formAddress.trim(),
-        note: formNote.trim(), lat: formLat, lng: formLng,
+        shop_id: formShopId, client_name: formClient.trim(), client_phone: formPhone.trim(), address: formAddress.trim(),
+        note: formNote.trim(), items: formItems, lat: formLat, lng: formLng,
       });
       setItems((prev) => [created, ...prev]);
-      setFormClient(''); setFormAddress(''); setFormNote(''); setFormLat(undefined); setFormLng(undefined);
+      setFormClient(''); setFormPhone(''); setFormAddress(''); setFormNote(''); setFormItems([]);
+      setFormLat(undefined); setFormLng(undefined);
       setFormShopId(''); setShopSearch('');
     } catch (e) {
       setError((e as Error).message);
@@ -191,15 +195,21 @@ function ShopRequestsContent() {
               </div>
             )}
           </div>
-          <input value={formClient} onChange={(e) => setFormClient(e.target.value)} autoComplete="off"
-            placeholder="Имя клиента"
-            className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input value={formClient} onChange={(e) => setFormClient(e.target.value)} autoComplete="off"
+              placeholder="Имя клиента"
+              className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            <input value={formPhone} onChange={(e) => setFormPhone(e.target.value)} autoComplete="off" type="tel"
+              placeholder="Телефон клиента"
+              className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          </div>
           <input value={formAddress} onChange={(e) => setFormAddress(e.target.value)} autoComplete="off"
             placeholder="Адрес доставки"
             className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
           <input value={formNote} onChange={(e) => setFormNote(e.target.value)} autoComplete="off"
             placeholder="Примечание (необязательно)"
             className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <ProductPicker items={formItems} onChange={setFormItems} />
           <LocationPicker lat={formLat} lng={formLng} onChange={(la, ln) => { setFormLat(la); setFormLng(ln); }} />
           <button type="submit" disabled={formBusy || !formShopId || !formClient.trim() || !formAddress.trim()}
             className="self-start px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg">
@@ -246,6 +256,12 @@ function ShopRequestsContent() {
                       <span className="truncate">🚚 {d.client_name || 'Без названия'}</span>
                     </div>
                     {d.address && <div className="text-xs text-gray-500 mt-0.5">📍 {d.address}</div>}
+                    {d.client_phone && (
+                      <a href={`tel:${d.client_phone}`} className="text-xs text-blue-600 mt-0.5 inline-block hover:underline">📞 {d.client_phone}</a>
+                    )}
+                    {d.items.length > 0 && (
+                      <div className="text-xs text-gray-400 mt-0.5">📦 {d.items.map((it) => `${it.name} ×${it.qty}`).join(', ')}</div>
+                    )}
                     {d.note && <div className="text-xs text-gray-400 mt-0.5">📝 {d.note}</div>}
                     <div className="text-xs text-gray-400 mt-0.5">
                       {d.direction && <span className="mr-2">🧭 {d.direction}</span>}

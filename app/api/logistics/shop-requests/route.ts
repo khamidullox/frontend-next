@@ -47,13 +47,23 @@ export async function POST(request: NextRequest) {
   const shop = await getShop(shopId);
   if (!shop) return Response.json({ error: 'Магазин не найден' }, { status: 400 });
 
+  const items = Array.isArray(body.items)
+    ? body.items
+        .map((it: { code?: unknown; name?: unknown; qty?: unknown }) => ({
+          code: String(it.code || ''), name: String(it.name || ''), qty: Math.max(0, Number(it.qty) || 0),
+        }))
+        .filter((it: { code: string; qty: number }) => it.code && it.qty > 0)
+    : undefined;
+
   const res = await createDelivery({
     kind: 'shop_to_client',
     shop_id: shop.id,
     shop_name: shop.name,
     client_name: body.client_name,
+    client_phone: body.client_phone,
     address: body.address,
     note: body.note,
+    items,
     direction: shop.direction,
     km: shop.km,
     lat: body.lat != null ? Number(body.lat) : undefined,

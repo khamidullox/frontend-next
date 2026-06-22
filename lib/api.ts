@@ -506,6 +506,12 @@ export const DELIVERY_STATUS_LABEL: Record<DeliveryStatus, string> = {
 export type DeliverySource = 'document' | 'session' | 'manual';
 export type DeliveryKind = 'warehouse_dispatch' | 'shop_to_client';
 
+export interface DeliveryItem {
+  code: string;
+  name: string;
+  qty: number;
+}
+
 export interface Delivery {
   id: string;
   created_at: string;
@@ -517,8 +523,10 @@ export interface Delivery {
   doc_id: string | null;
   doc_number: string | null;
   client_name: string;
+  client_phone: string | null;
   address: string;
   note: string;
+  items: DeliveryItem[];
   from_name: string | null;
   to_name: string | null;
   shop_id: string | null;
@@ -847,7 +855,8 @@ export async function listShopRequests(): Promise<Delivery[]> {
 }
 
 export async function createShopRequest(input: {
-  client_name: string; address: string; note?: string; lat?: number; lng?: number; shop_id?: string;
+  client_name: string; client_phone?: string; address: string; note?: string;
+  items?: DeliveryItem[]; lat?: number; lng?: number; shop_id?: string;
 }): Promise<Delivery> {
   const res = await fetch('/api/logistics/shop-requests', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

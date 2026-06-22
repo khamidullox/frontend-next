@@ -453,6 +453,12 @@ function DeliveryCard({
           )}
           <div className="font-bold text-base mt-1">{d.client_name || 'Без названия'}</div>
           {d.address && <div className="text-sm text-gray-600 mt-0.5">📍 {d.address}</div>}
+          {d.client_phone && (
+            <a href={`tel:${d.client_phone}`} className="text-sm text-blue-600 mt-0.5 inline-block hover:underline">📞 {d.client_phone}</a>
+          )}
+          {d.items.length > 0 && (
+            <div className="text-xs text-gray-500 mt-0.5">📦 {d.items.map((it) => `${it.name} ×${it.qty}`).join(', ')}</div>
+          )}
           {d.note && <div className="text-xs text-gray-400 mt-0.5">📝 {d.note}</div>}
           {d.km > 0 && <div className="text-xs text-emerald-600 font-medium mt-0.5">🛣️ {d.km} км</div>}
           {d.address && (
