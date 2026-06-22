@@ -6,6 +6,11 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(title, {
       body: data.body || '',
+      icon: '/icon.svg',
+      // silent: false — звук/вибрация по умолчанию ОС. Без tag — у каждой накладной
+      // своё отдельное уведомление, они не заменяют друг друга и не глушат звук соседних.
+      silent: false,
+      vibrate: [200, 100, 200],
       data: { url },
     })
   );

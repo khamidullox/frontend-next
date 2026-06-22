@@ -6,6 +6,7 @@ import { getSession as getCheckSession } from './sessions';
 import { getWarehouseCodeMap, getCachedCatalog } from './products';
 import { DocType } from './document';
 import { listShops, Shop } from './shops';
+import { notifyDriverAssigned } from './push';
 
 const COLLECTION = 'deliveries';
 
@@ -585,6 +586,10 @@ export async function autoAssignDeliveries(
   const now = new Date().toISOString();
   const batch = db.batch();
   let assigned = 0, skipped = 0;
+  // Одно push-уведомление на каждую назначенную накладную (не на весь выезд сразу) —
+  // обычный assignDriver() шлёт его сразу при назначении, авто-распределение раньше
+  // назначало пачкой через batch.commit() в обход notifyDriverAssigned() и не слало push.
+  const notifications: { username: string; label: string }[] = [];
 
   for (const delivery of queue) {
     const candidates = activeDrivers.filter((dr) => dr.direction === delivery.direction);
@@ -622,6 +627,7 @@ export async function autoAssignDeliveries(
       history: [...(delivery.history || []), { at: now, status: 'assigned', by }],
     };
     batch.set(col.doc(delivery.id), updated);
+    notifications.push({ username: best.username, label: delivery.client_name || delivery.address || 'новая доставка' });
 
     const cur = loadMap.get(best.username) || { weight: 0, vol_l: 0 };
     cur.weight += delivery.total_weight || 0;
@@ -630,6 +636,9 @@ export async function autoAssignDeliveries(
     assigned++;
   }
 
-  if (assigned > 0) await batch.commit();
+  if (assigned > 0) {
+    await batch.commit();
+    await Promise.all(notifications.map((n) => notifyDriverAssigned(n.username, n.label).catch(() => {})));
+  }
   return { assigned, skipped };
 }
