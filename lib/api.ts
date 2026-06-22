@@ -539,6 +539,25 @@ export interface Delivery {
   history: { at: string; status: DeliveryStatus; by: string }[];
 }
 
+function normShopName(s: string): string {
+  return String(s || '').replace(/\s*\d{6,}\s*$/, '').trim().toLowerCase();
+}
+
+// Координаты точки доставки (для отрисовки маршрута на карте у водителя):
+// ручные координаты → точка из справочника по shop_id → по названию (to_name/address).
+export function resolveDeliveryPoint(d: Delivery, shops: Shop[]): { lat: number; lng: number } | null {
+  if (d.lat != null && d.lng != null) return { lat: d.lat, lng: d.lng };
+  if (d.shop_id) {
+    const sh = shops.find((s) => s.id === d.shop_id);
+    if (sh?.lat && sh?.lng) return { lat: sh.lat, lng: sh.lng };
+  }
+  const name = normShopName(d.to_name || d.client_name || '');
+  if (!name) return null;
+  const sh = shops.find((s) => normShopName(s.name) === name)
+    || shops.find((s) => normShopName(s.name).includes(name) || name.includes(normShopName(s.name)));
+  return sh?.lat && sh?.lng ? { lat: sh.lat, lng: sh.lng } : null;
+}
+
 export async function listDeliveries(): Promise<Delivery[]> {
   const res = await fetch('/api/deliveries', { cache: 'no-store' });
   if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);

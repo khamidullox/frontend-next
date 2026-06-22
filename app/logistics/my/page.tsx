@@ -1,13 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   listDeliveries, updateDelivery, Delivery, DeliveryStatus,
   DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL,
   listRoutes, startRoute, finishRoute, sendTrackPoint, addDeliveriesToRoute, Route,
+  listShops, Shop, resolveDeliveryPoint,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 import PushSubscribe from '@/components/PushSubscribe';
+import MiniMap, { MapPoint } from '@/components/MiniMap';
 import { useLivePoll } from '@/lib/useLivePoll';
 
 const TRACK_INTERVAL_MS = 45_000;
@@ -55,6 +57,9 @@ export default function MyDeliveriesPage() {
   const [route, setRoute] = useState<Route | null>(null);
   const [routeBusy, setRouteBusy] = useState(false);
   const [geoError, setGeoError] = useState('');
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [myPos, setMyPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [showMap, setShowMap] = useState(true);
 
   const load = useCallback(async () => {
     try {
@@ -75,6 +80,7 @@ export default function MyDeliveriesPage() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadRoute(); }, [loadRoute]);
+  useEffect(() => { listShops().then(setShops).catch(() => {}); }, []);
 
   const refresh = useCallback(() => { load(); loadRoute(); }, [load, loadRoute]);
 
@@ -136,6 +142,7 @@ export default function MyDeliveriesPage() {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           if (cancelled || !routeIdRef.current) return;
+          setMyPos({ lat: pos.coords.latitude, lng: pos.coords.longitude });
           sendTrackPoint({
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
@@ -154,9 +161,43 @@ export default function MyDeliveriesPage() {
     return () => { cancelled = true; clearInterval(id); };
   }, [route]);
 
-  const routeDeliveries = route ? items.filter((d) => d.route_id === route.id) : [];
+  const routeDeliveries = useMemo(
+    () => (route ? items.filter((d) => d.route_id === route.id) : []),
+    [route, items]
+  );
   const routeKm = routeDeliveries.reduce((s, d) => s + (d.km || 0), 0);
   const unassignedToRoute = items.filter((d) => !d.route_id && ['new', 'assigned', 'on_way'].includes(d.status));
+
+  // Остановки маршрута на карте: одна точка на адрес (несколько накладных в одну точку —
+  // одна остановка с общим списком), пронумерованы по порядку, отмечены зелёным когда доставлены.
+  const mapStops = useMemo<MapPoint[]>(() => {
+    const sorted = [...routeDeliveries].sort((a, b) => a.created_at.localeCompare(b.created_at));
+    const order: string[] = [];
+    const groups = new Map<string, { lat: number; lng: number; names: string[]; done: boolean }>();
+    for (const d of sorted) {
+      const pt = resolveDeliveryPoint(d, shops);
+      if (!pt) continue;
+      const key = d.shop_id || `${pt.lat.toFixed(3)},${pt.lng.toFixed(3)}`;
+      let g = groups.get(key);
+      if (!g) { g = { ...pt, names: [], done: true }; groups.set(key, g); order.push(key); }
+      g.names.push(d.client_name || d.to_name || d.address || '—');
+      if (d.status !== 'delivered' && d.status !== 'returned') g.done = false;
+    }
+    return order.map((key, i) => {
+      const g = groups.get(key)!;
+      return {
+        lat: g.lat, lng: g.lng, num: i + 1,
+        color: g.done ? '#10b981' : '#f97316',
+        label: `${i + 1}. ${g.names.join(', ')}`,
+      };
+    });
+  }, [routeDeliveries, shops]);
+
+  const mapPoints = useMemo<MapPoint[]>(() => {
+    const pts = [...mapStops];
+    if (myPos) pts.push({ lat: myPos.lat, lng: myPos.lng, color: '#2563eb', label: '📍 Я' });
+    return pts;
+  }, [mapStops, myPos]);
 
   // Авто-присоединение: пока маршрут активен, все активные доставки водителя
   // (в т.ч. назначенные логистом после старта) подтягиваем в этот заход — один
@@ -259,6 +300,27 @@ export default function MyDeliveriesPage() {
           </div>
         )}
       </div>
+
+      {/* Карта маршрута: остановки по порядку + моё текущее местоположение */}
+      {route && mapStops.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm p-3 mb-4">
+          <button onClick={() => setShowMap((v) => !v)}
+            className="w-full flex items-center justify-between text-sm font-semibold">
+            <span>🗺️ Карта маршрута <span className="text-gray-400 font-normal">({mapStops.length})</span></span>
+            <span className="text-gray-400 text-xs">{showMap ? '▲' : '▼'}</span>
+          </button>
+          {showMap && (
+            <div className="mt-2">
+              <MiniMap points={mapPoints} routeLine height={280} />
+              <div className="flex items-center gap-3 mt-2 text-[11px] text-gray-500 flex-wrap">
+                <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#f97316' }} /> осталось</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#10b981' }} /> доставлено</span>
+                {myPos && <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#2563eb' }} /> я</span>}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {items.length === 0 && (
         <div className="bg-white rounded-xl p-8 text-center text-gray-400">Доставок пока нет</div>

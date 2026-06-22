@@ -7,13 +7,18 @@ export interface MapPoint {
   lng: number;
   label?: string;
   color?: string;
+  /** Номер остановки маршрута — рисуется внутри маркера вместо точки. */
+  num?: number;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const getL = () => (typeof window !== 'undefined' ? (window as any).L : null);
 
-// Лёгкая карта на Leaflet (CDN): рисует точки и подгоняет масштаб под них.
-export default function MiniMap({ points, height = 320 }: { points: MapPoint[]; height?: number }) {
+// Лёгкая карта на Leaflet (CDN): рисует точки (+ опционально линию маршрута между ними)
+// и подгоняет масштаб под них.
+export default function MiniMap({
+  points, height = 320, routeLine = false,
+}: { points: MapPoint[]; height?: number; routeLine?: boolean }) {
   const divRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapRef = useRef<any>(null);
@@ -62,11 +67,27 @@ export default function MiniMap({ points, height = 320 }: { points: MapPoint[]; 
     if (layerRef.current) layerRef.current.remove();
     const group = L.layerGroup();
     const valid = points.filter(p => typeof p.lat === 'number' && typeof p.lng === 'number' && !isNaN(p.lat) && !isNaN(p.lng));
+
+    if (routeLine && valid.length > 1) {
+      L.polyline(valid.map(p => [p.lat, p.lng]), { color: '#2563eb', weight: 3, opacity: 0.6, dashArray: '6 6' }).addTo(group);
+    }
+
     for (const p of valid) {
       const color = p.color || '#2563eb';
-      const marker = L.circleMarker([p.lat, p.lng], {
-        radius: 8, color: '#fff', weight: 2, fillColor: color, fillOpacity: 0.9,
-      });
+      let marker;
+      if (p.num != null) {
+        marker = L.marker([p.lat, p.lng], {
+          icon: L.divIcon({
+            className: '',
+            html: `<div style="background:${color};color:#fff;width:24px;height:24px;border-radius:50%;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.4)">${p.num}</div>`,
+            iconSize: [24, 24], iconAnchor: [12, 12],
+          }),
+        });
+      } else {
+        marker = L.circleMarker([p.lat, p.lng], {
+          radius: 8, color: '#fff', weight: 2, fillColor: color, fillOpacity: 0.9,
+        });
+      }
       if (p.label) marker.bindPopup(p.label);
       marker.addTo(group);
     }
@@ -78,7 +99,7 @@ export default function MiniMap({ points, height = 320 }: { points: MapPoint[]; 
       map.fitBounds(L.latLngBounds(valid.map(p => [p.lat, p.lng])).pad(0.2), { maxZoom: 15 });
     }
     setTimeout(() => map.invalidateSize(), 100);
-  }, [ready, points]);
+  }, [ready, points, routeLine]);
 
   return (
     <div
