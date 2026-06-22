@@ -8,6 +8,9 @@ export interface LogisticsSettings {
   // Ключ — точное значение поля «Транспорт» у водителя; CAP_DEFAULT_KEY — для
   // видов транспорта без своей настройки («Прочие»).
   cap_by_type: Record<string, { kg: number; m3: number }>;
+  // КПИ водителя — ставка за км по виду транспорта (для отчётов), отдельно от
+  // топлива: у LABO своя ставка, у Газели своя и т.д. Тот же принцип ключей, что у cap_by_type.
+  rate_by_type: Record<string, number>;
 }
 
 const DEFAULTS: LogisticsSettings = {
@@ -17,15 +20,17 @@ const DEFAULTS: LogisticsSettings = {
     'Газель': { kg: 1500, m3: 9 },
     [CAP_DEFAULT_KEY]: { kg: 300, m3: 2 },
   },
+  rate_by_type: {},
 };
 
 export async function getLogisticsSettings(): Promise<LogisticsSettings> {
   const snap = await getDb().collection('settings').doc('logistics').get();
-  if (!snap.exists) return { fuel_rate_per_km: DEFAULTS.fuel_rate_per_km, cap_by_type: { ...DEFAULTS.cap_by_type } };
+  if (!snap.exists) return { ...DEFAULTS, cap_by_type: { ...DEFAULTS.cap_by_type } };
   const data = snap.data() as Partial<LogisticsSettings>;
   return {
     fuel_rate_per_km: data.fuel_rate_per_km ?? DEFAULTS.fuel_rate_per_km,
     cap_by_type: data.cap_by_type && Object.keys(data.cap_by_type).length ? data.cap_by_type : { ...DEFAULTS.cap_by_type },
+    rate_by_type: data.rate_by_type ?? DEFAULTS.rate_by_type,
   };
 }
 

@@ -208,7 +208,9 @@ export default function MyDeliveriesPage() {
   const unassignedToRoute = items.filter((d) => !d.route_id && ['new', 'assigned', 'on_way'].includes(d.status));
 
   // Остановки маршрута на карте: одна точка на адрес (несколько накладных в одну точку —
-  // одна остановка с общим списком), пронумерованы по порядку, отмечены зелёным когда доставлены.
+  // одна остановка с общим списком), пронумерованы по порядку. Полностью доставленные
+  // точки убираются с карты совсем (их видно в «Завершённые» ниже) — на карте только то,
+  // куда ещё нужно доехать.
   const mapStops = useMemo<MapPoint[]>(() => {
     const sorted = [...routeDeliveries].sort((a, b) => a.created_at.localeCompare(b.created_at));
     const order: string[] = [];
@@ -222,14 +224,12 @@ export default function MyDeliveriesPage() {
       g.names.push(d.client_name || d.to_name || d.address || '—');
       if (d.status !== 'delivered' && d.status !== 'returned') g.done = false;
     }
-    return order.map((key, i) => {
-      const g = groups.get(key)!;
-      return {
-        lat: g.lat, lng: g.lng, num: i + 1,
-        color: g.done ? '#10b981' : '#f97316',
-        label: `${i + 1}. ${g.names.join(', ')}`,
-      };
-    });
+    const pending = order.map((key) => groups.get(key)!).filter((g) => !g.done);
+    return pending.map((g, i) => ({
+      lat: g.lat, lng: g.lng, num: i + 1,
+      color: '#f97316',
+      label: `${i + 1}. ${g.names.join(', ')}`,
+    }));
   }, [routeDeliveries, shops]);
 
   const mapPoints = useMemo<MapPoint[]>(() => {
@@ -238,9 +238,10 @@ export default function MyDeliveriesPage() {
     return pts;
   }, [mapStops, myPos]);
 
-  // Точки для «Поехали»: текущая позиция (если есть) + ещё не доставленные остановки по порядку.
+  // Точки для «Поехали»: текущая позиция (если есть) + остановки по порядку (mapStops
+  // уже содержит только недоставленные — см. выше).
   const navPoints = useMemo(() => {
-    const pending = mapStops.filter((s) => s.color !== '#10b981').map((s) => ({ lat: s.lat, lng: s.lng }));
+    const pending = mapStops.map((s) => ({ lat: s.lat, lng: s.lng }));
     return myPos ? [myPos, ...pending] : pending;
   }, [mapStops, myPos]);
 
@@ -248,7 +249,7 @@ export default function MyDeliveriesPage() {
   // иначе на карте просто прямая линия «по воздуху», не следующая по реальным дорогам.
   const [routePath, setRoutePath] = useState<[number, number][] | null>(null);
   useEffect(() => {
-    const pending = mapStops.filter((s) => s.color !== '#10b981');
+    const pending = mapStops;
     let cancelled = false;
     if (!myPos || !pending.length) {
       Promise.resolve().then(() => { if (!cancelled) setRoutePath(null); });
@@ -386,7 +387,6 @@ export default function MyDeliveriesPage() {
               <MiniMap points={mapPoints} path={routePath ?? undefined} routeLine height={280} />
               <div className="flex items-center gap-3 mt-2 text-[11px] text-gray-500 flex-wrap">
                 <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#f97316' }} /> осталось</span>
-                <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#10b981' }} /> доставлено</span>
                 {myPos && <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#2563eb' }} /> я</span>}
               </div>
               {navPoints.length > 0 && (

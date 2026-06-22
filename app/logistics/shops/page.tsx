@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
-import { listShops, createShop, updateShop, deleteShopApi, listAllWarehouses, Shop, WarehouseSummary, ShopType } from '@/lib/api';
+import {
+  listShops, createShop, updateShop, deleteShopApi, listAllWarehouses, listDeliveries,
+  Shop, WarehouseSummary, ShopType, Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL,
+} from '@/lib/api';
 import ConfirmModal from '@/components/ConfirmModal';
 import * as XLSX from 'xlsx';
 
@@ -36,6 +39,11 @@ async function cityFromCoords(lat: number, lng: number): Promise<string> {
 function normalizeName(name: string): string {
   return name.replace(/\s*\d{6,}\s*$/, '').trim().toLowerCase();
 }
+
+const DELIVERY_STATUS_BADGE: Record<DeliveryStatus, string> = {
+  new: 'bg-gray-100 text-gray-600', assigned: 'bg-amber-100 text-amber-700', on_way: 'bg-blue-100 text-blue-700',
+  delivered: 'bg-green-100 text-green-700', returned: 'bg-red-100 text-red-700',
+};
 
 const DIR_COLOR: Record<string, string> = {
   'Север': 'bg-blue-100 text-blue-700',
@@ -476,6 +484,12 @@ function EditShopModal({
           <h3 className="font-bold text-lg">Изменить точку</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
         </div>
+
+        <div className="mb-4">
+          <div className="text-xs font-semibold text-gray-500 mb-1.5">🚚 Доставки в эту точку</div>
+          <ShopDeliveries shop={shop} />
+        </div>
+
         <div className="flex flex-col gap-2">
           <input value={name} onChange={e => setName(e.target.value)} placeholder="Название"
             className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
@@ -515,6 +529,49 @@ function EditShopModal({
           <button onClick={onClose} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-sm font-semibold rounded-lg">Отмена</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Доставки со склада в эту конкретную точку (раздел 1) — что едет/доставлено сюда сейчас.
+function ShopDeliveries({ shop }: { shop: Shop }) {
+  const [items, setItems] = useState<Delivery[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const norm = normalizeName(shop.name);
+    listDeliveries()
+      .then((all) => {
+        if (cancelled) return;
+        const matched = all
+          .filter((d) => d.kind === 'warehouse_dispatch' && (d.shop_id === shop.id || (d.to_name && normalizeName(d.to_name) === norm)))
+          .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+          .slice(0, 15);
+        setItems(matched);
+      })
+      .catch(() => { if (!cancelled) setItems([]); });
+    return () => { cancelled = true; };
+  }, [shop.id, shop.name]);
+
+  if (items === null) {
+    return <div className="text-xs text-gray-400 py-2">Загрузка…</div>;
+  }
+  if (!items.length) {
+    return <div className="text-xs text-gray-400 py-2">Доставок в эту точку пока нет</div>;
+  }
+  return (
+    <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
+      {items.map((d) => (
+        <div key={d.id} className="flex items-center gap-2 text-xs bg-gray-50 rounded-lg px-2.5 py-1.5">
+          <span className="flex-1 min-w-0 truncate">
+            {d.doc_number ? `№ ${d.doc_number}` : (d.client_name || '—')}
+            {d.driver_name && <span className="text-gray-400"> · {d.driver_name}</span>}
+          </span>
+          <span className={`px-1.5 py-0.5 rounded-full font-medium shrink-0 ${DELIVERY_STATUS_BADGE[d.status]}`}>
+            {DELIVERY_STATUS_LABEL[d.status]}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

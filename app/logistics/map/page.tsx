@@ -219,6 +219,19 @@ function MapContent() {
     return null;
   }, [shops]);
 
+  // База (склад-источник) для этой пачки доставок — нужна, чтобы последней остановкой
+  // оптимизатор оставил точку, ближайшую к базе, а не случайную дальнюю (иначе обратно
+  // до склада ехать дальше, чем нужно).
+  const resolveBase = useCallback((forDeliveries: Delivery[]): [number, number] | null => {
+    const fromNames = [...new Set(forDeliveries.map((d) => d.from_name).filter(Boolean) as string[])];
+    for (const name of fromNames) {
+      const wh = shops.find((s) => s.type === 'warehouse' && (s.name === name || s.name.includes(name) || name.includes(s.name)));
+      if (wh?.lat && wh?.lng) return [wh.lat, wh.lng];
+    }
+    const warehouses = shops.filter((s) => s.type === 'warehouse' && s.lat && s.lng);
+    return warehouses.length === 1 ? [warehouses[0].lat!, warehouses[0].lng!] : null;
+  }, [shops]);
+
   // Строит маршрут водителя по ВСЕМ его текущим «в пути» доставкам сразу (а не только
   // по одной первой): один запрос к OSRM Trip даёт и оптимальный порядок объезда точек,
   // и путь по реальным дорогам (а не прямую линию через горы/границы).
@@ -252,14 +265,18 @@ function MapContent() {
       if (!stops.length) return;
 
       try {
-        const coordsParam = [`${gps.lng},${gps.lat}`, ...stops.map((s) => `${s.coords[1]},${s.coords[0]}`)].join(';');
+        const base = resolveBase(onWay);
+        const coordsList = [`${gps.lng},${gps.lat}`, ...stops.map((s) => `${s.coords[1]},${s.coords[0]}`)];
+        if (base) coordsList.push(`${base[1]},${base[0]}`);
+        const destParam = base ? '&destination=last' : '';
         const r = await fetch(
-          `https://router.project-osrm.org/trip/v1/driving/${coordsParam}?source=first&roundtrip=false&geometries=geojson&overview=full`
+          `https://router.project-osrm.org/trip/v1/driving/${coordsList.join(';')}?source=first${destParam}&roundtrip=false&geometries=geojson&overview=full`
         );
         const j = await r.json();
         const trip = j.trips?.[0];
         if (!trip || !Array.isArray(j.waypoints)) return;
-        // waypoints[0] — текущая позиция водителя; дальше — наши stops в том же порядке ввода.
+        // waypoints[0] — текущая позиция водителя; дальше — наши stops в том же порядке ввода
+        // (последняя точка — база, если есть, ей order не присваиваем — она не остановка-доставка).
         const orderedStops: RouteStop[] = stops.map((s, i) => ({
           ...s,
           order: j.waypoints[i + 1]?.waypoint_index ?? i + 1,
@@ -274,7 +291,7 @@ function MapContent() {
       } catch { /* ignore */ }
     }));
     setRoutes(results);
-  }, [gpsLocations, drivers, deliveries, resolveDest]);
+  }, [gpsLocations, drivers, deliveries, resolveDest, resolveBase]);
 
   useEffect(() => { computeRoutes(); }, [computeRoutes]);
 

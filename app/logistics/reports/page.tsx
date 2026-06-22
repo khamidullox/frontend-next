@@ -1,9 +1,13 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
-import { listRoutes, listDrivers, listDeliveries, deleteRouteApi, Route, UserInfo, Delivery, DeliveryStatus } from '@/lib/api';
+import {
+  listRoutes, listDrivers, listDeliveries, deleteRouteApi,
+  fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings, CAP_DEFAULT_KEY,
+  Route, UserInfo, Delivery, DeliveryStatus,
+} from '@/lib/api';
 
 function fmt(iso?: string | null) {
   if (!iso) return '—';
@@ -22,6 +26,24 @@ const STATUS_COLOR: Record<DeliveryStatus, string> = {
 // Локальная дата YYYY-MM-DD (для быстрых фильтров «сегодня» и т.п.).
 function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Семейство транспорта по подстроке в названии модели (как в /logistics) — нужно,
+// чтобы ставка КПИ для конкретной модели могла наследоваться от ставки её семейства.
+function vehicleFamily(transport: string | null | undefined): 'LABO' | 'Газель' | null {
+  const t = (transport || '').toLowerCase();
+  if (t.includes('labo')) return 'LABO';
+  if (t.includes('gaz') || t.includes('газел') || t.includes('33021')) return 'Газель';
+  return null;
+}
+
+// Ставка КПИ (сум/км) для вида транспорта: точная модель → семейство → «Прочие».
+function rateForType(transport: string | null | undefined, rates: Record<string, number>): number {
+  const key = (transport || '').trim();
+  if (key && rates[key] !== undefined) return rates[key];
+  const family = vehicleFamily(key);
+  if (family && rates[family] !== undefined) return rates[family];
+  return rates[CAP_DEFAULT_KEY] ?? 0;
 }
 
 export default function LogisticsReportsPage() {
@@ -61,12 +83,39 @@ function ReportsContent() {
   // Раскрытый водитель (username).
   const [openDriver, setOpenDriver] = useState<string | null>(null);
 
+  // КПИ — ставка за км по виду транспорта (редактируется прямо в отчёте).
+  const [settings, setSettings] = useState<LogisticsSettings | null>(null);
+  const [rateType, setRateType] = useState<string>(CAP_DEFAULT_KEY);
+  const rateInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
-    Promise.all([listRoutes(), listDrivers(), listDeliveries()])
-      .then(([r, d, dl]) => { setRoutes(r); setDrivers(d); setDeliveries(dl); })
+    Promise.all([listRoutes(), listDrivers(), listDeliveries(), fetchLogisticsSettings()])
+      .then(([r, d, dl, s]) => { setRoutes(r); setDrivers(d); setDeliveries(dl); setSettings(s); })
       .catch(e => setError((e as Error).message))
       .finally(() => setLoading(false));
   }, []);
+
+  const vehicleTypes = useMemo(() => {
+    const set = new Set<string>();
+    for (const d of drivers) {
+      const t = (d.transport || '').trim();
+      if (t) set.add(t);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, 'ru'));
+  }, [drivers]);
+
+  const FAMILY_TYPES = ['LABO', 'Газель'];
+  const rateTypeOptions = [CAP_DEFAULT_KEY, ...FAMILY_TYPES, ...vehicleTypes];
+  const effectiveRateType = rateTypeOptions.includes(rateType) ? rateType : CAP_DEFAULT_KEY;
+  const currentRate = settings?.rate_by_type[effectiveRateType] ?? 0;
+
+  async function saveRate(val: string) {
+    if (!settings) return;
+    const n = Math.max(0, Number(val) || 0);
+    const next = { ...settings.rate_by_type, [effectiveRateType]: n };
+    setSettings((prev) => (prev ? { ...prev, rate_by_type: next } : prev));
+    await saveLogisticsSettings({ rate_by_type: next }).catch(() => {});
+  }
 
   function applyQuick(q: typeof quick) {
     setQuick(q);
@@ -89,27 +138,32 @@ function ReportsContent() {
 
   // Агрегация по водителю: доставки, км, выезды (уникальные tripKey).
   const driverStats = useMemo(() => {
-    const m = new Map<string, { username: string; name: string; car: string; trips: Set<string>; km: number; points: number }>();
+    const m = new Map<string, { username: string; name: string; car: string; transport: string; trips: Set<string>; km: number; points: number }>();
     for (const d of drivers) {
-      m.set(d.username, { username: d.username, name: d.name, car: d.car_number || '', trips: new Set(), km: 0, points: 0 });
+      m.set(d.username, { username: d.username, name: d.name, car: d.car_number || '', transport: d.transport || '', trips: new Set(), km: 0, points: 0 });
     }
     for (const d of periodDeliveries) {
       const key = d.driver_username || d.driver_name || '—';
-      const cur = m.get(key) || { username: key, name: d.driver_name || key, car: d.car_number || '', trips: new Set<string>(), km: 0, points: 0 };
+      const cur = m.get(key) || { username: key, name: d.driver_name || key, car: d.car_number || '', transport: d.transport || '', trips: new Set<string>(), km: 0, points: 0 };
       cur.km += d.km || 0;
       cur.points += 1;
       cur.trips.add(tripKey(d));
       if (!cur.car && d.car_number) cur.car = d.car_number;
+      if (!cur.transport && d.transport) cur.transport = d.transport;
       m.set(key, cur);
     }
+    const rates = settings?.rate_by_type ?? {};
     return [...m.values()]
-      .map(d => ({ username: d.username, name: d.name, car: d.car, km: d.km, points: d.points, trips: d.trips.size }))
+      .map(d => ({
+        username: d.username, name: d.name, car: d.car, km: d.km, points: d.points, trips: d.trips.size,
+        kpi: Math.round(d.km * 2 * rateForType(d.transport, rates)),
+      }))
       .sort((a, b) => b.points - a.points || b.km - a.km || a.name.localeCompare(b.name, 'ru'));
-  }, [drivers, periodDeliveries]);
+  }, [drivers, periodDeliveries, settings]);
 
   const totals = useMemo(() => driverStats.reduce((s, d) => ({
-    km: s.km + d.km, trips: s.trips + d.trips, points: s.points + d.points,
-  }), { km: 0, trips: 0, points: 0 }), [driverStats]);
+    km: s.km + d.km, trips: s.trips + d.trips, points: s.points + d.points, kpi: s.kpi + d.kpi,
+  }), { km: 0, trips: 0, points: 0, kpi: 0 }), [driverStats]);
 
   // Пустые маршруты (без привязанных доставок) — кандидаты на удаление.
   const emptyRoutes = useMemo(() => routes.filter(r => (r.delivery_ids?.length || 0) === 0), [routes]);
@@ -156,13 +210,38 @@ function ReportsContent() {
           className="border-2 border-gray-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-400" />
       </div>
 
+      {/* КПИ — ставка за км по виду транспорта */}
+      {settings && (
+        <div className="bg-white rounded-xl shadow-sm p-3 mb-4 flex flex-wrap items-center gap-3">
+          <span className="text-xs text-gray-500 whitespace-nowrap">💰 КПИ (сум/км):</span>
+          <select value={effectiveRateType} onChange={(e) => setRateType(e.target.value)}
+            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:border-blue-400 max-w-[220px]">
+            <option value={CAP_DEFAULT_KEY}>Прочие (по умолчанию)</option>
+            {FAMILY_TYPES.map((t) => (
+              <option key={t} value={t}>{t} (все модели)</option>
+            ))}
+            {vehicleTypes.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+          <input key={effectiveRateType} ref={rateInputRef} type="number" min={0} step={100} defaultValue={currentRate}
+            onBlur={(e) => saveRate(e.target.value)}
+            className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-right outline-none focus:border-blue-400" />
+          <span className="text-[11px] text-gray-400">сум/км</span>
+          <span className="text-[11px] text-gray-400 basis-full">
+            КПИ считается как пройденный км (туда-обратно) × ставка для вида транспорта водителя.
+          </span>
+        </div>
+      )}
+
       {/* Сводка по всем */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
         {[
           { label: 'Водителей', value: driverStats.filter(d => d.points > 0).length },
           { label: 'Выездов', value: totals.trips },
           { label: 'Доставок', value: totals.points },
           { label: 'Км (туда-обратно)', value: `${totals.km * 2} км` },
+          { label: 'КПИ всего', value: `${totals.kpi.toLocaleString('ru-RU')} сум` },
         ].map(({ label, value }) => (
           <div key={label} className="bg-white rounded-xl shadow-sm p-3 text-center">
             <div className="text-lg font-bold text-blue-600">{value}</div>
@@ -213,6 +292,7 @@ function ReportsContent() {
                   <div className="text-right shrink-0">
                     <div className="text-base font-bold text-emerald-600">{ds.km} км</div>
                     <div className="text-[10px] text-gray-400">туда-обратно {ds.km * 2} км</div>
+                    {ds.kpi > 0 && <div className="text-[11px] font-semibold text-amber-600 mt-0.5">💰 {ds.kpi.toLocaleString('ru-RU')} сум</div>}
                   </div>
                   <span className="text-gray-400 text-sm shrink-0">{isOpen ? '▲' : '▼'}</span>
                 </button>

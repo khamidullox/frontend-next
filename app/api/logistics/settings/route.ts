@@ -26,6 +26,14 @@ export async function PATCH(request: NextRequest) {
       }
       patch.cap_by_type = clean;
     }
+    if (body.rate_by_type && typeof body.rate_by_type === 'object') {
+      const clean: Record<string, number> = {};
+      for (const [type, val] of Object.entries(body.rate_by_type as Record<string, unknown>)) {
+        if (!type) continue;
+        clean[type] = Math.max(0, Number(val) || 0);
+      }
+      patch.rate_by_type = clean;
+    }
     if (Object.keys(patch).length) await setLogisticsSettings(patch);
     return Response.json({ ok: true });
   });
