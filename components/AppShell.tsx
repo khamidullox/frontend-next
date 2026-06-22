@@ -25,6 +25,7 @@ const LINKS: NavLink[] = [
 // Водитель — особая роль: видит только свои доставки.
 const DRIVER_LINKS: NavLink[] = [
   { href: '/logistics/my', label: '🚚 Мои доставки', min: 'driver' },
+  { href: '/logistics/my-stats', label: '📊 Мои расчёты', min: 'driver' },
 ];
 
 // Магазин (worker) — кроме общих пунктов, видит создание заявок на доставку клиентам.
