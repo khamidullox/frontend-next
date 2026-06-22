@@ -44,6 +44,7 @@ function ShopRequestsContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [onlyPicked, setOnlyPicked] = useState(false);
 
   // Форма создания заявки (от имени магазина) — для админа/менеджера.
   const [showForm, setShowForm] = useState(false);
@@ -121,7 +122,21 @@ function ShopRequestsContent() {
     }
   }
 
-  const pending = items.filter((d) => !['delivered', 'returned'].includes(d.status));
+  async function togglePicked(d: Delivery) {
+    setBusyId(d.id);
+    setError('');
+    try {
+      const updated = await updateDelivery(d.id, { picked: !d.picked });
+      setItems((prev) => prev.map((x) => (x.id === d.id ? updated : x)));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const allPending = items.filter((d) => !['delivered', 'returned'].includes(d.status));
+  const pending = onlyPicked ? allPending.filter((d) => d.picked) : allPending;
   const done = items.filter((d) => ['delivered', 'returned'].includes(d.status));
 
   // Точки на карте: заявки (куда доставлять) — оранжевым, магазины-точки — синим.
@@ -146,8 +161,12 @@ function ShopRequestsContent() {
   return (
     <div>
       <LogisticsTabs />
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
         <h2 className="text-xl font-bold">🏪 Заявки магазинов <span className="text-sm text-gray-400 font-normal">({pending.length})</span></h2>
+        <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer ml-2">
+          <input type="checkbox" checked={onlyPicked} onChange={(e) => setOnlyPicked(e.target.checked)} />
+          Только собранные
+        </label>
         <button onClick={() => setShowForm((v) => !v)}
           className="ml-auto px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg whitespace-nowrap">
           {showForm ? '✕ Закрыть' : '+ Создать заявку'}
@@ -272,9 +291,17 @@ function ShopRequestsContent() {
                       создано {fmt(d.created_at)}
                     </div>
                   </div>
-                  <span className={`text-xs font-semibold px-2 py-1 rounded-full ${statusClass(d.status)}`}>
-                    {DELIVERY_STATUS_LABEL[d.status]}
-                  </span>
+                  <div className="flex flex-col items-end gap-1.5 shrink-0">
+                    <span className={`text-xs font-semibold px-2 py-1 rounded-full ${statusClass(d.status)}`}>
+                      {DELIVERY_STATUS_LABEL[d.status]}
+                    </span>
+                    <button onClick={() => togglePicked(d)} disabled={busyId === d.id}
+                      className={`text-[11px] font-semibold px-2 py-1 rounded-full whitespace-nowrap ${
+                        d.picked ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                      }`}>
+                      {d.picked ? '✓ Собрано' : '📦 Собрать'}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">

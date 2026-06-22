@@ -103,6 +103,7 @@ function LogisticsContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [hideDone, setHideDone] = useState(true);
+  const [onlyPicked, setOnlyPicked] = useState(false);
   const [fuelRate, setFuelRate] = useState(0);
   const [fuelInput, setFuelInput] = useState('');
   const [capSettings, setCapSettings] = useState<LogisticsSettings>(DEFAULT_CAP_SETTINGS);
@@ -380,7 +381,8 @@ function LogisticsContent() {
     );
   }, [drivers, driverSearch, selCats, allCats]);
 
-  const visibleUnassigned = hideDone ? unassigned.filter((d) => !isDone(d.status)) : unassigned;
+  const visibleUnassigned = (hideDone ? unassigned.filter((d) => !isDone(d.status)) : unassigned)
+    .filter((d) => !onlyPicked || d.picked);
 
   return (
     <div>
@@ -403,6 +405,10 @@ function LogisticsContent() {
           <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
             <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} />
             Скрывать завершённые
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+            <input type="checkbox" checked={onlyPicked} onChange={(e) => setOnlyPicked(e.target.checked)} />
+            Только собранные
           </label>
         </div>
       </div>
@@ -648,7 +654,7 @@ function LogisticsContent() {
               </div>
               <div className="flex flex-col gap-2">
                 {[...external.entries()].map(([name, ds]) => {
-                  const shown = hideDone ? ds.filter((d) => !isDone(d.status)) : ds;
+                  const shown = (hideDone ? ds.filter((d) => !isDone(d.status)) : ds).filter((d) => !onlyPicked || d.picked);
                   if (!shown.length) return null;
                   const car = ds.find((d) => d.car_number)?.car_number;
                   return (
@@ -711,6 +717,7 @@ function LogisticsContent() {
                   deliveries={byDriver.get(dr.username) || []}
                   allDrivers={drivers}
                   hideDone={hideDone}
+                  onlyPicked={onlyPicked}
                   fuelRate={fuelRate}
                   activeRoute={activeRoutes.find((r) => r.driver_username === dr.username) || null}
                   onPatch={patch}
@@ -746,12 +753,13 @@ function LogisticsContent() {
 
 // ─── Карточка водителя ──────────────────────────────────────────────────────
 function DriverCard({
-  driver, deliveries, allDrivers, hideDone, fuelRate, activeRoute, onPatch, onRemove, onAssign, capSettings,
+  driver, deliveries, allDrivers, hideDone, onlyPicked, fuelRate, activeRoute, onPatch, onRemove, onAssign, capSettings,
 }: {
   driver: UserInfo;
   deliveries: Delivery[];
   allDrivers: UserInfo[];
   hideDone: boolean;
+  onlyPicked: boolean;
   fuelRate: number;
   activeRoute: Route | null;
   onPatch: (id: string, p: Parameters<typeof updateDelivery>[1]) => void;
@@ -769,7 +777,7 @@ function DriverCard({
 
   const activeCount = ACTIVE.reduce((s, st) => s + counts[st], 0);
   const doneCount = counts.delivered + counts.returned;
-  const shown = hideDone ? deliveries.filter((d) => !isDone(d.status)) : deliveries;
+  const shown = (hideDone ? deliveries.filter((d) => !isDone(d.status)) : deliveries).filter((d) => !onlyPicked || d.picked);
   const doneDeliveries = deliveries.filter((d) => isDone(d.status));
   const [showDone, setShowDone] = useState(false);
 
@@ -962,9 +970,17 @@ function DeliveryRow({
           {d.note && <div className="text-xs text-gray-400 mt-0.5">📝 {d.note}</div>}
           <div className="text-xs text-gray-400 mt-0.5">создано {fmt(d.created_at)}{d.created_by ? ` · ${d.created_by}` : ''}</div>
         </div>
-        <span className={`text-xs font-semibold px-2 py-1 rounded-full ${statusClass(d.status)}`}>
-          {DELIVERY_STATUS_LABEL[d.status]}
-        </span>
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${statusClass(d.status)}`}>
+            {DELIVERY_STATUS_LABEL[d.status]}
+          </span>
+          <button onClick={() => onPatch(d.id, { picked: !d.picked })}
+            className={`text-[11px] font-semibold px-2 py-1 rounded-full whitespace-nowrap ${
+              d.picked ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+            }`}>
+            {d.picked ? '✓ Собрано' : '📦 Собрать'}
+          </button>
+        </div>
       </div>
 
       {/* км + вес + загруженность */}

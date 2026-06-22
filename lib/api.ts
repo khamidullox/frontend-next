@@ -527,6 +527,7 @@ export interface Delivery {
   address: string;
   note: string;
   items: DeliveryItem[];
+  picked: boolean;
   from_name: string | null;
   to_name: string | null;
   shop_id: string | null;
@@ -608,7 +609,7 @@ export async function createDelivery(input: {
 
 export async function updateDelivery(
   id: string,
-  patch: { status?: DeliveryStatus; driver_username?: string | null; client_name?: string; address?: string; note?: string; direction?: string; km?: number; total_weight?: number }
+  patch: { status?: DeliveryStatus; driver_username?: string | null; client_name?: string; address?: string; note?: string; direction?: string; km?: number; total_weight?: number; picked?: boolean }
 ): Promise<Delivery> {
   const res = await fetch(`/api/deliveries/${encodeURIComponent(id)}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },

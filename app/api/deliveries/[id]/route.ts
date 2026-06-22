@@ -4,6 +4,7 @@ import {
   getDelivery,
   assignDriver,
   setDeliveryStatus,
+  setDeliveryPicked,
   updateDeliveryFields,
   deleteDelivery,
   recomputeRouteKm,
@@ -27,6 +28,13 @@ export async function PATCH(
   const { id } = await params;
   const body = await request.json().catch(() => ({}));
   const isManager = ROLE_RANK[s.role] >= ROLE_RANK['manager'];
+
+  // Воркер (склад/магазин): может отмечать «Собрано» — это не назначение и не статус.
+  if (!isManager && s.role === 'worker' && typeof body.picked === 'boolean') {
+    const res = await setDeliveryPicked(id, body.picked);
+    if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
+    return Response.json({ data: res.delivery });
+  }
 
   // Водитель: только статус своей доставки.
   if (!isManager) {
@@ -52,6 +60,10 @@ export async function PATCH(
   }
 
   // Менеджер/админ.
+  if (typeof body.picked === 'boolean') {
+    const res = await setDeliveryPicked(id, body.picked);
+    if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
+  }
   if (body.driver_username !== undefined) {
     const res = await assignDriver(id, body.driver_username || null);
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });

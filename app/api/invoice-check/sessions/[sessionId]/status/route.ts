@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { setSessionStatus } from '@/lib/sessions';
+import { markPickedByDocId } from '@/lib/deliveries';
 import { withRole } from '@/lib/auth';
 
 export const runtime = 'nodejs';
@@ -23,6 +24,10 @@ export async function PUT(
 
       if (!session) {
         return Response.json({ error: 'Сессия проверки не найдена' }, { status: 404 });
+      }
+      // Проверка завершена — связанные доставки по этому документу считаются собранными.
+      if (status === 'finished') {
+        await markPickedByDocId(session.document.doc_id).catch(() => {});
       }
       return Response.json(session);
     } catch (err) {

@@ -180,6 +180,12 @@ export interface Delivery {
   // Товары к доставке (заявка магазина → клиент): что именно отдать.
   items: DeliveryItem[];
 
+  // Собрано: товар физически подготовлен (проверен/упакован) и готов к выдаче
+  // водителю — независимо от того, назначен водитель или нет. Ставится либо
+  // автоматически (когда завершается проверка/сессия сканирования по этому
+  // документу — см. markPickedByDocId), либо вручную кнопкой.
+  picked: boolean;
+
   // Маршрут склад → склад (для накладных/перемещений; у заказов — пусто).
   from_name: string | null;
   to_name: string | null;
@@ -230,6 +236,8 @@ function normalizeDelivery(d: Delivery): Delivery {
     km_auto: d.km_auto ?? true,
     client_phone: d.client_phone ?? null,
     items: d.items ?? [],
+    // Старые доставки созданы до появления «Собрано» — не блокируем их задним числом.
+    picked: d.picked ?? true,
   };
 }
 
@@ -300,12 +308,16 @@ export async function createDelivery(
   let fromCode: string | null = null;
   let toCode: string | null = null;
   let docItems: { product_code: string; quantity: number | string }[] = [];
+  // «Собрано» по умолчанию — нет, пока кто-то не подтвердит (проверкой или вручную).
+  // Исключение — создаём из уже завершённой проверки: тогда сразу «собрано».
+  let picked = false;
 
   // Из проверки (сессии сканирования).
   if (input.session_id) {
     const s = await getCheckSession(str(input.session_id));
     if (!s) return { error: 'Проверка не найдена' };
     source = 'session';
+    picked = s.status === 'finished';
     base.doc_type = s.document.doc_type;
     base.doc_id = s.document.doc_id;
     base.doc_number = s.document.doc_number;
@@ -357,6 +369,7 @@ export async function createDelivery(
     doc_type: base.doc_type ?? null,
     doc_id: base.doc_id ?? null,
     doc_number: base.doc_number ?? null,
+    picked,
     client_name: base.client_name ?? '',
     client_phone: input.client_phone ? str(input.client_phone) : null,
     address: base.address ?? '',
@@ -504,6 +517,41 @@ export async function assignDriver(
   return { delivery };
 }
 
+// Отметить «Собрано» вручную (или снять отметку, если поставили по ошибке).
+export async function setDeliveryPicked(
+  id: string,
+  picked: boolean
+): Promise<{ delivery: Delivery } | { error: string }> {
+  const db = getDb();
+  const ref = db.collection(COLLECTION).doc(str(id));
+  const snap = await ref.get();
+  if (!snap.exists) return { error: 'Доставка не найдена' };
+
+  const delivery = normalizeDelivery(snap.data() as Delivery);
+  delivery.picked = picked;
+  delivery.updated_at = new Date().toISOString();
+  await ref.set(delivery);
+  return { delivery };
+}
+
+// Проверка по документу завершена → все доставки этого документа считаются собранными
+// (вызывается из роута завершения проверки, см. app/api/invoice-check/sessions/.../status).
+export async function markPickedByDocId(docId: string): Promise<void> {
+  const id = str(docId);
+  if (!id) return;
+  const db = getDb();
+  const snap = await db.collection(COLLECTION).where('doc_id', '==', id).get();
+  if (snap.empty) return;
+  const now = new Date().toISOString();
+  const batch = db.batch();
+  let changed = false;
+  for (const doc of snap.docs) {
+    const d = normalizeDelivery(doc.data() as Delivery);
+    if (!d.picked) { batch.update(doc.ref, { picked: true, updated_at: now }); changed = true; }
+  }
+  if (changed) await batch.commit();
+}
+
 export async function setDeliveryStatus(
   id: string,
   status: DeliveryStatus,
@@ -584,7 +632,7 @@ export async function autoAssignDeliveries(
 
   // Нераспределённые с указанным направлением (раздел 1 — заявки магазинов
   // подхватываются отдельно, через присоединение к маршруту того же водителя).
-  const queue = all.filter((d) => !d.driver_username && d.direction && d.status === 'new' && d.kind !== 'shop_to_client');
+  const queue = all.filter((d) => !d.driver_username && d.direction && d.status === 'new' && d.kind !== 'shop_to_client' && d.picked);
   if (!queue.length) return { assigned: 0, skipped: 0 };
 
   const activeDrivers = drivers.filter((dr) => dr.direction);

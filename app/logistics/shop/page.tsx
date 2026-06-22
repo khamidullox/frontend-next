@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import AdminGate from '@/components/AdminGate';
 import { useAuth } from '@/components/AuthProvider';
-import { listShopRequests, createShopRequest, Delivery, DeliveryItem, DeliveryStatus, DELIVERY_STATUS_LABEL } from '@/lib/api';
+import { listShopRequests, createShopRequest, updateDelivery, Delivery, DeliveryItem, DeliveryStatus, DELIVERY_STATUS_LABEL } from '@/lib/api';
 import LocationPicker from '@/components/LocationPicker';
 import ProductPicker from '@/components/ProductPicker';
 
@@ -58,6 +58,15 @@ function ShopRequestContent() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  async function togglePicked(d: Delivery) {
+    try {
+      const updated = await updateDelivery(d.id, { picked: !d.picked });
+      setItems((prev) => prev.map((x) => (x.id === d.id ? updated : x)));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   if (session && session.role === 'worker' && !session.shop_id) {
     return (
@@ -140,9 +149,17 @@ function ShopRequestContent() {
                   <span>{fmt(d.created_at)}</span>
                 </div>
               </div>
-              <span className={`text-xs font-semibold px-2 py-1 rounded-full shrink-0 ${statusClass(d.status)}`}>
-                {DELIVERY_STATUS_LABEL[d.status]}
-              </span>
+              <div className="flex flex-col items-end gap-1.5 shrink-0">
+                <span className={`text-xs font-semibold px-2 py-1 rounded-full ${statusClass(d.status)}`}>
+                  {DELIVERY_STATUS_LABEL[d.status]}
+                </span>
+                <button onClick={() => togglePicked(d)}
+                  className={`text-[11px] font-semibold px-2 py-1 rounded-full whitespace-nowrap ${
+                    d.picked ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  }`}>
+                  {d.picked ? '✓ Собрано' : '📦 Собрать'}
+                </button>
+              </div>
             </div>
           ))}
         </div>
