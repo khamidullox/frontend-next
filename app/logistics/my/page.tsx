@@ -161,6 +161,38 @@ export default function MyDeliveriesPage() {
     return () => { cancelled = true; clearInterval(id); };
   }, [route]);
 
+  // Держим экран включённым во время маршрута — иначе телефон сам блокируется от
+  // бездействия, браузер уходит в фон и передача координат останавливается. Не
+  // спасает от ручной блокировки кнопкой питания или закрытия вкладки — это
+  // ограничение мобильных браузеров, тут ничего не сделать.
+  const hasRoute = !!route;
+  const [wakeLockOn, setWakeLockOn] = useState(false);
+  useEffect(() => {
+    if (!hasRoute || typeof navigator === 'undefined' || !('wakeLock' in navigator)) return;
+    let cancelled = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let lock: any = null;
+    async function acquire() {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        lock = await (navigator as any).wakeLock.request('screen');
+        if (cancelled) { lock.release().catch(() => {}); return; }
+        setWakeLockOn(true);
+        lock.addEventListener('release', () => setWakeLockOn(false));
+      } catch {
+        setWakeLockOn(false);
+      }
+    }
+    acquire();
+    const onVisible = () => { if (!document.hidden && !lock) acquire(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      lock?.release?.().catch(() => {});
+    };
+  }, [hasRoute]);
+
   const routeDeliveries = useMemo(
     () => (route ? items.filter((d) => d.route_id === route.id) : []),
     [route, items]
@@ -271,6 +303,11 @@ export default function MyDeliveriesPage() {
             ) : (
               <p className="text-xs text-emerald-600">📡 Местоположение передаётся логисту</p>
             )}
+            <p className="text-xs text-amber-600 mt-1">
+              {wakeLockOn
+                ? '🔓 Экран не будет блокироваться сам, пока маршрут открыт.'
+                : '⚠️ Не блокируйте телефон и не закрывайте вкладку — иначе передача местоположения остановится.'}
+            </p>
             {unassignedToRoute.length > 0 && (
               <p className="text-xs text-gray-400 mt-1">
                 Добавляю {unassignedToRoute.length} новых доставок в этот заход…
