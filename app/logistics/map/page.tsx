@@ -20,7 +20,7 @@ interface GpsLocation {
 }
 
 const GPS_POLL_MS = 30_000;
-const GPS_OFFLINE_MS = 30 * 60_000;
+const GPS_OFFLINE_MS = 5 * 60_000;
 const GPS_JITTER_M = 30; // меньше — считаем дрожанием сигнала, не движением
 
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
