@@ -32,21 +32,97 @@ function shopCoordsByName(name: string | null, shops: Shop[]): [number, number] 
   return sh && sh.lat && sh.lng ? [sh.lat, sh.lng] : null;
 }
 
-// Км доставки по координатам: откуда (склад/магазин-источник) → куда (точка/адрес).
+// Точка назначения доставки (куда едем): ручные координаты → точка из справочника по shop_id → по названию.
+function resolveDestPoint(d: Delivery, shops: Shop[]): [number, number] | null {
+  if (d.lat != null && d.lng != null) return [d.lat, d.lng];
+  if (d.shop_id) {
+    const sh = shops.find((s) => s.id === d.shop_id);
+    if (sh?.lat && sh?.lng) return [sh.lat, sh.lng];
+  }
+  return shopCoordsByName(d.to_name, shops);
+}
+
+// Точка отправления (откуда едем): по названию склада-источника → по shop_id.
+function resolveSourcePoint(d: Delivery, shops: Shop[]): [number, number] | null {
+  const byName = shopCoordsByName(d.from_name, shops);
+  if (byName) return byName;
+  if (d.shop_id) {
+    const sh = shops.find((s) => s.id === d.shop_id);
+    if (sh?.lat && sh?.lng) return [sh.lat, sh.lng];
+  }
+  return null;
+}
+
+// Км доставки по координатам, без учёта маршрута: откуда (склад/магазин-источник) → куда (точка/адрес).
+// Используется как фолбэк для доставок, ещё не привязанных к маршруту — см. computeRouteKm для
+// расчёта в рамках всего маршрута (с дедупликацией одинаковых точек и цепочкой остановок).
 export function computeDeliveryKm(d: Delivery, shops: Shop[]): number | null {
-  let dest: [number, number] | null = (d.lat != null && d.lng != null) ? [d.lat, d.lng] : null;
-  if (!dest && d.shop_id) {
-    const sh = shops.find((s) => s.id === d.shop_id);
-    if (sh?.lat && sh?.lng) dest = [sh.lat, sh.lng];
-  }
-  if (!dest) dest = shopCoordsByName(d.to_name, shops);
-  let src = shopCoordsByName(d.from_name, shops);
-  if (!src && d.shop_id) {
-    const sh = shops.find((s) => s.id === d.shop_id);
-    if (sh?.lat && sh?.lng) src = [sh.lat, sh.lng];
-  }
+  const dest = resolveDestPoint(d, shops);
+  const src = resolveSourcePoint(d, shops);
   if (!src || !dest) return null;
   return Math.round(haversineKm(src[0], src[1], dest[0], dest[1]));
+}
+
+// Км по всему маршруту: если несколько накладных едут в одну и ту же точку — км считается
+// один раз для этой точки (остальным ставится 0, т.к. путь туда уже учтён); для следующей
+// отличающейся точки расстояние считается от предыдущей пройденной остановки, а не от склада
+// каждый раз заново. Доставки с km_auto === false (км выставлен вручную) не пересчитываются,
+// но их точка становится «текущим положением» для расчёта плеча следующей остановки.
+// Порядок остановок — по времени создания доставки (порядок добавления в заход).
+export function computeRouteKm(deliveries: Delivery[], shops: Shop[]): Map<string, number> {
+  const result = new Map<string, number>();
+  const sorted = [...deliveries].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const seen = new Set<string>();
+  let current: [number, number] | null = null;
+  for (const d of sorted) {
+    const dest = resolveDestPoint(d, shops);
+    if (!dest) continue;
+    const destKey = d.shop_id || `${dest[0].toFixed(3)},${dest[1].toFixed(3)}`;
+    const manual = d.km_auto === false;
+
+    if (seen.has(destKey)) {
+      // Та же точка уже посещалась в этом маршруте — путь туда уже учтён.
+      if (!manual) result.set(d.id, 0);
+      continue;
+    }
+    seen.add(destKey);
+
+    if (manual) {
+      current = dest; // фиксированная остановка — точка отсчёта для следующей.
+      continue;
+    }
+
+    const src = current || resolveSourcePoint(d, shops);
+    if (src) result.set(d.id, Math.round(haversineKm(src[0], src[1], dest[0], dest[1])));
+    current = dest;
+  }
+  return result;
+}
+
+// Пересчитывает км для всех доставок маршрута и сохраняет изменившиеся значения.
+export async function recomputeRouteKm(routeId: string): Promise<void> {
+  const id = str(routeId);
+  if (!id) return;
+  const db = getDb();
+  const snap = await db.collection(COLLECTION).where('route_id', '==', id).get();
+  if (snap.empty) return;
+  const deliveries = snap.docs.map((d) => normalizeDelivery(d.data() as Delivery));
+
+  const shops = await listShops();
+  const kmMap = computeRouteKm(deliveries, shops);
+  if (!kmMap.size) return;
+
+  const now = new Date().toISOString();
+  const batch = db.batch();
+  let changed = false;
+  for (const d of deliveries) {
+    const km = kmMap.get(d.id);
+    if (km !== undefined && km !== d.km) {
+      batch.update(db.collection(COLLECTION).doc(d.id), { km, km_auto: true, updated_at: now });
+      changed = true;
+    }
+  }
+  if (changed) await batch.commit();
 }
 
 // Статусы доставки. «new» — только что создана (водитель ещё не назначен или
@@ -117,6 +193,9 @@ export interface Delivery {
   // Маршрутизация.
   direction: string;      // Север / Юг / Восток / Запад / Центр
   km: number;             // расстояние до точки (км, в одну сторону)
+  // false — км выставлен вручную (менеджером), не пересчитывать автоматически.
+  // true/undefined — км посчитан автоматически и может быть пересчитан при изменении маршрута.
+  km_auto?: boolean;
 
   // Привязка к маршруту водителя (заход за один раз, см. lib/routes.ts).
   route_id: string | null;
@@ -135,6 +214,7 @@ function normalizeDelivery(d: Delivery): Delivery {
     route_id: d.route_id ?? null,
     lat: d.lat ?? null,
     lng: d.lng ?? null,
+    km_auto: d.km_auto ?? true,
   };
 }
 
@@ -420,12 +500,15 @@ export async function setDeliveryStatus(
   delivery.updated_at = now;
   delivery.history = [...(delivery.history || []), { at: now, status, by: str(by) }].slice(-50);
 
-  // Считаем км по координатам при выезде/доставке, если ещё не заполнен.
-  if ((status === 'on_way' || status === 'delivered') && (!delivery.km || delivery.km <= 0)) {
+  // Считаем км по координатам при выезде/доставке, если ещё не заполнен. Доставка без
+  // маршрута считается по одному плечу склад→точка; если есть маршрут — км для всего
+  // маршрута (с дедупликацией одинаковых точек и цепочкой остановок) пересчитывает
+  // recomputeRouteKm() сразу после смены статуса (см. вызов в API-роуте).
+  if (!delivery.route_id && (status === 'on_way' || status === 'delivered') && (!delivery.km || delivery.km <= 0)) {
     try {
       const shops = await listShops();
       const km = computeDeliveryKm(delivery, shops);
-      if (km && km > 0) delivery.km = km;
+      if (km && km > 0) { delivery.km = km; delivery.km_auto = true; }
     } catch { /* ignore */ }
   }
 
@@ -448,7 +531,10 @@ export async function updateDeliveryFields(
   if (fields.address !== undefined) delivery.address = str(fields.address);
   if (fields.note !== undefined) delivery.note = str(fields.note);
   if (fields.direction !== undefined) delivery.direction = str(fields.direction);
-  if (fields.km !== undefined) delivery.km = Math.max(0, Number(fields.km) || 0);
+  if (fields.km !== undefined) {
+    delivery.km = Math.max(0, Number(fields.km) || 0);
+    delivery.km_auto = false; // ручная правка — больше не пересчитывать автоматически.
+  }
   if (fields.total_weight !== undefined) delivery.total_weight = Math.max(0, Number(fields.total_weight) || 0);
   delivery.updated_at = new Date().toISOString();
   await ref.set(delivery);

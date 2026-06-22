@@ -1,8 +1,7 @@
 import crypto from 'crypto';
 import { getDb } from './firebase';
 import { getUserRaw } from './users';
-import { Delivery, listDeliveriesForDriver, getDeliveriesByIds, attachDeliveriesToRoute, updateDeliveryFields, computeDeliveryKm } from './deliveries';
-import { listShops, Shop } from './shops';
+import { Delivery, listDeliveriesForDriver, getDeliveriesByIds, attachDeliveriesToRoute, recomputeRouteKm } from './deliveries';
 
 const COLLECTION = 'routes';
 
@@ -156,23 +155,11 @@ export async function finishRoute(
   const route = snap.data() as Route;
   if (route.status === 'finished') return { route };
 
+  // Пересчитываем км по всему маршруту (с дедупликацией одинаковых точек и цепочкой
+  // остановок) и фиксируем итог.
+  await recomputeRouteKm(routeId).catch(() => {});
   const deliveries: Delivery[] = await getDeliveriesByIds(route.delivery_ids);
-
-  // Если у доставки км не заполнен — считаем по координатам точек и сохраняем.
-  let shops: Shop[] | null = null;
-  let totalKm = 0;
-  for (const d of deliveries) {
-    let km = d.km || 0;
-    if (km <= 0) {
-      if (!shops) shops = await listShops();
-      const computed = computeDeliveryKm(d, shops);
-      if (computed && computed > 0) {
-        km = computed;
-        await updateDeliveryFields(d.id, { km }).catch(() => {});
-      }
-    }
-    totalKm += km;
-  }
+  const totalKm = deliveries.reduce((s, d) => s + (d.km || 0), 0);
 
   const now = new Date().toISOString();
   route.status = 'finished';

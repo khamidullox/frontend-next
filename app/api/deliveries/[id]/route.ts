@@ -6,6 +6,7 @@ import {
   setDeliveryStatus,
   updateDeliveryFields,
   deleteDelivery,
+  recomputeRouteKm,
   DeliveryStatus,
 } from '@/lib/deliveries';
 import { notifyDriverAssigned } from '@/lib/push';
@@ -42,6 +43,11 @@ export async function PATCH(
     }
     const res = await setDeliveryStatus(id, body.status as DeliveryStatus, s.name || s.username);
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
+    if (res.delivery.route_id && ['on_way', 'delivered'].includes(body.status)) {
+      await recomputeRouteKm(res.delivery.route_id).catch(() => {});
+      const fresh = await getDelivery(id);
+      if (fresh) return Response.json({ data: fresh });
+    }
     return Response.json({ data: res.delivery });
   }
 
@@ -56,6 +62,9 @@ export async function PATCH(
   if (typeof body.status === 'string') {
     const res = await setDeliveryStatus(id, body.status as DeliveryStatus, s.name || s.username);
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
+    if (res.delivery.route_id && ['on_way', 'delivered'].includes(body.status)) {
+      await recomputeRouteKm(res.delivery.route_id).catch(() => {});
+    }
   }
   if (body.client_name !== undefined || body.address !== undefined || body.note !== undefined ||
       body.direction !== undefined || body.km !== undefined || body.total_weight !== undefined) {
