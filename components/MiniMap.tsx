@@ -17,8 +17,15 @@ const getL = () => (typeof window !== 'undefined' ? (window as any).L : null);
 // Лёгкая карта на Leaflet (CDN): рисует точки (+ опционально линию маршрута между ними)
 // и подгоняет масштаб под них.
 export default function MiniMap({
-  points, height = 320, routeLine = false,
-}: { points: MapPoint[]; height?: number; routeLine?: boolean }) {
+  points, height = 320, routeLine = false, path,
+}: {
+  points: MapPoint[];
+  height?: number;
+  /** Прямая линия между точками по порядку — фолбэк, пока не готов реальный путь по дорогам. */
+  routeLine?: boolean;
+  /** Путь по дорогам (например, из OSRM) — рисуется вместо прямой линии, если задан. */
+  path?: [number, number][];
+}) {
   const divRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapRef = useRef<any>(null);
@@ -68,7 +75,9 @@ export default function MiniMap({
     const group = L.layerGroup();
     const valid = points.filter(p => typeof p.lat === 'number' && typeof p.lng === 'number' && !isNaN(p.lat) && !isNaN(p.lng));
 
-    if (routeLine && valid.length > 1) {
+    if (path && path.length > 1) {
+      L.polyline(path, { color: '#2563eb', weight: 4, opacity: 0.75 }).addTo(group);
+    } else if (routeLine && valid.length > 1) {
       L.polyline(valid.map(p => [p.lat, p.lng]), { color: '#2563eb', weight: 3, opacity: 0.6, dashArray: '6 6' }).addTo(group);
     }
 
@@ -99,7 +108,7 @@ export default function MiniMap({
       map.fitBounds(L.latLngBounds(valid.map(p => [p.lat, p.lng])).pad(0.2), { maxZoom: 15 });
     }
     setTimeout(() => map.invalidateSize(), 100);
-  }, [ready, points, routeLine]);
+  }, [ready, points, routeLine, path]);
 
   return (
     <div

@@ -231,7 +231,11 @@ function MapContent() {
         ? drivers.find((d) => d.username === gps.user_id.replace(/^phone:/, ''))
         : drivers.find((d) => d.gps_user_id === gps.user_id);
       if (!driver) return;
-      const onWay = deliveries.filter((d) => d.driver_username === driver.username && d.status === 'on_way');
+      // Не только «в пути» — также назначенные, но ещё не взятые (driver уже в активном
+      // заходе): иначе на карте видна только первая остановка, а назначенные дальше — нет.
+      const onWay = deliveries.filter(
+        (d) => d.driver_username === driver.username && ['new', 'assigned', 'on_way'].includes(d.status)
+      );
       if (!onWay.length) return;
 
       // Одна и та же точка назначения у нескольких накладных — одна остановка на карте.

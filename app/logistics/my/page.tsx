@@ -231,6 +231,28 @@ export default function MyDeliveriesPage() {
     return pts;
   }, [mapStops, myPos]);
 
+  // Путь по дорогам (OSRM) от текущей позиции через ещё не доставленные остановки —
+  // иначе на карте просто прямая линия «по воздуху», не следующая по реальным дорогам.
+  const [routePath, setRoutePath] = useState<[number, number][] | null>(null);
+  useEffect(() => {
+    const pending = mapStops.filter((s) => s.color !== '#10b981');
+    let cancelled = false;
+    if (!myPos || !pending.length) {
+      Promise.resolve().then(() => { if (!cancelled) setRoutePath(null); });
+      return () => { cancelled = true; };
+    }
+    const coordsParam = [`${myPos.lng},${myPos.lat}`, ...pending.map((s) => `${s.lng},${s.lat}`)].join(';');
+    fetch(`https://router.project-osrm.org/route/v1/driving/${coordsParam}?overview=full&geometries=geojson`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        const ro = j.routes?.[0];
+        setRoutePath(ro ? (ro.geometry.coordinates as number[][]).map(([ln, la]) => [la, ln] as [number, number]) : null);
+      })
+      .catch(() => { if (!cancelled) setRoutePath(null); });
+    return () => { cancelled = true; };
+  }, [myPos, mapStops]);
+
   // Авто-присоединение: пока маршрут активен, все активные доставки водителя
   // (в т.ч. назначенные логистом после старта) подтягиваем в этот заход — один
   // маршрут с внутренними доставками, а не отдельные.
@@ -348,7 +370,7 @@ export default function MyDeliveriesPage() {
           </button>
           {showMap && (
             <div className="mt-2">
-              <MiniMap points={mapPoints} routeLine height={280} />
+              <MiniMap points={mapPoints} path={routePath ?? undefined} routeLine height={280} />
               <div className="flex items-center gap-3 mt-2 text-[11px] text-gray-500 flex-wrap">
                 <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#f97316' }} /> осталось</span>
                 <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#10b981' }} /> доставлено</span>
