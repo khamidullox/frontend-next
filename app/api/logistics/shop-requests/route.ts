@@ -1,10 +1,47 @@
 import { NextRequest } from 'next/server';
 import { getSession, ROLE_RANK } from '@/lib/auth';
-import { createDelivery, listShopRequests, listShopRequestsForShop } from '@/lib/deliveries';
-import { getShop } from '@/lib/shops';
+import { createDelivery, listShopRequests, listShopRequestsForShop, assignDriver, getDeliveriesByIds, Delivery } from '@/lib/deliveries';
+import { getShop, Shop } from '@/lib/shops';
+import { listRoutes, addDeliveriesToRoute, Route } from '@/lib/routes';
+import { notifyDriverAssigned } from '@/lib/push';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// Если у какого-то водителя в активном маршруте уже есть остановка именно в этом
+// магазине — он «по пути» туда в любом случае, назначаем сразу (точное совпадение).
+// Если нет — берём того, у кого в маршруте есть остановка в том же городе/направлении
+// (более широкое «по пути»). Если совпадений нет вообще — оставляем заявку
+// без водителя, как раньше: менеджер увидит её в списке и назначит вручную.
+async function autoAssignOnTheWay(delivery: Delivery, shop: Shop): Promise<Delivery> {
+  const routes = await listRoutes();
+  const activeRoutes = routes.filter((r) => r.status === 'active');
+  if (!activeRoutes.length) return delivery;
+
+  let exactRoute: Route | null = null;
+  let directionRoute: Route | null = null;
+
+  for (const route of activeRoutes) {
+    if (!route.delivery_ids?.length) continue;
+    const ds = await getDeliveriesByIds(route.delivery_ids);
+    if (ds.some((d) => d.shop_id === shop.id)) { exactRoute = route; break; }
+    if (!directionRoute && shop.direction && ds.some((d) => d.direction === shop.direction)) {
+      directionRoute = route;
+    }
+  }
+
+  const match = exactRoute || directionRoute;
+  if (!match) return delivery;
+
+  const assigned = await assignDriver(delivery.id, match.driver_username);
+  if ('error' in assigned) return delivery;
+  await addDeliveriesToRoute(match.id, [delivery.id]).catch(() => {});
+  notifyDriverAssigned(
+    match.driver_username,
+    assigned.delivery.client_name || assigned.delivery.address || 'новая доставка'
+  ).catch(() => {});
+  return assigned.delivery;
+}
 
 // Раздел 2: заявки магазинов на доставку «магазин → клиент».
 // worker видит только свои заявки; менеджер/админ — все (для присоединения к маршрутам).
@@ -71,5 +108,6 @@ export async function POST(request: NextRequest) {
     created_by: s.name || s.username,
   });
   if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
-  return Response.json({ data: res.delivery });
+  const finalDelivery = await autoAssignOnTheWay(res.delivery, shop).catch(() => res.delivery);
+  return Response.json({ data: finalDelivery });
 }
