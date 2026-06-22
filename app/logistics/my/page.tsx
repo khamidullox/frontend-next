@@ -21,19 +21,11 @@ function fmtTime(iso?: string | null) {
   } catch { return ''; }
 }
 
-// Маршрут с несколькими точками сразу в Яндекс/Google Картах (запускает навигацию
-// в самом приложении карт через все остановки по порядку, не по одной).
+// Маршрут с несколькими точками сразу в Яндекс.Картах (запускает навигацию в самом
+// приложении карт через все остановки по порядку, не по одной).
 function buildYandexRouteUrl(points: { lat: number; lng: number }[]): string {
   const rtext = points.map((p) => `${p.lat},${p.lng}`).join('~');
   return `https://yandex.ru/maps/?rtext=${encodeURIComponent(rtext)}&rtt=auto`;
-}
-
-function buildGoogleRouteUrl(points: { lat: number; lng: number }[]): string {
-  const dest = points[points.length - 1];
-  const waypoints = points.slice(0, -1).map((p) => `${p.lat},${p.lng}`).join('|');
-  const params = new URLSearchParams({ api: '1', destination: `${dest.lat},${dest.lng}`, travelmode: 'driving' });
-  if (waypoints) params.set('waypoints', waypoints);
-  return `https://www.google.com/maps/dir/?${params.toString()}`;
 }
 
 function statusClass(s: DeliveryStatus): string {
@@ -398,17 +390,10 @@ export default function MyDeliveriesPage() {
                 {myPos && <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#2563eb' }} /> я</span>}
               </div>
               {navPoints.length > 0 && (
-                <div className="flex items-center gap-2 mt-3 flex-wrap">
-                  <span className="text-xs font-semibold text-gray-600">🚀 Поехали:</span>
-                  <a href={buildYandexRouteUrl(navPoints)} target="_blank" rel="noopener noreferrer"
-                    className="px-3 py-1.5 rounded-lg bg-red-50 text-red-600 text-xs font-semibold hover:bg-red-100">
-                    🗺️ Яндекс.Карты
-                  </a>
-                  <a href={buildGoogleRouteUrl(navPoints)} target="_blank" rel="noopener noreferrer"
-                    className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 text-xs font-semibold hover:bg-blue-100">
-                    🗺️ Google Maps
-                  </a>
-                </div>
+                <a href={buildYandexRouteUrl(navPoints)} target="_blank" rel="noopener noreferrer"
+                  className="mt-3 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-semibold">
+                  🚀 Поехали
+                </a>
               )}
             </div>
           )}
