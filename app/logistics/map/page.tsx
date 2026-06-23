@@ -21,6 +21,7 @@ interface GpsLocation {
 
 const GPS_POLL_MS = 30_000;
 const GPS_OFFLINE_MS = 5 * 60_000;
+const GPS_ALERT_MS = 15 * 60_000; // машина в рейсе без связи дольше этого — алерт
 const GPS_JITTER_M = 30; // меньше — считаем дрожанием сигнала, не движением
 
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -527,6 +528,24 @@ function MapContent() {
   );
   const movingVehicles = onlineVehicles.filter((v) => v.speed > 2);
 
+  // Алерты: машина с активными доставками, но без связи дольше порога — её стоит проверить.
+  // Порог выше обычного «офлайн» (5 мин), чтобы не дёргать на кратком пропадании сигнала;
+  // фильтр по наличию работы убирает шум от припаркованных машин без рейса.
+  const alerts: { name: string; minutes: number; v: GpsLocation }[] = [];
+  for (const v of gpsLocations) {
+    const ageMs = now - parseGpsTime(v.sys_time).getTime();
+    if (ageMs < GPS_ALERT_MS) continue;
+    const driver = v.source === 'phone'
+      ? drivers.find((d) => d.username === v.user_id.replace(/^phone:/, ''))
+      : drivers.find((d) => d.gps_user_id === v.user_id);
+    if (!driver) continue;
+    const hasWork = deliveries.some(
+      (d) => d.driver_username === driver.username && ['new', 'assigned', 'on_way'].includes(d.status)
+    );
+    if (!hasWork) continue;
+    alerts.push({ name: v.user_name || driver.name, minutes: Math.round(ageMs / 60_000), v });
+  }
+
   const shopsOnMap = shops.filter((s) => s.lat && s.lng);
   const shopsNoCoord = shops.filter((s) => !s.lat || !s.lng);
   const activeWithAddr = deliveries.filter((d) => d.address);
@@ -563,6 +582,23 @@ function MapContent() {
           + Добавить точку →
         </Link>
       </div>
+
+      {/* Алерты: машины в рейсе, потерявшие связь */}
+      {alerts.length > 0 && (
+        <div className="mb-3 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+          <div className="text-sm font-semibold text-red-700 mb-1">
+            ⚠️ {alerts.length} {alerts.length === 1 ? 'машина в рейсе без связи' : 'машин(ы) в рейсе без связи'}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {alerts.map((a) => (
+              <button key={a.v.user_id} onClick={() => focusVehicle(a.v)}
+                className="text-xs font-medium px-2 py-1 rounded-full bg-white text-red-700 border border-red-200 hover:bg-red-100 whitespace-nowrap">
+                {a.name} · {a.minutes} мин назад
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Переключатель карты */}
       <div className="flex gap-1 mb-2">
