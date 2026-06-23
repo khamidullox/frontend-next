@@ -254,11 +254,30 @@ export default function MyDeliveriesPage() {
     }));
   }, [routeDeliveries, shops]);
 
+  // Места выдачи товара (склад/магазин) для доставок, которые ещё не взяли в путь —
+  // отдельная иконка 📦, чтобы на карте было видно, куда заехать ПЕРЕД доставкой клиенту.
+  const pickupPoints = useMemo<MapPoint[]>(() => {
+    const notTaken = routeDeliveries.filter((d) => d.status === 'new' || d.status === 'assigned');
+    const seen = new Map<string, { lat: number; lng: number; name: string }>();
+    for (const d of notTaken) {
+      const pt = resolvePickupPoint(d, shops);
+      if (!pt) continue;
+      const key = `${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
+      if (!seen.has(key)) {
+        seen.set(key, { ...pt, name: d.kind === 'shop_to_client' ? (d.shop_name || 'магазин') : (d.from_name || 'склад') });
+      }
+    }
+    return [...seen.values()].map((p) => ({
+      lat: p.lat, lng: p.lng, icon: '📦', color: '#D97706',
+      label: `📦 Место выдачи: ${p.name}`,
+    }));
+  }, [routeDeliveries, shops]);
+
   const mapPoints = useMemo<MapPoint[]>(() => {
-    const pts = [...mapStops];
+    const pts = [...pickupPoints, ...mapStops];
     if (myPos) pts.push({ lat: myPos.lat, lng: myPos.lng, color: '#2563eb', label: '📍 Я' });
     return pts;
-  }, [mapStops, myPos]);
+  }, [pickupPoints, mapStops, myPos]);
 
   // Точки для «Поехали»: текущая позиция (если есть) + остановки по порядку (mapStops
   // уже содержит только недоставленные — см. выше).
@@ -408,6 +427,7 @@ export default function MyDeliveriesPage() {
             <div className="mt-2">
               <MiniMap points={mapPoints} path={routePath ?? undefined} routeLine height={280} />
               <div className="flex items-center gap-3 mt-2 text-[11px] text-gray-500 flex-wrap">
+                {pickupPoints.length > 0 && <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#D97706' }} /> 📦 место выдачи</span>}
                 <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#f97316' }} /> осталось</span>
                 {myPos && <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#2563eb' }} /> я</span>}
               </div>

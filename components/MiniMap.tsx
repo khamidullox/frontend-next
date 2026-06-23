@@ -9,6 +9,8 @@ export interface MapPoint {
   color?: string;
   /** Номер остановки маршрута — рисуется внутри маркера вместо точки. */
   num?: number;
+  /** Эмодзи вместо номера/точки (например «📦» для места выдачи товара). */
+  icon?: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -84,7 +86,15 @@ export default function MiniMap({
     for (const p of valid) {
       const color = p.color || '#2563eb';
       let marker;
-      if (p.num != null) {
+      if (p.icon) {
+        marker = L.marker([p.lat, p.lng], {
+          icon: L.divIcon({
+            className: '',
+            html: `<div style="background:${color};color:#fff;width:24px;height:24px;border-radius:50%;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 1px 3px rgba(0,0,0,.4)">${p.icon}</div>`,
+            iconSize: [24, 24], iconAnchor: [12, 12],
+          }),
+        });
+      } else if (p.num != null) {
         marker = L.marker([p.lat, p.lng], {
           icon: L.divIcon({
             className: '',
