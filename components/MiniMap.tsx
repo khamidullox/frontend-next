@@ -19,7 +19,7 @@ const getL = () => (typeof window !== 'undefined' ? (window as any).L : null);
 // Лёгкая карта на Leaflet (CDN): рисует точки (+ опционально линию маршрута между ними)
 // и подгоняет масштаб под них.
 export default function MiniMap({
-  points, height = 320, routeLine = false, path,
+  points, height = 320, routeLine = false, path, secondaryPath, secondaryPathColor = '#D97706',
 }: {
   points: MapPoint[];
   height?: number;
@@ -27,6 +27,9 @@ export default function MiniMap({
   routeLine?: boolean;
   /** Путь по дорогам (например, из OSRM) — рисуется вместо прямой линии, если задан. */
   path?: [number, number][];
+  /** Второй путь другим цветом — например, до места выдачи товара, отдельно от пути к клиенту. */
+  secondaryPath?: [number, number][];
+  secondaryPathColor?: string;
 }) {
   const divRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -82,6 +85,9 @@ export default function MiniMap({
     } else if (routeLine && valid.length > 1) {
       L.polyline(valid.map(p => [p.lat, p.lng]), { color: '#2563eb', weight: 3, opacity: 0.6, dashArray: '6 6' }).addTo(group);
     }
+    if (secondaryPath && secondaryPath.length > 1) {
+      L.polyline(secondaryPath, { color: secondaryPathColor, weight: 4, opacity: 0.75, dashArray: '4 6' }).addTo(group);
+    }
 
     for (const p of valid) {
       const color = p.color || '#2563eb';
@@ -118,7 +124,7 @@ export default function MiniMap({
       map.fitBounds(L.latLngBounds(valid.map(p => [p.lat, p.lng])).pad(0.2), { maxZoom: 15 });
     }
     setTimeout(() => map.invalidateSize(), 100);
-  }, [ready, points, routeLine, path]);
+  }, [ready, points, routeLine, path, secondaryPath, secondaryPathColor]);
 
   return (
     <div

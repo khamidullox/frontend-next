@@ -308,6 +308,27 @@ export default function MyDeliveriesPage() {
     return () => { cancelled = true; };
   }, [myPos, mapStops]);
 
+  // Путь по дорогам до мест выдачи товара — отдельный, оранжевый, отличается от
+  // основного синего маршрута к клиентам (см. цвет в MiniMap secondaryPath).
+  const [pickupPath, setPickupPath] = useState<[number, number][] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!myPos || !pickupPoints.length) {
+      Promise.resolve().then(() => { if (!cancelled) setPickupPath(null); });
+      return () => { cancelled = true; };
+    }
+    const coordsParam = [`${myPos.lng},${myPos.lat}`, ...pickupPoints.map((s) => `${s.lng},${s.lat}`)].join(';');
+    fetch(`https://router.project-osrm.org/route/v1/driving/${coordsParam}?overview=full&geometries=geojson`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        const ro = j.routes?.[0];
+        setPickupPath(ro ? (ro.geometry.coordinates as number[][]).map(([ln, la]) => [la, ln] as [number, number]) : null);
+      })
+      .catch(() => { if (!cancelled) setPickupPath(null); });
+    return () => { cancelled = true; };
+  }, [myPos, pickupPoints]);
+
   // Авто-присоединение: пока маршрут активен, все активные доставки водителя
   // (в т.ч. назначенные логистом после старта) подтягиваем в этот заход — один
   // маршрут с внутренними доставками, а не отдельные.
@@ -425,11 +446,19 @@ export default function MyDeliveriesPage() {
           </button>
           {showMap && (
             <div className="mt-2">
-              <MiniMap points={mapPoints} path={routePath ?? undefined} routeLine height={280} />
+              <MiniMap points={mapPoints} path={routePath ?? undefined} secondaryPath={pickupPath ?? undefined} secondaryPathColor="#D97706" routeLine height={280} />
               <div className="flex items-center gap-3 mt-2 text-[11px] text-gray-500 flex-wrap">
-                {pickupPoints.length > 0 && <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#D97706' }} /> 📦 место выдачи</span>}
+                {pickupPoints.length > 0 && (
+                  <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#D97706' }} /> 📦 место выдачи</span>
+                )}
                 <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#f97316' }} /> осталось</span>
                 {myPos && <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#2563eb' }} /> я</span>}
+                {pickupPath && (
+                  <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5" style={{ background: '#D97706' }} /> путь до выдачи</span>
+                )}
+                {routePath && (
+                  <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5" style={{ background: '#2563eb' }} /> путь к клиенту</span>
+                )}
               </div>
               {navPoints.length > 0 && (
                 <a href={buildYandexRouteUrl(navPoints)} target="_blank" rel="noopener noreferrer"
