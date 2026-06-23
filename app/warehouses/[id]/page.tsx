@@ -255,8 +255,11 @@ export default function WarehouseDetailPage() {
                             {r.product_name || '—'}
                           </button>
                           {newCodes.has(r.product_code) && (
-                            <span className="shrink-0 mt-0.5 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-600 whitespace-nowrap">
-                              🆕 новинка
+                            <span
+                              className="shrink-0 self-start mt-0.5 text-[8px] font-bold uppercase tracking-wide text-white bg-rose-500 pl-1.5 pr-2.5 py-0.5 whitespace-nowrap"
+                              style={{ clipPath: 'polygon(0 0, 100% 0, calc(100% - 5px) 50%, 100% 100%, 0 100%)' }}
+                            >
+                              новинка
                             </span>
                           )}
                         </span>
