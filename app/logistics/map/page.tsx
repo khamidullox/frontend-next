@@ -384,14 +384,13 @@ function MapContent() {
       });
     });
 
-    // Точки (склады, магазины) — текст светло-жёлтый вместо белого: лучше видно
-    // на пёстрой подложке карты, плюс чуть уменьшенный размер подписи.
+    // Точки (склады, магазины) — чёрный текст, мельче подпись.
     shops.filter((s) => s.lat && s.lng).forEach((shop) => {
       const color = TYPE_COLOR[shop.type || 'shop'] || '#5F5E5A';
       const icon = L.divIcon({
         className: '',
-        html: `<div style="background:${color};color:#FDE68A;font-size:10px;font-weight:700;padding:2px 7px;border-radius:18px;white-space:nowrap;border:1.5px solid rgba(255,255,255,0.85);box-shadow:0 2px 6px rgba(0,0,0,0.25);">${TYPE_ICON[shop.type || 'shop'] || '📍'} ${shop.name}</div>`,
-        iconAnchor: [0, 12],
+        html: `<div style="background:${color};color:#000;font-size:8px;font-weight:700;padding:2px 6px;border-radius:16px;white-space:nowrap;border:1.5px solid rgba(255,255,255,0.85);box-shadow:0 2px 6px rgba(0,0,0,0.25);">${TYPE_ICON[shop.type || 'shop'] || '📍'} ${shop.name}</div>`,
+        iconAnchor: [0, 10],
       });
       L.marker([shop.lat!, shop.lng!], { icon })
         .addTo(map)
