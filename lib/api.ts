@@ -477,6 +477,19 @@ export async function getStockUpdated(): Promise<number | null> {
   return data.updated_ms ?? null;
 }
 
+// Коды товаров с недавней приёмкой (для пометки «новинка»). При ошибке — пусто,
+// чтобы остатки склада продолжали работать без пометок.
+export async function listRecentlyReceivedCodes(): Promise<string[]> {
+  try {
+    const res = await fetch('/api/products/recent-receipts', { cache: 'no-store' });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.codes || [];
+  } catch {
+    return [];
+  }
+}
+
 export interface SmartupLimit {
   endpoint: string;
   left: number | null;

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getWarehouseStock, WarehouseStock, WarehouseProduct } from '@/lib/api';
+import { getWarehouseStock, listRecentlyReceivedCodes, WarehouseStock, WarehouseProduct } from '@/lib/api';
 import { loadXLSX } from '@/lib/xlsx';
 
 const PAGE_SIZE = 50;
@@ -74,6 +74,7 @@ export default function WarehouseDetailPage() {
   const [page, setPage] = useState(1);
   const [exporting, setExporting] = useState(false);
   const [photo, setPhoto] = useState<{ code: string; name: string } | null>(null);
+  const [newCodes, setNewCodes] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let alive = true;
@@ -84,6 +85,13 @@ export default function WarehouseDetailPage() {
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [id]);
+
+  // Коды товаров с недавней приёмкой — для пометки «новинка». Не блокирует загрузку остатков.
+  useEffect(() => {
+    let alive = true;
+    listRecentlyReceivedCodes().then((codes) => { if (alive) setNewCodes(new Set(codes)); });
+    return () => { alive = false; };
+  }, []);
 
   const q = query.trim().toLowerCase();
   const rows = useMemo(() => {
@@ -238,13 +246,20 @@ export default function WarehouseDetailPage() {
                                  px-2 py-2 text-sm border-b border-gray-100 last:border-0"
                     >
                       <span className="min-w-0">
-                        <button
-                          type="button"
-                          onClick={() => setPhoto({ code: r.product_code, name: r.product_name })}
-                          className="block text-left break-words leading-snug text-blue-600 hover:underline"
-                        >
-                          {r.product_name || '—'}
-                        </button>
+                        <span className="flex items-start gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setPhoto({ code: r.product_code, name: r.product_name })}
+                            className="block text-left break-words leading-snug text-blue-600 hover:underline"
+                          >
+                            {r.product_name || '—'}
+                          </button>
+                          {newCodes.has(r.product_code) && (
+                            <span className="shrink-0 mt-0.5 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-600 whitespace-nowrap">
+                              🆕 новинка
+                            </span>
+                          )}
+                        </span>
                         <span className="block text-[11px] text-gray-400 truncate">
                           Код {r.product_code}
                           {r.producer && ` · ${r.producer}`}

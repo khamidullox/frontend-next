@@ -77,6 +77,25 @@ export async function listReceipts(): Promise<ReceiptListItem[]> {
     .sort((a, b) => b.receipt_id.localeCompare(a.receipt_id, undefined, { numeric: true }));
 }
 
+// Коды товаров, по которым была приёмка в загруженном окне (~последние 25 дней).
+// Используется для пометки «новинка» в остатках склада. Дата приёмки из Smartup
+// приходит в нестандартном формате — если не парсится, позицию оставляем (окно
+// и так ограничено выгрузкой), лучше показать лишнюю новинку, чем пропустить.
+export async function getRecentlyReceivedCodes(days = 30): Promise<string[]> {
+  const all = await getAllInputs();
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const codes = new Set<string>();
+  for (const r of all) {
+    const t = new Date(r.input_time).getTime();
+    if (Number.isFinite(t) && t < cutoff) continue;
+    for (const it of r.input_items || []) {
+      const c = String(it.product_code ?? '').trim();
+      if (c) codes.add(c);
+    }
+  }
+  return [...codes];
+}
+
 export async function getReceiptDocument(receiptId: string): Promise<CheckDocument | null> {
   const all = await getAllInputs();
   const key = String(receiptId).trim();
