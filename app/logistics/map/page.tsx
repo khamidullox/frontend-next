@@ -384,13 +384,13 @@ function MapContent() {
       });
     });
 
-    // Точки (склады, магазины) — чёрный текст, мельче подпись.
+    // Точки (склады, магазины) — без подписи рядом, только иконка; название — в попапе по клику.
     shops.filter((s) => s.lat && s.lng).forEach((shop) => {
       const color = TYPE_COLOR[shop.type || 'shop'] || '#5F5E5A';
       const icon = L.divIcon({
         className: '',
-        html: `<div style="background:${color};color:#000;font-size:8px;font-weight:700;padding:2px 6px;border-radius:16px;white-space:nowrap;border:1.5px solid rgba(255,255,255,0.85);box-shadow:0 2px 6px rgba(0,0,0,0.25);">${TYPE_ICON[shop.type || 'shop'] || '📍'} ${shop.name}</div>`,
-        iconAnchor: [0, 10],
+        html: `<div style="background:${color};width:22px;height:22px;border-radius:50%;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 1px 4px rgba(0,0,0,0.35)">${TYPE_ICON[shop.type || 'shop'] || '📍'}</div>`,
+        iconSize: [22, 22], iconAnchor: [11, 11],
       });
       L.marker([shop.lat!, shop.lng!], { icon })
         .addTo(map)
@@ -402,14 +402,14 @@ function MapContent() {
       coords.push([shop.lat!, shop.lng!]);
     });
 
-    // Доставки с геокодингом
+    // Доставки с геокодингом — без подписи рядом, имя клиента видно в попапе.
     Object.entries(geocodeMap).forEach(([id, [lat, lng]]) => {
       const d = deliveries.find((x) => x.id === id);
       if (!d) return;
       const icon = L.divIcon({
         className: '',
-        html: `<div style="background:#D85A30;color:#fff;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;border:2px solid rgba(255,255,255,0.85);box-shadow:0 2px 6px rgba(0,0,0,0.25);">📦 ${d.client_name || 'Доставка'}</div>`,
-        iconAnchor: [0, 14],
+        html: `<div style="background:#D85A30;width:22px;height:22px;border-radius:50%;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 1px 4px rgba(0,0,0,0.35)">📦</div>`,
+        iconSize: [22, 22], iconAnchor: [11, 11],
       });
       L.marker([lat, lng], { icon })
         .addTo(map)
@@ -417,7 +417,8 @@ function MapContent() {
       coords.push([lat, lng]);
     });
 
-    // GPS-трекеры (gps16888.com)
+    // GPS-трекеры (gps16888.com) — без подписи рядом (имя/скорость захламляли карту),
+    // имя водителя, скорость и статус доступны в попапе по клику на иконку.
     const now = Date.now();
     gpsLocations.forEach((v) => {
       if (!v.lat || !v.lng) return;
@@ -429,14 +430,13 @@ function MapContent() {
 
       let bgColor = isOffline ? '#9CA3AF' : isMoving ? '#16A34A' : '#D97706';
       if (isSelected) bgColor = '#2563EB';
-      const border = isSelected ? '3px solid #93C5FD' : '2px solid rgba(255,255,255,0.9)';
+      const border = isSelected ? '3px solid #93C5FD' : '2px solid #fff';
 
-      const speedLabel = isMoving ? ` · ${v.speed} км/ч` : '';
       const vIcon = v.source === 'phone' ? '📱' : '🚚';
       const icon = L.divIcon({
         className: '',
-        html: `<div style="background:${bgColor};color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;border:${border};box-shadow:0 2px 8px rgba(0,0,0,0.3);">${vIcon} ${v.user_name}${speedLabel}</div>`,
-        iconAnchor: [0, 14],
+        html: `<div style="background:${bgColor};width:28px;height:28px;border-radius:50%;border:${border};display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.4)">${vIcon}</div>`,
+        iconSize: [28, 28], iconAnchor: [14, 14],
       });
 
       const marker = L.marker([v.lat, v.lng], { icon, zIndexOffset: 1000 })
@@ -492,6 +492,19 @@ function MapContent() {
     if (map) map.setView([lat, lng], 16, { animate: true });
   }
 
+  // Клик по пункту легенды — общий план по всем точкам категории (одна точка — просто зум на неё).
+  function focusCategory(coords: [number, number][]) {
+    const L = getL();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const map = mapRef.current as any;
+    if (!L || !map || !coords.length) return;
+    if (coords.length === 1) {
+      map.setView(coords[0], 15, { animate: true });
+    } else {
+      map.fitBounds(L.latLngBounds(coords).pad(0.2), { maxZoom: 15, animate: true });
+    }
+  }
+
   async function geocodeDelivery(d: Delivery) {
     if (!d.address || geocoding) return;
     setGeocoding(d.id);
@@ -517,6 +530,16 @@ function MapContent() {
   const shopsOnMap = shops.filter((s) => s.lat && s.lng);
   const shopsNoCoord = shops.filter((s) => !s.lat || !s.lng);
   const activeWithAddr = deliveries.filter((d) => d.address);
+
+  // Координаты по категориям — для клика по легенде («общий план» по всем точкам категории).
+  const warehouseCoords: [number, number][] = shopsOnMap.filter((s) => s.type === 'warehouse').map((s) => [s.lat!, s.lng!]);
+  const shopCoords: [number, number][] = shopsOnMap.filter((s) => s.type !== 'warehouse').map((s) => [s.lat!, s.lng!]);
+  const deliveryCoords: [number, number][] = Object.values(geocodeMap);
+  const offlineCoords: [number, number][] = gpsLocations
+    .filter((v) => now - parseGpsTime(v.sys_time).getTime() >= GPS_OFFLINE_MS && v.lat && v.lng)
+    .map((v) => [v.lat, v.lng]);
+  const idleCoords: [number, number][] = onlineVehicles.filter((v) => v.speed <= 2 && v.lat && v.lng).map((v) => [v.lat, v.lng]);
+  const movingCoords: [number, number][] = movingVehicles.filter((v) => v.lat && v.lng).map((v) => [v.lat, v.lng]);
 
   // Сортируем GPS-машины: едущие сначала, потом стоящие, потом офлайн
   const sortedGps = [...gpsLocations].sort((a, b) => {
@@ -619,14 +642,33 @@ function MapContent() {
         </div>
       </div>
 
-      {/* Легенда */}
+      {/* Легенда — клик по пункту показывает на карте общий план всех точек этой категории
+          (если точка одна — просто зум на неё). */}
       <div className="flex items-center gap-4 mb-4 text-xs text-gray-500 flex-wrap">
-        <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-600 mr-1 align-middle" />Склад</span>
-        <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-600 mr-1 align-middle" />Магазин</span>
-        <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500 mr-1 align-middle" />Доставка</span>
-        <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-green-600 mr-1 align-middle" />🚚 Едет (GPS)</span>
-        <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 mr-1 align-middle" />🚚 Стоит (GPS)</span>
-        <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-gray-400 mr-1 align-middle" />🚚 Офлайн (GPS)</span>
+        <button onClick={() => focusCategory(warehouseCoords)} disabled={!warehouseCoords.length}
+          className="hover:text-gray-800 disabled:opacity-40 disabled:hover:text-gray-500">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-600 mr-1 align-middle" />Склад
+        </button>
+        <button onClick={() => focusCategory(shopCoords)} disabled={!shopCoords.length}
+          className="hover:text-gray-800 disabled:opacity-40 disabled:hover:text-gray-500">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-600 mr-1 align-middle" />Магазин
+        </button>
+        <button onClick={() => focusCategory(deliveryCoords)} disabled={!deliveryCoords.length}
+          className="hover:text-gray-800 disabled:opacity-40 disabled:hover:text-gray-500">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500 mr-1 align-middle" />Доставка
+        </button>
+        <button onClick={() => focusCategory(movingCoords)} disabled={!movingCoords.length}
+          className="hover:text-gray-800 disabled:opacity-40 disabled:hover:text-gray-500">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-600 mr-1 align-middle" />🚚 Едет (GPS)
+        </button>
+        <button onClick={() => focusCategory(idleCoords)} disabled={!idleCoords.length}
+          className="hover:text-gray-800 disabled:opacity-40 disabled:hover:text-gray-500">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 mr-1 align-middle" />🚚 Стоит (GPS)
+        </button>
+        <button onClick={() => focusCategory(offlineCoords)} disabled={!offlineCoords.length}
+          className="hover:text-gray-800 disabled:opacity-40 disabled:hover:text-gray-500">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-gray-400 mr-1 align-middle" />🚚 Офлайн (GPS)
+        </button>
         <span className="ml-auto text-gray-400">Обновление каждые 30 сек</span>
       </div>
 
