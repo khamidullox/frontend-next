@@ -124,14 +124,28 @@ export async function getProductCatalog(): Promise<CatalogItem[]> {
           group: groupTypeName(i, 'PRDGR:3', typeName),    // вид
           barcodes: buildBarcodes(i),
           price: priceMap.get(code) || 0,
-          // Для логистики: вес (брутто, иначе нетто) и объём (литраж) из Smartup.
+          // Для логистики: вес (брутто, иначе нетто) и объём из Smartup.
+          // Поле `litr` в Smartup подписано «Литр/Дециметр куб», но фактически хранит
+          // объём в КУБОМЕТРАХ (напр. стиралка = 0.25 = 0.25 м³, а не 0.25 л), поэтому
+          // переводим в литры ×1000, как ожидает остальной код (capacity в л, /1000 для м³).
           weight: Number(i.weight_brutto) || Number(i.weight_netto) || 0,
-          volume_l: Number(i.litr) || 0,
+          volume_l: (Number(i.litr) || 0) * 1000,
         };
       })
       .filter((i) => i.code)
       .sort((a, b) => a.name.localeCompare(b.name));
   });
+}
+
+// Сырые поля товара из Smartup inventory$export (для отладки расхождений объёма/веса).
+export async function getRawInventoryFields(code: string): Promise<Record<string, unknown> | null> {
+  const data = await smartupRequest<{ inventory?: Record<string, unknown>[] }>(INVENTORY_EXPORT_ENDPOINT, {});
+  const item = (data.inventory || []).find((i) => normalizeCode(i.code) === normalizeCode(code));
+  if (!item) return null;
+  return {
+    code: item.code, name: item.name, product_id: item.product_id,
+    litr: item.litr, weight_brutto: item.weight_brutto, weight_netto: item.weight_netto,
+  };
 }
 
 // ─── Остатки товара по складам ───────────────────────────────────────────────
