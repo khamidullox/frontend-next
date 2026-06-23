@@ -28,6 +28,28 @@ function buildYandexRouteUrl(points: { lat: number; lng: number }[]): string {
   return `https://yandex.ru/maps/?rtext=${encodeURIComponent(rtext)}&rtt=auto`;
 }
 
+// Маршрут от текущего местоположения до одной точки (пустой пункт до «~» —
+// Яндекс сам подставит позицию пользователя).
+function buildYandexSinglePointUrl(lat: number, lng: number): string {
+  return `https://yandex.ru/maps/?rtext=~${lat},${lng}&rtt=auto`;
+}
+
+// Точка выдачи товара: для заявки магазина (kind = shop_to_client) — сам магазин
+// (там собирают заказ), для накладной/перемещения — склад-источник (from_name).
+// Нужна, когда водитель не на месте выдачи — сначала доехать туда и забрать товар,
+// и только потом «Взять в путь» к получателю.
+function resolvePickupPoint(d: Delivery, shops: Shop[]): { lat: number; lng: number } | null {
+  if (d.shop_id) {
+    const sh = shops.find((s) => s.id === d.shop_id);
+    if (sh?.lat && sh?.lng) return { lat: sh.lat, lng: sh.lng };
+  }
+  if (d.from_name) {
+    const sh = shops.find((s) => s.name === d.from_name || s.name.includes(d.from_name!) || d.from_name!.includes(s.name));
+    if (sh?.lat && sh?.lng) return { lat: sh.lat, lng: sh.lng };
+  }
+  return null;
+}
+
 function statusClass(s: DeliveryStatus): string {
   switch (s) {
     case 'delivered': return 'bg-green-100 text-green-700';
@@ -407,7 +429,7 @@ export default function MyDeliveriesPage() {
       {active.length > 0 && (
         <div className="flex flex-col gap-2.5 mb-5">
           {active.map((d) => (
-            <DeliveryCard key={d.id} d={d} busy={busyId === d.id} onSet={setStatus} />
+            <DeliveryCard key={d.id} d={d} busy={busyId === d.id} onSet={setStatus} shops={shops} />
           ))}
         </div>
       )}
@@ -420,7 +442,7 @@ export default function MyDeliveriesPage() {
           </div>
           <div className="flex flex-col gap-2 opacity-70">
             {done.map((d) => (
-              <DeliveryCard key={d.id} d={d} busy={busyId === d.id} onSet={setStatus} />
+              <DeliveryCard key={d.id} d={d} busy={busyId === d.id} onSet={setStatus} shops={shops} />
             ))}
           </div>
         </>
@@ -430,13 +452,17 @@ export default function MyDeliveriesPage() {
 }
 
 function DeliveryCard({
-  d, busy, onSet,
+  d, busy, onSet, shops,
 }: {
   d: Delivery;
   busy: boolean;
   onSet: (id: string, s: DeliveryStatus) => void;
+  shops: Shop[];
 }) {
   const actions = nextActions(d.status);
+  // Пока не взял в путь — может понадобиться сначала доехать до места выдачи
+  // (склад/магазин), если водитель сейчас далеко или в другом месте.
+  const pickup = (d.status === 'new' || d.status === 'assigned') ? resolvePickupPoint(d, shops) : null;
   return (
     <div className="bg-white rounded-xl shadow-sm p-4 flex flex-col gap-2">
       <div className="flex items-start gap-3">
@@ -461,6 +487,12 @@ function DeliveryCard({
           )}
           {d.note && <div className="text-xs text-gray-400 mt-0.5">📝 {d.note}</div>}
           {d.km > 0 && <div className="text-xs text-emerald-600 font-medium mt-0.5">🛣️ {d.km} км</div>}
+          {pickup && (
+            <a href={buildYandexSinglePointUrl(pickup.lat, pickup.lng)} target="_blank" rel="noopener noreferrer"
+              className="mt-2 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-amber-50 text-amber-700 text-xs font-semibold hover:bg-amber-100">
+              📍 Дойти до места выдачи{d.kind === 'shop_to_client' ? ` (${d.shop_name || 'магазин'})` : d.from_name ? ` (${d.from_name})` : ''}
+            </a>
+          )}
           {d.address && (
             <div className="flex gap-2 mt-2">
               <a href={`https://yandex.ru/maps/?text=${encodeURIComponent(d.address)}`} target="_blank" rel="noopener noreferrer"
