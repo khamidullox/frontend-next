@@ -481,6 +481,31 @@ export async function listShopRequests(): Promise<Delivery[]> {
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
+function normalizeShopName(name: string): string {
+  return String(name || '').replace(/\s*\d{6,}\s*$/, '').trim().toLowerCase();
+}
+
+// Доставки склад → магазин, идущие именно в эту точку — для раздела «Едет к нам» на
+// странице воркера. shop_id у накладных не всегда заполнен, поэтому сверяем и по названию
+// (как в админском ShopDeliveries в app/logistics/shops).
+export async function listIncomingForShop(shopId: string): Promise<Delivery[]> {
+  const shops = await listShops();
+  const shop = shops.find((s) => s.id === shopId);
+  if (!shop) return [];
+  const norm = normalizeShopName(shop.name);
+
+  const snap = await getDb()
+    .collection(COLLECTION)
+    .where('kind', '==', 'warehouse_dispatch')
+    .get();
+
+  return snap.docs
+    .map((d) => normalizeDelivery(d.data() as Delivery))
+    .filter((d) => d.shop_id === shopId || (d.to_name && normalizeShopName(d.to_name) === norm))
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+    .slice(0, 20);
+}
+
 // Привязка/отвязка доставок к маршруту (вызывается из lib/routes.ts).
 export async function attachDeliveriesToRoute(ids: string[], routeId: string | null): Promise<void> {
   if (!ids.length) return;

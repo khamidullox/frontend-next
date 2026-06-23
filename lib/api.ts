@@ -868,6 +868,14 @@ export async function createShopRequest(input: {
   return data.data as Delivery;
 }
 
+// Доставки склад → магазин, идущие в магазин текущего воркера (статус, водитель).
+export async function listIncomingDeliveries(): Promise<Delivery[]> {
+  const res = await fetch('/api/logistics/shop-incoming', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
 export class NotFoundError extends Error {
   constructor(message: string) {
     super(message);

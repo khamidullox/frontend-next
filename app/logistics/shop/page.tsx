@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import AdminGate from '@/components/AdminGate';
 import { useAuth } from '@/components/AuthProvider';
-import { listShopRequests, createShopRequest, updateDelivery, Delivery, DeliveryItem, DeliveryStatus, DELIVERY_STATUS_LABEL } from '@/lib/api';
+import { listShopRequests, createShopRequest, updateDelivery, listIncomingDeliveries, Delivery, DeliveryItem, DeliveryStatus, DELIVERY_STATUS_LABEL } from '@/lib/api';
 import LocationPicker from '@/components/LocationPicker';
 import ProductPicker from '@/components/ProductPicker';
 
@@ -35,6 +35,7 @@ export default function ShopRequestPage() {
 function ShopRequestContent() {
   const { session } = useAuth();
   const [items, setItems] = useState<Delivery[]>([]);
+  const [incoming, setIncoming] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -50,6 +51,7 @@ function ShopRequestContent() {
   const load = useCallback(async () => {
     try {
       setItems(await listShopRequests());
+      setIncoming(await listIncomingDeliveries());
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -96,6 +98,31 @@ function ShopRequestContent() {
 
   return (
     <div>
+      {incoming.length > 0 && (
+        <div className="mb-4">
+          <h2 className="text-sm font-bold text-gray-600 mb-2">📦 Едет к нам со склада</h2>
+          <div className="flex flex-col gap-1.5">
+            {incoming.map((d) => (
+              <div key={d.id} className="bg-white rounded-xl shadow-sm px-4 py-2.5 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">
+                    {d.doc_number ? `Накладная № ${d.doc_number}` : (d.from_name || 'Накладная')}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-0.5 flex flex-wrap gap-2">
+                    {d.driver_name && <span>👤 {d.driver_name}</span>}
+                    {d.car_number && <span>🚗 {d.car_number}</span>}
+                    <span>{fmt(d.updated_at)}</span>
+                  </div>
+                </div>
+                <span className={`text-xs font-semibold px-2 py-1 rounded-full shrink-0 ${statusClass(d.status)}`}>
+                  {DELIVERY_STATUS_LABEL[d.status]}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mb-4">
         <h2 className="text-xl font-bold">🚚 Заказы клиентам</h2>
         <p className="text-xs text-gray-400 mt-0.5">Доставка от вашего магазина до покупателя — водитель заберёт по пути</p>
