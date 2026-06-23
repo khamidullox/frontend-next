@@ -6,14 +6,18 @@ import {
   DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL,
   listRoutes, startRoute, finishRoute, sendTrackPoint, addDeliveriesToRoute, Route,
   listShops, Shop, resolveDeliveryPoint,
+  listAvailableOffers, claimOffer, ShopOffer,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 import PushSubscribe from '@/components/PushSubscribe';
 import MiniMap, { MapPoint } from '@/components/MiniMap';
 import { useLivePoll } from '@/lib/useLivePoll';
 import { fmtDateTime } from '@/lib/format';
+import { haversineKm } from '@/lib/geo';
 
 const TRACK_INTERVAL_MS = 45_000;
+// Радиус, в котором водителю показываем заказы из рассылки (как на сервере).
+const OFFER_RADIUS_KM = 6;
 
 // Маршрут с несколькими точками сразу в Яндекс.Картах (запускает навигацию в самом
 // приложении карт через все остановки по порядку, не по одной).
@@ -83,10 +87,13 @@ export default function MyDeliveriesPage() {
   const [shops, setShops] = useState<Shop[]>([]);
   const [myPos, setMyPos] = useState<{ lat: number; lng: number } | null>(null);
   const [showMap, setShowMap] = useState(true);
+  const [offers, setOffers] = useState<ShopOffer[]>([]);
+  const [claimingId, setClaimingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       setItems(await listDeliveries());
+      setOffers(await listAvailableOffers());
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -100,6 +107,19 @@ export default function MyDeliveriesPage() {
       setRoute(routes.find((r) => r.status === 'active') || null);
     } catch { /* ignore */ }
   }, []);
+
+  async function claim(id: string) {
+    setClaimingId(id);
+    setError('');
+    try {
+      await claimOffer(id);
+      await Promise.all([load(), loadRoute()]);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setClaimingId(null);
+    }
+  }
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadRoute(); }, [loadRoute]);
@@ -342,6 +362,18 @@ export default function MyDeliveriesPage() {
   const done = items.filter((d) => d.status === 'delivered' || d.status === 'returned');
   const doneKm = done.reduce((s, d) => s + (d.km || 0), 0);
 
+  // Заказы из рассылки рядом со мной: если позиция известна — только в радиусе и с
+  // расстоянием; иначе показываем все (водитель сам решит).
+  const nearbyOffers = (() => {
+    const withDist = offers.map((o) => ({
+      o,
+      dist: (myPos && o.pickup_lat != null && o.pickup_lng != null)
+        ? haversineKm(myPos.lat, myPos.lng, o.pickup_lat, o.pickup_lng) : null,
+    }));
+    const filtered = myPos ? withDist.filter((x) => x.dist != null && x.dist <= OFFER_RADIUS_KM) : withDist;
+    return filtered.sort((a, b) => (a.dist ?? 1e9) - (b.dist ?? 1e9));
+  })();
+
   // Сколько всего «взял с собой» в этот выезд — уменьшается по мере доставки по частям.
   const activeWeight = active.reduce((s, d) => s + (d.total_weight || 0), 0);
   const activeVolL = active.reduce((s, d) => s + (d.total_volume_l || 0), 0);
@@ -366,6 +398,31 @@ export default function MyDeliveriesPage() {
       </div>
 
       {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+
+      {/* Заказы из рассылки рядом — водитель берёт сам */}
+      {nearbyOffers.length > 0 && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3">
+          <div className="text-sm font-bold text-amber-700 mb-2">📢 Заказы рядом ({nearbyOffers.length})</div>
+          <div className="flex flex-col gap-2">
+            {nearbyOffers.map(({ o, dist }) => (
+              <div key={o.id} className="bg-white rounded-lg p-3 flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold truncate">🏪 {o.shop_name || 'Магазин'} → {o.client_name || 'клиент'}</div>
+                  {o.address && <div className="text-xs text-gray-400 mt-0.5 truncate">📍 {o.address}</div>}
+                  {o.items.length > 0 && (
+                    <div className="text-xs text-gray-400 mt-0.5 truncate">📦 {o.items.map((it) => `${it.name} ×${it.qty}`).join(', ')}</div>
+                  )}
+                  {dist != null && <div className="text-xs text-amber-600 mt-0.5">~{Math.round(dist)} км до места выдачи</div>}
+                </div>
+                <button onClick={() => claim(o.id)} disabled={claimingId === o.id}
+                  className="shrink-0 px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white text-sm font-semibold rounded-lg whitespace-nowrap">
+                  {claimingId === o.id ? '⏳…' : '✋ Взять'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Маршрут (заход) */}
       <div className="bg-white rounded-xl shadow-sm p-4 mb-4">

@@ -3,8 +3,10 @@ import { getSession, ROLE_RANK } from '@/lib/auth';
 import { createDelivery, listShopRequests, listShopRequestsForShop, assignDriver, getDeliveriesByIds, resolveDestPoint, Delivery } from '@/lib/deliveries';
 import { getShop, listShops, Shop } from '@/lib/shops';
 import { listRoutes, addDeliveriesToRoute, Route } from '@/lib/routes';
-import { notifyDriverAssigned } from '@/lib/push';
+import { notifyDriverAssigned, sendPushToUser } from '@/lib/push';
 import { haversineKm } from '@/lib/geo';
+import { getCachedGpsLocations } from '@/lib/gps';
+import { listDrivers } from '@/lib/users';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,6 +14,35 @@ export const dynamic = 'force-dynamic';
 // Водитель «по пути» считается подходящим, если его маршрут проходит не дальше
 // этого расстояния от точки выдачи (магазина) — он заберёт товар по дороге.
 const NEARBY_KM = 10;
+// Радиус рассылки заказа свободным водителям по их текущей позиции GPS.
+const OFFER_RADIUS_KM = 6;
+
+// Если авто-назначение никого не нашло — рассылаем заказ водителям, чья текущая
+// позиция GPS не дальше OFFER_RADIUS_KM от точки выдачи. Первый, кто нажмёт «Взять»
+// на своей странице, заберёт заказ (см. /api/logistics/shop-requests/claim).
+async function broadcastOfferToNearbyDrivers(delivery: Delivery, pickup: [number, number] | null) {
+  if (!pickup) return;
+  const [gps, drivers] = await Promise.all([getCachedGpsLocations(), listDrivers()]);
+  const label = delivery.shop_name
+    ? `Забрать в «${delivery.shop_name}» → ${delivery.client_name || delivery.address || 'клиент'}`
+    : delivery.client_name || delivery.address || 'новый заказ';
+  const notified = new Set<string>();
+  for (const loc of gps.locations) {
+    if (typeof loc.lat !== 'number' || typeof loc.lng !== 'number') continue;
+    const km = haversineKm(pickup[0], pickup[1], loc.lat, loc.lng);
+    if (km > OFFER_RADIUS_KM) continue;
+    const driver = loc.user_id.startsWith('phone:')
+      ? drivers.find((d) => d.username === loc.user_id.slice('phone:'.length))
+      : drivers.find((d) => d.gps_user_id === loc.user_id);
+    if (!driver || notified.has(driver.username)) continue;
+    notified.add(driver.username);
+    sendPushToUser(driver.username, {
+      title: '📢 Заказ рядом',
+      body: `${label} · ~${Math.round(km)} км`,
+      url: '/logistics/my',
+    }).catch(() => {});
+  }
+}
 
 // Подбор водителя «по пути» для заявки магазина, по приоритету:
 //   1) у кого в активном маршруте уже есть остановка ровно в этом магазине;
@@ -53,7 +84,11 @@ async function autoAssignOnTheWay(delivery: Delivery, shop: Shop): Promise<Deliv
   const match = exactRoute
     || (nearestKm <= NEARBY_KM ? nearestRoute : null)
     || directionRoute;
-  if (!match) return delivery;
+  if (!match) {
+    // Никто не «по пути» — рассылаем заказ свободным водителям рядом, пусть берут сами.
+    await broadcastOfferToNearbyDrivers(delivery, pickup).catch(() => {});
+    return delivery;
+  }
 
   const assigned = await assignDriver(delivery.id, match.driver_username);
   if ('error' in assigned) return delivery;

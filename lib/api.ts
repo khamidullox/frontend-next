@@ -887,6 +887,27 @@ export async function listIncomingDeliveries(): Promise<Delivery[]> {
   return data.data || [];
 }
 
+export type ShopOffer = Delivery & { pickup_lat: number | null; pickup_lng: number | null };
+
+// Открытые заявки магазина (ничьи) — для рассылки «возьми заказ» у водителя.
+export async function listAvailableOffers(): Promise<ShopOffer[]> {
+  const res = await fetch('/api/logistics/available-offers', { cache: 'no-store' });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.data || [];
+}
+
+// Водитель берёт заказ из рассылки. Бросает ошибку (напр. «уже взят»), если не удалось.
+export async function claimOffer(deliveryId: string): Promise<Delivery> {
+  const res = await fetch('/api/logistics/shop-requests/claim', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ delivery_id: deliveryId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Не удалось взять заказ');
+  return data.data as Delivery;
+}
+
 export class NotFoundError extends Error {
   constructor(message: string) {
     super(message);

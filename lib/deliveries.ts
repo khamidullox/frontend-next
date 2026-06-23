@@ -526,6 +526,60 @@ export async function assignDriver(
   return { delivery };
 }
 
+// Атомарно «взять» заявку магазина свободным водителем: назначает себя, только если
+// заявка ещё ничья (иначе ошибка). Кнопка «Взять» у водителя при рассылке заказа.
+export async function claimDelivery(
+  id: string,
+  username: string
+): Promise<{ delivery: Delivery } | { error: string }> {
+  const u = await getUserRaw(str(username));
+  if (!u || u.role !== 'driver') return { error: 'Только водитель может взять заказ' };
+  const db = getDb();
+  const ref = db.collection(COLLECTION).doc(str(id));
+  try {
+    const delivery = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new Error('Заявка не найдена');
+      const d = normalizeDelivery(snap.data() as Delivery);
+      if (d.kind !== 'shop_to_client') throw new Error('Это не заявка магазина');
+      if (d.driver_username) throw new Error('Заказ уже взят другим водителем');
+      d.driver_username = u.username;
+      d.driver_name = u.name;
+      d.car_number = u.car_number ?? null;
+      d.transport = u.transport ?? null;
+      if (d.status === 'new') d.status = 'assigned';
+      d.updated_at = new Date().toISOString();
+      d.history = [...(d.history || []), { at: d.updated_at, status: d.status, by: u.username }];
+      tx.set(ref, d);
+      return d;
+    });
+    return { delivery };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
+// Открытые заявки магазина (ничьи, статус new) + координаты точки выдачи —
+// для рассылки и кнопки «Взять» свободным водителям.
+export type ShopOffer = Delivery & { pickup_lat: number | null; pickup_lng: number | null };
+export async function listOpenShopOffers(): Promise<ShopOffer[]> {
+  const [snap, shops] = await Promise.all([
+    getDb().collection(COLLECTION).where('kind', '==', 'shop_to_client').get(),
+    listShops(),
+  ]);
+  const out: ShopOffer[] = [];
+  for (const doc of snap.docs) {
+    const d = normalizeDelivery(doc.data() as Delivery);
+    if (d.driver_username || d.status !== 'new') continue;
+    const shop = d.shop_id ? shops.find((s) => s.id === d.shop_id) : undefined;
+    const pickup: [number, number] | null =
+      shop?.lat != null && shop?.lng != null ? [shop.lat, shop.lng]
+      : d.lat != null && d.lng != null ? [d.lat, d.lng] : null;
+    out.push({ ...d, pickup_lat: pickup ? pickup[0] : null, pickup_lng: pickup ? pickup[1] : null });
+  }
+  return out.sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
 // Отметить «Собрано» вручную (или снять отметку, если поставили по ошибке).
 export async function setDeliveryPicked(
   id: string,
