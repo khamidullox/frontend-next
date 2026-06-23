@@ -35,6 +35,33 @@ async function exportWarehouseExcel(name: string, rows: WarehouseProduct[]) {
   XLSX.writeFile(wb, `ostatki_${safe}.xlsx`);
 }
 
+// Модалка с фото товара — картинка тянется из Smartup через /api/products/{code}/photo.
+function PhotoModal({ code, name, onClose }: { code: string; name: string; onClose: () => void }) {
+  const [status, setStatus] = useState<'loading' | 'ok' | 'error'>('loading');
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl p-4 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-start gap-2 mb-2">
+          <h3 className="font-semibold text-sm leading-snug">{name}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none shrink-0">✕</button>
+        </div>
+        <div className="relative min-h-[200px] flex items-center justify-center bg-gray-50 rounded-lg overflow-hidden">
+          {status === 'loading' && <span className="text-gray-400 text-sm">Загрузка фото…</span>}
+          {status === 'error' && <span className="text-gray-400 text-sm">📷 Фото нет</span>}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`/api/products/${encodeURIComponent(code)}/photo`}
+            alt={name}
+            onLoad={() => setStatus('ok')}
+            onError={() => setStatus('error')}
+            className={`max-h-[60vh] w-auto object-contain ${status === 'ok' ? '' : 'hidden'}`}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function WarehouseDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -46,6 +73,7 @@ export default function WarehouseDetailPage() {
   const [sortMode, setSortMode] = useState<SortMode>('group');
   const [page, setPage] = useState(1);
   const [exporting, setExporting] = useState(false);
+  const [photo, setPhoto] = useState<{ code: string; name: string } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -210,7 +238,13 @@ export default function WarehouseDetailPage() {
                                  px-2 py-2 text-sm border-b border-gray-100 last:border-0"
                     >
                       <span className="min-w-0">
-                        <span className="block break-words leading-snug">{r.product_name || '—'}</span>
+                        <button
+                          type="button"
+                          onClick={() => setPhoto({ code: r.product_code, name: r.product_name })}
+                          className="block text-left break-words leading-snug text-blue-600 hover:underline"
+                        >
+                          {r.product_name || '—'}
+                        </button>
                         <span className="block text-[11px] text-gray-400 truncate">
                           Код {r.product_code}
                           {r.producer && ` · ${r.producer}`}
@@ -241,6 +275,8 @@ export default function WarehouseDetailPage() {
           <div className="text-center text-gray-400 py-8 text-sm">На складе нет остатков</div>
         )}
       </div>
+
+      {photo && <PhotoModal code={photo.code} name={photo.name} onClose={() => setPhoto(null)} />}
     </div>
   );
 }
