@@ -384,13 +384,14 @@ function MapContent() {
       });
     });
 
-    // Точки (склады, магазины)
+    // Точки (склады, магазины) — текст светло-жёлтый вместо белого: лучше видно
+    // на пёстрой подложке карты, плюс чуть уменьшенный размер подписи.
     shops.filter((s) => s.lat && s.lng).forEach((shop) => {
       const color = TYPE_COLOR[shop.type || 'shop'] || '#5F5E5A';
       const icon = L.divIcon({
         className: '',
-        html: `<div style="background:${color};color:#fff;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;border:2px solid rgba(255,255,255,0.85);box-shadow:0 2px 6px rgba(0,0,0,0.25);">${TYPE_ICON[shop.type || 'shop'] || '📍'} ${shop.name}</div>`,
-        iconAnchor: [0, 14],
+        html: `<div style="background:${color};color:#FDE68A;font-size:10px;font-weight:700;padding:2px 7px;border-radius:18px;white-space:nowrap;border:1.5px solid rgba(255,255,255,0.85);box-shadow:0 2px 6px rgba(0,0,0,0.25);">${TYPE_ICON[shop.type || 'shop'] || '📍'} ${shop.name}</div>`,
+        iconAnchor: [0, 12],
       });
       L.marker([shop.lat!, shop.lng!], { icon })
         .addTo(map)
@@ -483,6 +484,13 @@ function MapContent() {
 
   function clearSelection() {
     setSelectedGps(new Set());
+  }
+
+  // Клик по точке/доставке в списке ниже карты — центрирует карту на её координатах.
+  function focusPoint(lat: number, lng: number) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const map = mapRef.current as any;
+    if (map) map.setView([lat, lng], 16, { animate: true });
   }
 
   async function geocodeDelivery(d: Delivery) {
@@ -635,18 +643,28 @@ function MapContent() {
               {shopsNoCoord.length > 0 && <span className="text-gray-300">· {shopsNoCoord.length} без координат</span>}
             </div>
             <div className="flex flex-col divide-y divide-gray-50">
-              {shops.map((s) => (
-                <div key={s.id} className="flex items-center gap-2 py-1.5 text-xs">
-                  <span>{TYPE_ICON[s.type || 'shop']}</span>
-                  <span className="flex-1 font-medium truncate">{s.name}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${DIR_DOT[s.direction] || 'bg-gray-100 text-gray-500'}`}>
-                    {s.direction}
-                  </span>
-                  {s.lat && s.lng
-                    ? <span className="text-emerald-500 text-[10px]">✓</span>
-                    : <span className="text-gray-300 text-[10px]">—</span>}
-                </div>
-              ))}
+              {shops.map((s) => {
+                const hasCoords = !!(s.lat && s.lng);
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    disabled={!hasCoords}
+                    onClick={() => hasCoords && focusPoint(s.lat!, s.lng!)}
+                    title={hasCoords ? 'Показать на карте' : undefined}
+                    className={`w-full flex items-center gap-2 py-1.5 text-xs text-left ${hasCoords ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'}`}
+                  >
+                    <span>{TYPE_ICON[s.type || 'shop']}</span>
+                    <span className="flex-1 font-medium truncate">{s.name}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${DIR_DOT[s.direction] || 'bg-gray-100 text-gray-500'}`}>
+                      {s.direction}
+                    </span>
+                    {hasCoords
+                      ? <span className="text-emerald-500 text-[10px]">✓</span>
+                      : <span className="text-gray-300 text-[10px]">—</span>}
+                  </button>
+                );
+              })}
             </div>
             {shopsNoCoord.length > 0 && (
               <Link href="/logistics/shops" className="text-xs text-blue-500 hover:underline mt-2 block">
@@ -664,24 +682,33 @@ function MapContent() {
               <div className="text-xs text-gray-400 py-2">Нет доставок с адресом</div>
             ) : (
               <div className="flex flex-col divide-y divide-gray-50">
-                {activeWithAddr.slice(0, 12).map((d) => (
-                  <div key={d.id} className="flex items-start gap-2 py-1.5 text-xs">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{d.client_name || 'Без названия'}</div>
-                      <div className="text-gray-400 truncate">{d.address}</div>
-                    </div>
-                    {geocodeMap[d.id] ? (
-                      <span className="text-emerald-500 text-[10px] shrink-0">✓ на карте</span>
-                    ) : (
+                {activeWithAddr.slice(0, 12).map((d) => {
+                  const coords = geocodeMap[d.id];
+                  return (
+                    <div key={d.id} className="flex items-start gap-2 py-1.5 text-xs">
                       <button
-                        onClick={() => geocodeDelivery(d)}
-                        disabled={geocoding !== null}
-                        className="text-blue-500 text-[10px] shrink-0 hover:underline disabled:opacity-40">
-                        {geocoding === d.id ? '⏳' : '📍 найти'}
+                        type="button"
+                        disabled={!coords}
+                        onClick={() => coords && focusPoint(coords[0], coords[1])}
+                        title={coords ? 'Показать на карте' : undefined}
+                        className={`flex-1 min-w-0 text-left ${coords ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'}`}
+                      >
+                        <div className="font-medium truncate">{d.client_name || 'Без названия'}</div>
+                        <div className="text-gray-400 truncate">{d.address}</div>
                       </button>
-                    )}
-                  </div>
-                ))}
+                      {coords ? (
+                        <span className="text-emerald-500 text-[10px] shrink-0">✓ на карте</span>
+                      ) : (
+                        <button
+                          onClick={() => geocodeDelivery(d)}
+                          disabled={geocoding !== null}
+                          className="text-blue-500 text-[10px] shrink-0 hover:underline disabled:opacity-40">
+                          {geocoding === d.id ? '⏳' : '📍 найти'}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
