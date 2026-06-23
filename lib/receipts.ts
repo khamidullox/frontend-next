@@ -77,16 +77,24 @@ export async function listReceipts(): Promise<ReceiptListItem[]> {
     .sort((a, b) => b.receipt_id.localeCompare(a.receipt_id, undefined, { numeric: true }));
 }
 
-// Коды товаров, по которым была приёмка в загруженном окне (~последние 25 дней).
-// Используется для пометки «новинка» в остатках склада. Дата приёмки из Smartup
-// приходит в нестандартном формате — если не парсится, позицию оставляем (окно
-// и так ограничено выгрузкой), лучше показать лишнюю новинку, чем пропустить.
-export async function getRecentlyReceivedCodes(days = 30): Promise<string[]> {
+// Дата приёмки из Smartup приходит как "DD.MM.YYYY HH:MM:SS" — стандартный
+// new Date() её не парсит, поэтому разбираем вручную.
+function parseSmartupDate(s: unknown): number {
+  const m = String(s ?? '').match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!m) { const t = new Date(String(s ?? '')).getTime(); return Number.isFinite(t) ? t : NaN; }
+  const [, d, mo, y, hh = '0', mi = '0', ss = '0'] = m;
+  return new Date(Number(y), Number(mo) - 1, Number(d), Number(hh), Number(mi), Number(ss)).getTime();
+}
+
+// Коды товаров, по которым была приёмка за последние `days` дней — для пометки
+// «новинка» в остатках склада. Если дату не удалось распарсить, позицию оставляем
+// (лучше показать лишнюю новинку, чем пропустить из-за формата).
+export async function getRecentlyReceivedCodes(days = 2): Promise<string[]> {
   const all = await getAllInputs();
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
   const codes = new Set<string>();
   for (const r of all) {
-    const t = new Date(r.input_time).getTime();
+    const t = parseSmartupDate(r.input_time);
     if (Number.isFinite(t) && t < cutoff) continue;
     for (const it of r.input_items || []) {
       const c = String(it.product_code ?? '').trim();
