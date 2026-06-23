@@ -117,6 +117,13 @@ function ReportsContent() {
     await saveLogisticsSettings({ rate_by_type: next }).catch(() => {});
   }
 
+  async function saveFuel(val: string) {
+    if (!settings) return;
+    const n = Math.max(0, Number(val) || 0);
+    setSettings((prev) => (prev ? { ...prev, fuel_rate_per_km: n } : prev));
+    await saveLogisticsSettings({ fuel_rate_per_km: n }).catch(() => {});
+  }
+
   function applyQuick(q: typeof quick) {
     setQuick(q);
     const now = new Date();
@@ -153,17 +160,20 @@ function ReportsContent() {
       m.set(key, cur);
     }
     const rates = settings?.rate_by_type ?? {};
+    const fuelRate = settings?.fuel_rate_per_km ?? 0;
     return [...m.values()]
       .map(d => ({
         username: d.username, name: d.name, car: d.car, km: d.km, points: d.points, trips: d.trips.size,
         kpi: Math.round(d.km * rateForType(d.transport, rates)),
+        // Топливо — по фактически пройденному пути (туда-обратно), отсюда ×2.
+        fuel: Math.round(d.km * 2 * fuelRate),
       }))
       .sort((a, b) => b.points - a.points || b.km - a.km || a.name.localeCompare(b.name, 'ru'));
   }, [drivers, periodDeliveries, settings]);
 
   const totals = useMemo(() => driverStats.reduce((s, d) => ({
-    km: s.km + d.km, trips: s.trips + d.trips, points: s.points + d.points, kpi: s.kpi + d.kpi,
-  }), { km: 0, trips: 0, points: 0, kpi: 0 }), [driverStats]);
+    km: s.km + d.km, trips: s.trips + d.trips, points: s.points + d.points, kpi: s.kpi + d.kpi, fuel: s.fuel + d.fuel,
+  }), { km: 0, trips: 0, points: 0, kpi: 0, fuel: 0 }), [driverStats]);
 
   // Пустые маршруты (без привязанных доставок) — кандидаты на удаление.
   const emptyRoutes = useMemo(() => routes.filter(r => (r.delivery_ids?.length || 0) === 0), [routes]);
@@ -228,23 +238,29 @@ function ReportsContent() {
             onBlur={(e) => saveRate(e.target.value)}
             className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-right outline-none focus:border-blue-400" />
           <span className="text-[11px] text-gray-400">сум/км</span>
+          <span className="w-px h-6 bg-gray-200 mx-1" />
+          <span className="text-xs text-gray-500 whitespace-nowrap">⛽ Топливо (сум/км):</span>
+          <input type="number" min={0} step={100} defaultValue={settings.fuel_rate_per_km}
+            onBlur={(e) => saveFuel(e.target.value)}
+            className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-right outline-none focus:border-blue-400" />
           <span className="text-[11px] text-gray-400 basis-full">
-            КПИ считается как пройденный км (в одну сторону) × ставка для вида транспорта водителя.
+            КПИ — пройденный км (в одну сторону) × ставка транспорта. Топливо — по факту туда-обратно (км × 2 × ставка).
           </span>
         </div>
       )}
 
       {/* Сводка по всем */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
         {[
-          { label: 'Водителей', value: driverStats.filter(d => d.points > 0).length },
-          { label: 'Выездов', value: totals.trips },
-          { label: 'Доставок', value: totals.points },
+          { label: 'Выездов', value: `${totals.trips}` },
+          { label: 'Доставок', value: `${totals.points}` },
           { label: 'Км (туда-обратно)', value: `${totals.km * 2} км` },
-          { label: 'КПИ всего', value: `${totals.kpi.toLocaleString('ru-RU')} сум` },
-        ].map(({ label, value }) => (
+          { label: 'КПИ водителям', value: `${totals.kpi.toLocaleString('ru-RU')} сум` },
+          { label: 'Топливо', value: `${totals.fuel.toLocaleString('ru-RU')} сум` },
+          { label: 'Итого расходы', value: `${(totals.kpi + totals.fuel).toLocaleString('ru-RU')} сум`, accent: true },
+        ].map(({ label, value, accent }) => (
           <div key={label} className="bg-white rounded-xl shadow-sm p-3 text-center">
-            <div className="text-lg font-bold text-blue-600">{value}</div>
+            <div className={`text-lg font-bold ${accent ? 'text-rose-600' : 'text-blue-600'}`}>{value}</div>
             <div className="text-xs text-gray-400 mt-0.5">{label}</div>
           </div>
         ))}
@@ -292,7 +308,8 @@ function ReportsContent() {
                   <div className="text-right shrink-0">
                     <div className="text-base font-bold text-emerald-600">{ds.km} км</div>
                     <div className="text-[10px] text-gray-400">туда-обратно {ds.km * 2} км</div>
-                    {ds.kpi > 0 && <div className="text-[11px] font-semibold text-amber-600 mt-0.5">💰 {ds.kpi.toLocaleString('ru-RU')} сум</div>}
+                    {ds.kpi > 0 && <div className="text-[11px] font-semibold text-amber-600 mt-0.5">💰 КПИ {ds.kpi.toLocaleString('ru-RU')} сум</div>}
+                    {ds.fuel > 0 && <div className="text-[11px] text-gray-500">⛽ {ds.fuel.toLocaleString('ru-RU')} сум</div>}
                   </div>
                   <span className="text-gray-400 text-sm shrink-0">{isOpen ? '▲' : '▼'}</span>
                 </button>

@@ -381,7 +381,7 @@ export default function MyDeliveriesPage() {
               <div>
                 <div className="font-semibold text-sm">🧭 Маршрут в пути · начат {fmtTime(route.started_at)}</div>
                 <div className="text-xs text-gray-400 mt-0.5">
-                  {routeDeliveries.length} доставок{routeKm > 0 ? ` · 🛣️ ${routeKm * 2} км` : ''}
+                  {routeDeliveries.length} доставок{routeKm > 0 ? ` · 🛣️ ${routeKm} км` : ''}
                 </div>
                 {(activeWeight > 0 || activeVolL > 0) && (
                   <div className="text-xs text-gray-400 mt-0.5">
