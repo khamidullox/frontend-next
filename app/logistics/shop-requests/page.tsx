@@ -5,11 +5,16 @@ import AdminGate from '@/components/AdminGate';
 import LogisticsTabs from '@/components/LogisticsTabs';
 import {
   listShopRequests, updateDelivery, addDeliveriesToRoute, listDrivers, listRoutes, createShopRequest, listShops,
+  listDeliveries, resolveDeliveryPoint,
   Delivery, DeliveryItem, DeliveryStatus, DELIVERY_STATUS_LABEL, UserInfo, Route, Shop,
 } from '@/lib/api';
+import { haversineKm } from '@/lib/geo';
 import LocationPicker from '@/components/LocationPicker';
 import MiniMap, { MapPoint } from '@/components/MiniMap';
 import ProductPicker from '@/components/ProductPicker';
+
+// Водитель «по пути», если маршрут проходит не дальше этого от точки выдачи.
+const NEARBY_KM = 10;
 
 function statusClass(s: DeliveryStatus): string {
   switch (s) {
@@ -40,6 +45,8 @@ function ShopRequestsContent() {
   const [items, setItems] = useState<Delivery[]>([]);
   const [drivers, setDrivers] = useState<UserInfo[]>([]);
   const [shops, setShops] = useState<Shop[]>([]);
+  const [allShops, setAllShops] = useState<Shop[]>([]);
+  const [allDeliveries, setAllDeliveries] = useState<Delivery[]>([]);
   const [activeRoutes, setActiveRoutes] = useState<Route[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -62,11 +69,15 @@ function ShopRequestsContent() {
 
   const load = useCallback(async () => {
     try {
-      const [reqs, drv, routes, shopList] = await Promise.all([listShopRequests(), listDrivers(), listRoutes(), listShops()]);
+      const [reqs, drv, routes, shopList, deliveries] = await Promise.all([
+        listShopRequests(), listDrivers(), listRoutes(), listShops(), listDeliveries(),
+      ]);
       setItems(reqs);
       setDrivers(drv);
       setActiveRoutes(routes.filter((r) => r.status === 'active'));
       setShops(shopList.filter((s) => s.type !== 'warehouse'));
+      setAllShops(shopList);
+      setAllDeliveries(deliveries);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -101,6 +112,58 @@ function ShopRequestsContent() {
     for (const r of activeRoutes) m.set(r.driver_username, r);
     return m;
   }, [activeRoutes]);
+
+  // Координаты остановок активного маршрута каждого водителя (для подбора «по пути»).
+  const routeStopsByDriver = useMemo(() => {
+    const byId = new Map(allDeliveries.map((d) => [d.id, d]));
+    const m = new Map<string, [number, number][]>();
+    for (const r of activeRoutes) {
+      const stops: [number, number][] = [];
+      for (const id of r.delivery_ids || []) {
+        const d = byId.get(id);
+        if (!d) continue;
+        const p = resolveDeliveryPoint(d, allShops);
+        if (p) stops.push([p.lat, p.lng]);
+      }
+      m.set(r.driver_username, stops);
+    }
+    return m;
+  }, [activeRoutes, allDeliveries, allShops]);
+
+  // Точка выдачи заявки (где водитель забирает товар): координаты магазина → ручные координаты.
+  function pickupPoint(d: Delivery): [number, number] | null {
+    const shop = allShops.find((s) => s.id === d.shop_id);
+    if (shop?.lat != null && shop?.lng != null) return [shop.lat, shop.lng];
+    if (d.lat != null && d.lng != null) return [d.lat, d.lng];
+    return null;
+  }
+
+  // Водители в пути, чей маршрут проходит близко к точке выдачи — отсортированы по близости.
+  function suggestionsFor(d: Delivery): { username: string; name: string; car: string | null; km: number }[] {
+    const target = pickupPoint(d);
+    if (!target) return [];
+    const out: { username: string; name: string; car: string | null; km: number }[] = [];
+    for (const dr of drivers) {
+      const stops = routeStopsByDriver.get(dr.username);
+      if (!stops || !stops.length) continue;
+      let min = Infinity;
+      for (const s of stops) {
+        const km = haversineKm(target[0], target[1], s[0], s[1]);
+        if (km < min) min = km;
+      }
+      if (min <= NEARBY_KM) out.push({ username: dr.username, name: dr.name, car: dr.car_number || null, km: Math.round(min) });
+    }
+    return out.sort((a, b) => a.km - b.km).slice(0, 3);
+  }
+
+  // Почему заявка ещё не назначена — текст для менеджера (раньше просто молча висела «Новый»).
+  function reasonFor(d: Delivery): string | null {
+    if (d.driver_username) return null;
+    if (activeRoutes.length === 0) return 'Сейчас нет машин в пути — назначьте вручную или дождитесь выезда';
+    if (!pickupPoint(d)) return 'Нет координат точки выдачи — укажите точку магазина в справочнике';
+    if (suggestionsFor(d).length) return null; // вместо причины покажем подсказки
+    return 'Нет маршрутов рядом — ни одна машина в пути не проходит близко к точке выдачи';
+  }
 
   async function assign(d: Delivery, driverUsername: string) {
     setBusyId(d.id);
@@ -264,6 +327,8 @@ function ShopRequestsContent() {
           {pending.map((d) => {
             const onActiveRoute = !!d.route_id;
             const driverHasActiveRoute = d.driver_username ? routeByDriver.has(d.driver_username) : false;
+            const suggestions = !d.driver_username ? suggestionsFor(d) : [];
+            const reason = reasonFor(d);
             return (
               <div key={d.id} className="bg-white rounded-xl shadow-sm p-3 flex flex-col gap-2">
                 <div className="flex items-start gap-3">
@@ -322,6 +387,21 @@ function ShopRequestsContent() {
                     <span className="text-[11px] text-amber-600">водитель уже в пути — добавится в текущий заход</span>
                   )}
                 </div>
+
+                {suggestions.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[11px] text-gray-400">🚗 рядом по пути:</span>
+                    {suggestions.map((s) => (
+                      <button key={s.username} onClick={() => assign(d, s.username)} disabled={busyId === d.id}
+                        className="text-[11px] font-semibold px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 whitespace-nowrap">
+                        {s.name}{s.car ? ` · ${s.car}` : ''} · ~{s.km} км
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {reason && (
+                  <div className="text-[11px] text-amber-600 bg-amber-50 rounded-lg px-2 py-1">⚠️ {reason}</div>
+                )}
               </div>
             );
           })}

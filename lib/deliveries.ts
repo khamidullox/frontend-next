@@ -7,18 +7,9 @@ import { getWarehouseCodeMap, getCachedCatalog } from './products';
 import { DocType } from './document';
 import { listShops, Shop } from './shops';
 import { notifyDriverAssigned } from './push';
+import { haversineKm } from './geo';
 
 const COLLECTION = 'deliveries';
-
-// ─── Расчёт километража по координатам точек ──────────────────────────────────
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
 
 function normPointName(s: string): string {
   return String(s || '').replace(/\s*\d{6,}\s*$/, '').trim().toLowerCase();
@@ -34,7 +25,7 @@ function shopCoordsByName(name: string | null, shops: Shop[]): [number, number] 
 }
 
 // Точка назначения доставки (куда едем): ручные координаты → точка из справочника по shop_id → по названию.
-function resolveDestPoint(d: Delivery, shops: Shop[]): [number, number] | null {
+export function resolveDestPoint(d: Delivery, shops: Shop[]): [number, number] | null {
   if (d.lat != null && d.lng != null) return [d.lat, d.lng];
   if (d.shop_id) {
     const sh = shops.find((s) => s.id === d.shop_id);
