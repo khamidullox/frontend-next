@@ -12,6 +12,7 @@ import { haversineKm } from '@/lib/geo';
 import LocationPicker from '@/components/LocationPicker';
 import MiniMap, { MapPoint } from '@/components/MiniMap';
 import ProductPicker from '@/components/ProductPicker';
+import { fmtDateTime as fmt } from '@/lib/format';
 
 // Водитель «по пути», если маршрут проходит не дальше этого от точки выдачи.
 const NEARBY_KM = 10;
@@ -26,12 +27,6 @@ function statusClass(s: DeliveryStatus): string {
   }
 }
 
-function fmt(iso?: string | null) {
-  if (!iso) return '';
-  try {
-    return new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-  } catch { return ''; }
-}
 
 export default function ShopRequestsManagerPage() {
   return (

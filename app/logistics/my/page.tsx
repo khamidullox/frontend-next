@@ -11,15 +11,9 @@ import { useAuth } from '@/components/AuthProvider';
 import PushSubscribe from '@/components/PushSubscribe';
 import MiniMap, { MapPoint } from '@/components/MiniMap';
 import { useLivePoll } from '@/lib/useLivePoll';
+import { fmtDateTime } from '@/lib/format';
 
 const TRACK_INTERVAL_MS = 45_000;
-
-function fmtTime(iso?: string | null) {
-  if (!iso) return '';
-  try {
-    return new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-  } catch { return ''; }
-}
 
 // Маршрут с несколькими точками сразу в Яндекс.Картах (запускает навигацию в самом
 // приложении карт через все остановки по порядку, не по одной).
@@ -379,7 +373,7 @@ export default function MyDeliveriesPage() {
           <>
             <div className="flex items-center justify-between gap-2 mb-2">
               <div>
-                <div className="font-semibold text-sm">🧭 Маршрут в пути · начат {fmtTime(route.started_at)}</div>
+                <div className="font-semibold text-sm">🧭 Маршрут в пути · начат {fmtDateTime(route.started_at)}</div>
                 <div className="text-xs text-gray-400 mt-0.5">
                   {routeDeliveries.length} доставок{routeKm > 0 ? ` · 🛣️ ${routeKm} км` : ''}
                 </div>

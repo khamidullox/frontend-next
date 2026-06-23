@@ -6,6 +6,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { listShopRequests, createShopRequest, updateDelivery, listIncomingDeliveries, Delivery, DeliveryItem, DeliveryStatus, DELIVERY_STATUS_LABEL } from '@/lib/api';
 import LocationPicker from '@/components/LocationPicker';
 import ProductPicker from '@/components/ProductPicker';
+import { fmtDateTime as fmt } from '@/lib/format';
 
 function statusClass(s: DeliveryStatus): string {
   switch (s) {
@@ -17,12 +18,6 @@ function statusClass(s: DeliveryStatus): string {
   }
 }
 
-function fmt(iso?: string | null) {
-  if (!iso) return '';
-  try {
-    return new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-  } catch { return ''; }
-}
 
 export default function ShopRequestPage() {
   return (

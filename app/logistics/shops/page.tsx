@@ -8,6 +8,7 @@ import {
   Shop, WarehouseSummary, ShopType, Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL,
 } from '@/lib/api';
 import ConfirmModal from '@/components/ConfirmModal';
+import { normalizeName } from '@/lib/normalize';
 import * as XLSX from 'xlsx';
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -32,12 +33,6 @@ async function cityFromCoords(lat: number, lng: number): Promise<string> {
   } catch {
     return '';
   }
-}
-
-// Сравниваем точки без учёта хвостового номера телефона в названии
-// (в Excel-выгрузках номер бывает то актуальный, то старый — он не должен мешать сопоставлению).
-function normalizeName(name: string): string {
-  return name.replace(/\s*\d{6,}\s*$/, '').trim().toLowerCase();
 }
 
 const DELIVERY_STATUS_BADGE: Record<DeliveryStatus, string> = {

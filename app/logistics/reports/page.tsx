@@ -8,13 +8,8 @@ import {
   fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings, CAP_DEFAULT_KEY,
   Route, UserInfo, Delivery, DeliveryStatus,
 } from '@/lib/api';
+import { fmtDateTimeYear as fmt } from '@/lib/format';
 
-function fmt(iso?: string | null) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('ru-RU', {
-    day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit',
-  });
-}
 const STATUS_LABEL: Record<DeliveryStatus, string> = {
   new: 'Новая', assigned: 'Назначено', on_way: 'В пути', delivered: 'Доставлено', returned: 'Возврат',
 };

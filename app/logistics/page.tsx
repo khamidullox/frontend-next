@@ -14,6 +14,7 @@ import {
   listShops, Shop,
 } from '@/lib/api';
 import { useLivePoll } from '@/lib/useLivePoll';
+import { fmtDateTime as fmt } from '@/lib/format';
 
 function fmtTime(iso?: string | null) {
   if (!iso) return '';
@@ -36,15 +37,6 @@ function statusClass(s: DeliveryStatus): string {
     case 'assigned': return 'bg-amber-100 text-amber-700';
     default: return 'bg-gray-100 text-gray-600';
   }
-}
-
-function fmt(iso?: string | null) {
-  if (!iso) return '';
-  try {
-    return new Date(iso).toLocaleString('ru-RU', {
-      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-    });
-  } catch { return ''; }
 }
 
 // Категория транспорта для фильтра/подписей — точное значение поля «Транспорт» у водителя.
