@@ -987,6 +987,7 @@ export interface AnalyticsSummary {
   by_shop: { shop: string; qty: number; orders: number; products: number }[];
   top_products: { code: string; name: string; qty: number; orders: number; stock: number }[];
   slow_products: { code: string; name: string; group: string; stock: number }[];
+  slow_products_total: number;
 }
 
 export async function fetchAnalyticsSummary(period: AnalyticsPeriod): Promise<AnalyticsSummary> {

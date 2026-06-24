@@ -31,8 +31,10 @@ export interface AnalyticsSummary {
   by_shop: { shop: string; qty: number; orders: number; products: number }[];
   // Топ продаж — с текущим остатком рядом, чтобы видно «продаётся, но скоро кончится».
   top_products: { code: string; name: string; qty: number; orders: number; stock: number }[];
-  // Есть остаток, но за период не продано ни штуки — залежавшийся товар.
+  // Есть остаток, но за период не продано ни штуки — залежавшийся товар. Список обрезан
+  // до 100 (самых «тяжёлых» по остатку), slow_products_total — настоящее общее число.
   slow_products: { code: string; name: string; group: string; stock: number }[];
+  slow_products_total: number;
 }
 
 // Сводка по продажам за период — кэш в Firestore (как каталог/остатки), не дёргает
@@ -56,11 +58,10 @@ export async function getAnalyticsSummary(period: Period): Promise<AnalyticsSumm
         stock: stock.get(p.code) || 0,
       }));
 
-      const slow_products = catalog
+      const slowAll = catalog
         .filter((c) => !soldCodes.has(c.code) && (stock.get(c.code) || 0) > 0)
         .map((c) => ({ code: c.code, name: c.name, group: c.group, stock: stock.get(c.code) || 0 }))
-        .sort((a, b) => b.stock - a.stock)
-        .slice(0, 100);
+        .sort((a, b) => b.stock - a.stock);
 
       const summary: AnalyticsSummary = {
         period,
@@ -69,7 +70,8 @@ export async function getAnalyticsSummary(period: Period): Promise<AnalyticsSumm
         total_orders: sales.total_orders,
         by_shop: sales.by_shop,
         top_products,
-        slow_products,
+        slow_products: slowAll.slice(0, 100),
+        slow_products_total: slowAll.length,
       };
       return [summary];
     },
