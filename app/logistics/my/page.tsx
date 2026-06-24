@@ -5,7 +5,7 @@ import {
   listDeliveries, updateDelivery, Delivery, DeliveryStatus,
   DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL,
   listRoutes, startRoute, finishRoute, sendTrackPoint, addDeliveriesToRoute, Route,
-  listShops, Shop, resolveDeliveryPoint,
+  listShops, Shop, resolveDeliveryPoint, resolvePickupPoint,
   listAvailableOffers, claimOffer, ShopOffer,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
@@ -30,22 +30,6 @@ function buildYandexRouteUrl(points: { lat: number; lng: number }[]): string {
 // Яндекс сам подставит позицию пользователя).
 function buildYandexSinglePointUrl(lat: number, lng: number): string {
   return `https://yandex.ru/maps/?rtext=~${lat},${lng}&rtt=auto`;
-}
-
-// Точка выдачи товара: для заявки магазина (kind = shop_to_client) — сам магазин
-// (там собирают заказ), для накладной/перемещения — склад-источник (from_name).
-// Нужна, когда водитель не на месте выдачи — сначала доехать туда и забрать товар,
-// и только потом «Взять в путь» к получателю.
-function resolvePickupPoint(d: Delivery, shops: Shop[]): { lat: number; lng: number } | null {
-  if (d.shop_id) {
-    const sh = shops.find((s) => s.id === d.shop_id);
-    if (sh?.lat && sh?.lng) return { lat: sh.lat, lng: sh.lng };
-  }
-  if (d.from_name) {
-    const sh = shops.find((s) => s.name === d.from_name || s.name.includes(d.from_name!) || d.from_name!.includes(s.name));
-    if (sh?.lat && sh?.lng) return { lat: sh.lat, lng: sh.lng };
-  }
-  return null;
 }
 
 function statusClass(s: DeliveryStatus): string {
@@ -293,12 +277,15 @@ export default function MyDeliveriesPage() {
     return pts;
   }, [pickupPoints, mapStops, myPos]);
 
-  // Точки для «Поехали»: текущая позиция (если есть) + остановки по порядку (mapStops
-  // уже содержит только недоставленные — см. выше).
+  // Точки для «Поехали»: текущая позиция → сначала места выдачи (ещё не забрал товар
+  // у магазина/склада — pickupPoints), затем остановки клиентам (mapStops). Раньше сюда
+  // шли только mapStops, и навигация сразу везла к клиенту, минуя магазин.
   const navPoints = useMemo(() => {
+    const pickup = pickupPoints.map((s) => ({ lat: s.lat, lng: s.lng }));
     const pending = mapStops.map((s) => ({ lat: s.lat, lng: s.lng }));
-    return myPos ? [myPos, ...pending] : pending;
-  }, [mapStops, myPos]);
+    const all = [...pickup, ...pending];
+    return myPos ? [myPos, ...all] : all;
+  }, [pickupPoints, mapStops, myPos]);
 
   // Путь по дорогам (OSRM) от текущей позиции через ещё не доставленные остановки —
   // иначе на карте просто прямая линия «по воздуху», не следующая по реальным дорогам.

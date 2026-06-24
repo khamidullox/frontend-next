@@ -578,6 +578,22 @@ export function resolveDeliveryPoint(d: Delivery, shops: Shop[]): { lat: number;
   return sh?.lat && sh?.lng ? { lat: sh.lat, lng: sh.lng } : null;
 }
 
+// Место, где нужно ЗАБРАТЬ товар перед выездом к получателю: для заявки магазина —
+// сам магазин (там собирают заказ), для накладной/перемещения — склад-источник
+// (from_name). Нужна, когда водитель/маршрут ещё не у места выдачи — сначала туда,
+// и только потом к точке доставки (resolveDeliveryPoint).
+export function resolvePickupPoint(d: Delivery, shops: Shop[]): { lat: number; lng: number } | null {
+  if (d.shop_id) {
+    const sh = shops.find((s) => s.id === d.shop_id);
+    if (sh?.lat && sh?.lng) return { lat: sh.lat, lng: sh.lng };
+  }
+  if (d.from_name) {
+    const sh = shops.find((s) => s.name === d.from_name || s.name.includes(d.from_name!) || d.from_name!.includes(s.name));
+    if (sh?.lat && sh?.lng) return { lat: sh.lat, lng: sh.lng };
+  }
+  return null;
+}
+
 export async function listDeliveries(sinceIso?: string): Promise<Delivery[]> {
   const url = sinceIso ? `/api/deliveries?since=${encodeURIComponent(sinceIso)}` : '/api/deliveries';
   const res = await fetch(url, { cache: 'no-store' });

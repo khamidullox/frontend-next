@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
 import LogisticsTabs from '@/components/LogisticsTabs';
-import { listShops, listDeliveries, listUsers, listVehiclePositions, Shop, Delivery, UserInfo } from '@/lib/api';
+import { listShops, listDeliveries, listUsers, listVehiclePositions, resolvePickupPoint, Shop, Delivery, UserInfo } from '@/lib/api';
 
 interface GpsLocation {
   user_name: string;
@@ -253,6 +253,23 @@ function MapContent() {
       );
       if (!onWay.length) return;
 
+      // Места выдачи (магазин/склад) для доставок, которые ещё не взяли в путь — туда
+      // нужно заехать ПЕРВЫМ делом, иначе маршрут идёт прямо к клиенту, минуя магазин.
+      const pickupMap = new Map<string, { coords: [number, number]; label: string }>();
+      for (const delivery of onWay) {
+        if (delivery.status !== 'new' && delivery.status !== 'assigned') continue;
+        const pt = resolvePickupPoint(delivery, shops);
+        if (!pt) continue;
+        const key = `${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
+        if (!pickupMap.has(key)) {
+          pickupMap.set(key, {
+            coords: [pt.lat, pt.lng],
+            label: delivery.kind === 'shop_to_client' ? (delivery.shop_name || 'магазин') : (delivery.from_name || 'склад'),
+          });
+        }
+      }
+      const pickupStops = [...pickupMap.values()];
+
       // Одна и та же точка назначения у нескольких накладных — одна остановка на карте.
       const stopsMap = new Map<string, { coords: [number, number]; label: string }>();
       for (const delivery of onWay) {
@@ -264,11 +281,44 @@ function MapContent() {
         }
       }
       const stops = [...stopsMap.values()];
-      if (!stops.length) return;
+      if (!stops.length && !pickupStops.length) return;
 
       try {
+        // Фаза 1: текущая позиция → места выдачи, в заданном порядке (без переоптимизации) —
+        // это обязательные остановки до того, как товар у водителя в машине.
+        let path: [number, number][] = [];
+        let durationS = 0;
+        let distanceM = 0;
+        let pickupOrdered: RouteStop[] = [];
+        let tripStart: [number, number] = [gps.lat, gps.lng];
+        if (pickupStops.length) {
+          const coordsList = [`${gps.lng},${gps.lat}`, ...pickupStops.map((s) => `${s.coords[1]},${s.coords[0]}`)];
+          const r = await fetch(
+            `https://router.project-osrm.org/route/v1/driving/${coordsList.join(';')}?geometries=geojson&overview=full`
+          );
+          const j = await r.json();
+          const ro = j.routes?.[0];
+          if (ro) {
+            path = (ro.geometry.coordinates as number[][]).map(([ln, la]) => [la, ln] as [number, number]);
+            durationS += ro.duration; distanceM += ro.distance;
+            pickupOrdered = pickupStops.map((s, i) => ({ ...s, order: i + 1 }));
+            tripStart = pickupStops[pickupStops.length - 1].coords;
+          }
+        }
+        if (!stops.length) {
+          if (!path.length) return;
+          results.push({
+            userId: gps.user_id, path,
+            durationMin: Math.round(durationS / 60), distanceKm: Math.round(distanceM / 100) / 10,
+            stops: pickupOrdered,
+          });
+          return;
+        }
+
+        // Фаза 2: от последней точки выдачи (или текущей позиции, если выдачи нет) —
+        // оптимальный объезд точек назначения (OSRM Trip).
         const base = resolveBase(onWay);
-        const coordsList = [`${gps.lng},${gps.lat}`, ...stops.map((s) => `${s.coords[1]},${s.coords[0]}`)];
+        const coordsList = [`${tripStart[1]},${tripStart[0]}`, ...stops.map((s) => `${s.coords[1]},${s.coords[0]}`)];
         if (base) coordsList.push(`${base[1]},${base[0]}`);
         const destParam = base ? '&destination=last' : '';
         const r = await fetch(
@@ -276,24 +326,34 @@ function MapContent() {
         );
         const j = await r.json();
         const trip = j.trips?.[0];
-        if (!trip || !Array.isArray(j.waypoints)) return;
-        // waypoints[0] — текущая позиция водителя; дальше — наши stops в том же порядке ввода
+        if (!trip || !Array.isArray(j.waypoints)) {
+          if (!path.length) return;
+          results.push({
+            userId: gps.user_id, path,
+            durationMin: Math.round(durationS / 60), distanceKm: Math.round(distanceM / 100) / 10,
+            stops: pickupOrdered,
+          });
+          return;
+        }
+        // waypoints[0] — точка старта фазы 2; дальше — наши stops в том же порядке ввода
         // (последняя точка — база, если есть, ей order не присваиваем — она не остановка-доставка).
         const orderedStops: RouteStop[] = stops.map((s, i) => ({
           ...s,
-          order: j.waypoints[i + 1]?.waypoint_index ?? i + 1,
+          order: pickupOrdered.length + (j.waypoints[i + 1]?.waypoint_index ?? i + 1),
         })).sort((a, b) => a.order - b.order);
+        path = path.concat((trip.geometry.coordinates as number[][]).map(([ln, la]) => [la, ln] as [number, number]));
+        durationS += trip.duration; distanceM += trip.distance;
         results.push({
           userId: gps.user_id,
-          path: (trip.geometry.coordinates as number[][]).map(([ln, la]) => [la, ln] as [number, number]),
-          durationMin: Math.round(trip.duration / 60),
-          distanceKm: Math.round(trip.distance / 100) / 10,
-          stops: orderedStops,
+          path,
+          durationMin: Math.round(durationS / 60),
+          distanceKm: Math.round(distanceM / 100) / 10,
+          stops: [...pickupOrdered, ...orderedStops],
         });
       } catch { /* ignore */ }
     }));
     setRoutes(results);
-  }, [gpsLocations, drivers, deliveries, resolveDest, resolveBase]);
+  }, [gpsLocations, drivers, deliveries, shops, resolveDest, resolveBase]);
 
   useEffect(() => { computeRoutes(); }, [computeRoutes]);
 
