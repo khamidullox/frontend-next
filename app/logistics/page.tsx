@@ -73,8 +73,6 @@ function LogisticsContent() {
   const [error, setError] = useState('');
   const [hideDone, setHideDone] = useState(true);
   const [onlyPicked, setOnlyPicked] = useState(false);
-  const [fuelRate, setFuelRate] = useState(0);
-  const [fuelInput, setFuelInput] = useState('');
   const [capSettings, setCapSettings] = useState<LogisticsSettings>(DEFAULT_CAP_SETTINGS);
   const [capType, setCapType] = useState<string>(CAP_DEFAULT_KEY);
   const capKgRef = useRef<HTMLInputElement>(null);
@@ -155,8 +153,6 @@ function LogisticsContent() {
   }, []);
   useEffect(() => {
     fetchLogisticsSettings().then((s: LogisticsSettings) => {
-      setFuelRate(s.fuel_rate_per_km);
-      setFuelInput(s.fuel_rate_per_km > 0 ? String(s.fuel_rate_per_km) : '');
       setCapSettings(s);
     }).catch(() => {});
   }, []);
@@ -178,12 +174,6 @@ function LogisticsContent() {
   // Если выбранный вид транспорта пропал из списка (например, изменили у водителя) — показываем «Прочие».
   const effectiveCapType = capTypeOptions.includes(capType) ? capType : CAP_DEFAULT_KEY;
   const currentCap = capSettings.cap_by_type[effectiveCapType] || { kg: 0, m3: 0 };
-
-  async function saveFuelRate(val: string) {
-    const n = Math.max(0, Number(val) || 0);
-    setFuelRate(n);
-    await saveLogisticsSettings({ fuel_rate_per_km: n }).catch(() => {});
-  }
 
   // Вместимость по выбранному виду транспорта — общая для всех водителей этого вида.
   async function saveCapType(kgVal: string, m3Val: string) {
@@ -396,24 +386,13 @@ function LogisticsContent() {
         </div>
       </div>
 
-      {/* Авто-распределение + топливо */}
+      {/* Авто-распределение. Стоимость топлива настраивается в «Отчётах» — там же она и считается. */}
       <div className="bg-white rounded-xl shadow-sm p-3 mb-3 flex flex-wrap items-center gap-3">
         <button
           onClick={doAutoAssign} disabled={autoAssigning}
           className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-200 disabled:text-gray-400 text-white text-xs font-semibold rounded-lg whitespace-nowrap">
           {autoAssigning ? '⏳ Распределяю…' : '⚡ Авто-распределить'}
         </button>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-500 whitespace-nowrap">⛽ Стоимость 1 км:</span>
-          <input
-            type="number" min={0} step={100} value={fuelInput}
-            onChange={(e) => setFuelInput(e.target.value)}
-            onBlur={(e) => saveFuelRate(e.target.value)}
-            placeholder="0"
-            className="w-28 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right outline-none focus:border-blue-400"
-          />
-          <span className="text-xs text-gray-400">сум/км</span>
-        </div>
         {autoMsg && <span className="text-xs text-gray-500">{autoMsg}</span>}
       </div>
 
@@ -701,7 +680,6 @@ function LogisticsContent() {
                   allDrivers={drivers}
                   hideDone={hideDone}
                   onlyPicked={onlyPicked}
-                  fuelRate={fuelRate}
                   activeRoute={activeRoutes.find((r) => r.driver_username === dr.username) || null}
                   onPatch={patch}
                   onRemove={remove}
@@ -737,14 +715,13 @@ function LogisticsContent() {
 
 // ─── Карточка водителя ──────────────────────────────────────────────────────
 function DriverCard({
-  driver, deliveries, allDrivers, hideDone, onlyPicked, fuelRate, activeRoute, onPatch, onRemove, onAssign, capSettings, directionsByDriver,
+  driver, deliveries, allDrivers, hideDone, onlyPicked, activeRoute, onPatch, onRemove, onAssign, capSettings, directionsByDriver,
 }: {
   driver: UserInfo;
   deliveries: Delivery[];
   allDrivers: UserInfo[];
   hideDone: boolean;
   onlyPicked: boolean;
-  fuelRate: number;
   activeRoute: Route | null;
   onPatch: (id: string, p: Parameters<typeof updateDelivery>[1]) => void;
   onRemove: (id: string) => void;
@@ -773,7 +750,6 @@ function DriverCard({
   const totalQty = activeDeliveries.reduce((s, d) => s + (d.total_qty || 0), 0);
   const dimsApprox = activeDeliveries.some((d) => d.dims_approx);
   const totalKm = activeDeliveries.reduce((s, d) => s + (d.km || 0), 0);
-  const fuelCost = totalKm > 0 && fuelRate > 0 ? totalKm * 2 * fuelRate : 0;
   // Вместимость: своя (если задана в «Пользователи»), иначе общий дефолт по типу машины.
   const defCap = defaultCapacity(driver.transport, capSettings);
   const capKg = driver.capacity_kg > 0 ? driver.capacity_kg : defCap.kg;
@@ -802,7 +778,6 @@ function DriverCard({
             {driver.transport && <span>{driver.transport}</span>}
             {driver.direction && <span className="text-blue-500">{driver.direction}</span>}
             {totalKm > 0 && <span>🛣️ {totalKm * 2} км</span>}
-            {fuelCost > 0 && <span className="text-emerald-600">⛽ {fuelCost.toLocaleString('ru-RU')} сум</span>}
           </div>
           {/* Загрузка машины. Если есть вес/объём — по ним; иначе по штукам. */}
           {(totalWeightKg > 0 || totalVolL > 0 || totalQty > 0) && (
