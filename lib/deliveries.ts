@@ -24,7 +24,11 @@ function shopCoordsByName(name: string | null, shops: Shop[]): [number, number] 
 // Точка назначения доставки (куда едем): ручные координаты → точка из справочника по shop_id → по названию.
 export function resolveDestPoint(d: Delivery, shops: Shop[]): [number, number] | null {
   if (d.lat != null && d.lng != null) return [d.lat, d.lng];
-  if (d.shop_id) {
+  // У заявок магазина (kind=shop_to_client) shop_id — это магазин-ОТПРАВИТЕЛЬ
+  // (откуда забрали), а не точка назначения. Если клиент не отмечен на карте
+  // (нет d.lat/lng), его координаты неизвестны — нельзя считать, что клиент
+  // «в том же магазине» (0 км), это раньше затирало km нулём при пересчёте маршрута.
+  if (d.kind !== 'shop_to_client' && d.shop_id) {
     const sh = shops.find((s) => s.id === d.shop_id);
     if (sh?.lat && sh?.lng) return [sh.lat, sh.lng];
   }
