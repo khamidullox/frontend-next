@@ -210,6 +210,10 @@ function ReportsContent() {
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <Link href="/logistics" className="text-sm text-gray-500 hover:text-gray-700">← Логистика</Link>
         <h2 className="text-xl font-bold ml-1">📊 Отчёты по водителям</h2>
+        <Link href="/logistics/clients"
+          className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700">
+          👥 База клиентов
+        </Link>
         {emptyRoutes.length > 0 && (
           <button onClick={removeEmpty}
             className="ml-auto px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold rounded-lg whitespace-nowrap">
