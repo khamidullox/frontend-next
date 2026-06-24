@@ -553,6 +553,7 @@ export interface Delivery {
   total_volume_l: number;
   total_qty: number;
   dims_approx?: boolean;
+  last_notified_at?: string | null;
   direction: string;
   km: number;
   driver_username: string | null;

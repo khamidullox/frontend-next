@@ -199,6 +199,9 @@ export interface Delivery {
   // true — вес и/или объём хотя бы одной позиции не из карточки Smartup, а приблизительно
   // (среднее по товарной группе/каталогу) — см. computeDims/getProductCatalog.
   dims_approx?: boolean;
+  // Когда последний раз рассылали push водителям рядом (заявка магазина без водителя) —
+  // см. lib/shopOffers.ts. Нужно, чтобы повторить рассылку, если за это время не взяли.
+  last_notified_at?: string | null;
 
   // Маршрутизация.
   direction: string;      // Север / Юг / Восток / Запад / Центр
@@ -703,6 +706,14 @@ export async function updateDeliveryFields(
   delivery.updated_at = new Date().toISOString();
   await ref.set(delivery);
   return { delivery };
+}
+
+// Отметка времени последней рассылки push водителям рядом (см. lib/shopOffers.ts).
+export async function markNotified(id: string): Promise<void> {
+  await getDb().collection(COLLECTION).doc(str(id)).set(
+    { last_notified_at: new Date().toISOString() },
+    { merge: true }
+  );
 }
 
 export async function deleteDelivery(id: string): Promise<boolean> {
