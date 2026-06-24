@@ -184,23 +184,38 @@ function LogisticsContent() {
   const effectiveCapType = capTypeOptions.includes(capType) ? capType : CAP_DEFAULT_KEY;
   const currentCap = capSettings.cap_by_type[effectiveCapType] || { kg: 0, m3: 0 };
 
+  const [capSaveStatus, setCapSaveStatus] = useState('');
+
   // Вместимость по выбранному виду транспорта — общая для всех водителей этого вида.
   // next считаем ВНУТРИ функционального обновления setCapSettings (от prev, а не от
   // внешнего capSettings) — если менеджер быстро редактирует два разных типа подряд,
   // второй вызов иначе мог взять устаревший снимок (до того как первый рендер успел
   // долететь) и при сохранении полной карты в Firestore затереть первую правку.
+  // После сохранения сразу перечитываем настройки с сервера и сверяем — раньше
+  // полагались на сам факт «PATCH вернул 200», что не доказывает, что значение
+  // реально осталось в Firestore таким, каким его записали.
   async function saveCapType(kgVal: string, m3Val: string) {
     const kg = Math.max(0, Number(kgVal) || 0);
     const m3 = Math.max(0, Number(m3Val) || 0);
+    const type = effectiveCapType;
     let next: Record<string, { kg: number; m3: number }> = {};
     setCapSettings((prev) => {
-      next = { ...prev.cap_by_type, [effectiveCapType]: { kg, m3 } };
+      next = { ...prev.cap_by_type, [type]: { kg, m3 } };
       return { ...prev, cap_by_type: next };
     });
+    setCapSaveStatus('Сохраняю…');
     try {
       await saveLogisticsSettings({ cap_by_type: next });
+      const fresh = await fetchLogisticsSettings();
+      const got = fresh.cap_by_type[type];
+      if (got?.kg === kg && got?.m3 === m3) {
+        setCapSaveStatus(`✓ Сохранено (проверено) ${new Date().toLocaleTimeString('ru-RU')}`);
+      } else {
+        setCapSaveStatus(`⚠️ После сохранения сервер вернул другое значение: ${got?.kg ?? '—'} кг / ${got?.m3 ?? '—'} м³`);
+      }
+      setCapSettings(fresh);
     } catch (e) {
-      alert(`Не удалось сохранить вместимость: ${(e as Error).message}`);
+      setCapSaveStatus(`⚠️ Ошибка сохранения: ${(e as Error).message}`);
     }
   }
 
@@ -453,6 +468,11 @@ function LogisticsContent() {
               className="w-16 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
             <span className="text-[11px] text-gray-400">м³</span>
           </div>
+        )}
+        {capSaveStatus && (
+          <span className={`text-[11px] ${capSaveStatus.startsWith('⚠️') ? 'text-red-600' : 'text-gray-400'}`}>
+            {capSaveStatus}
+          </span>
         )}
         <span className="text-[11px] text-gray-400 basis-full">
           Точные модели — из поля «Транспорт» у водителей; для конкретной модели можно задать свою вместимость.
