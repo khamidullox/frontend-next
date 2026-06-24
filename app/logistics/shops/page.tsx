@@ -94,6 +94,12 @@ function ShopsContent() {
   // Массовое определение городов
   const [geocodingAll, setGeocodingAll] = useState(false);
 
+  // Точки назначения накладных база → клиент (warehouse_dispatch), у которых нет
+  // соответствия в справочнике (ни по shop_id, ни по нормализованному названию) —
+  // получатель в этих накладных, по сути, «клиент», но в этом справочнике для него
+  // нет отдельной категории, поэтому предлагаем добавить как обычную точку (🏪).
+  const [unlinked, setUnlinked] = useState<{ name: string; count: number }[]>([]);
+
   useEffect(() => {
     listAllWarehouses().then(setWarehouses).catch(() => {});
   }, []);
@@ -116,6 +122,35 @@ function ShopsContent() {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // Какие получатели накладных база → клиент ещё не привязаны ни к одной точке.
+  useEffect(() => {
+    if (!items.length) { setUnlinked([]); return; }
+    let cancelled = false;
+    const known = new Set(items.map((s) => normalizeName(s.name)));
+    listDeliveries()
+      .then((all) => {
+        if (cancelled) return;
+        const counts = new Map<string, { name: string; count: number }>();
+        for (const d of all) {
+          if (d.kind !== 'warehouse_dispatch' || d.shop_id || !d.to_name) continue;
+          const norm = normalizeName(d.to_name);
+          if (!norm || known.has(norm)) continue;
+          const cur = counts.get(norm) || { name: d.to_name, count: 0 };
+          cur.count += 1;
+          counts.set(norm, cur);
+        }
+        setUnlinked([...counts.values()].sort((a, b) => b.count - a.count));
+      })
+      .catch(() => { if (!cancelled) setUnlinked([]); });
+    return () => { cancelled = true; };
+  }, [items]);
+
+  function fillFromUnlinked(destName: string) {
+    setName(destName);
+    setType('shop');
+    nameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
 
   // Базы — склады с координатами
   const bases = items.filter(s => s.type === 'warehouse' && s.lat && s.lng);
@@ -315,6 +350,23 @@ function ShopsContent() {
         />
       </div>
       {importMsg && <p className="text-xs text-emerald-600 mb-3">{importMsg}</p>}
+
+      {unlinked.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+          <div className="text-xs font-semibold text-amber-700 mb-2">
+            ⚠️ Получатели накладных база → клиент без точки в справочнике ({unlinked.length})
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {unlinked.map((u) => (
+              <button key={u.name} onClick={() => fillFromUnlinked(u.name)}
+                title="Заполнить форму ниже названием — останется указать адрес/координаты"
+                className="text-xs px-2.5 py-1 rounded-full bg-white border border-amber-300 text-amber-700 hover:bg-amber-100 whitespace-nowrap">
+                + {u.name} {u.count > 1 && <span className="text-amber-400">×{u.count}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <form onSubmit={add} className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-col gap-2">
         <div className="text-xs font-semibold text-gray-500">+ Добавить магазин / адрес</div>
