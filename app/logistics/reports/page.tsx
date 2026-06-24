@@ -108,30 +108,57 @@ function ReportsContent() {
   const effectiveRateType = rateTypeOptions.includes(rateType) ? rateType : CAP_DEFAULT_KEY;
   const currentRate = settings?.rate_by_type[effectiveRateType] ?? 0;
 
+  // next считаем внутри функционального обновления setSettings (от prev) — иначе быстрая
+  // правка двух разных типов подряд могла взять устаревший снимок настроек и при
+  // сохранении полной карты в Firestore затереть только что сделанную первую правку.
   async function saveRate(val: string) {
     if (!settings) return;
     const n = Math.max(0, Number(val) || 0);
-    const next = { ...settings.rate_by_type, [effectiveRateType]: n };
-    setSettings((prev) => (prev ? { ...prev, rate_by_type: next } : prev));
-    await saveLogisticsSettings({ rate_by_type: next }).catch(() => {});
+    let next: Record<string, number> = {};
+    setSettings((prev) => {
+      if (!prev) return prev;
+      next = { ...prev.rate_by_type, [effectiveRateType]: n };
+      return { ...prev, rate_by_type: next };
+    });
+    try {
+      await saveLogisticsSettings({ rate_by_type: next });
+    } catch (e) {
+      alert(`Не удалось сохранить КПИ: ${(e as Error).message}`);
+    }
   }
 
   const currentPointRate = settings?.point_rate_by_type[effectiveRateType] ?? 0;
   async function savePointRate(val: string) {
     if (!settings) return;
     const n = Math.max(0, Number(val) || 0);
-    const next = { ...settings.point_rate_by_type, [effectiveRateType]: n };
-    setSettings((prev) => (prev ? { ...prev, point_rate_by_type: next } : prev));
-    await saveLogisticsSettings({ point_rate_by_type: next }).catch(() => {});
+    let next: Record<string, number> = {};
+    setSettings((prev) => {
+      if (!prev) return prev;
+      next = { ...prev.point_rate_by_type, [effectiveRateType]: n };
+      return { ...prev, point_rate_by_type: next };
+    });
+    try {
+      await saveLogisticsSettings({ point_rate_by_type: next });
+    } catch (e) {
+      alert(`Не удалось сохранить ставку за точку: ${(e as Error).message}`);
+    }
   }
 
   const currentFuelRate = settings?.fuel_rate_by_type[effectiveRateType] ?? 0;
   async function saveFuelRate(val: string) {
     if (!settings) return;
     const n = Math.max(0, Number(val) || 0);
-    const next = { ...settings.fuel_rate_by_type, [effectiveRateType]: n };
-    setSettings((prev) => (prev ? { ...prev, fuel_rate_by_type: next } : prev));
-    await saveLogisticsSettings({ fuel_rate_by_type: next }).catch(() => {});
+    let next: Record<string, number> = {};
+    setSettings((prev) => {
+      if (!prev) return prev;
+      next = { ...prev.fuel_rate_by_type, [effectiveRateType]: n };
+      return { ...prev, fuel_rate_by_type: next };
+    });
+    try {
+      await saveLogisticsSettings({ fuel_rate_by_type: next });
+    } catch (e) {
+      alert(`Не удалось сохранить ставку топлива: ${(e as Error).message}`);
+    }
   }
 
   function applyQuick(q: typeof quick) {

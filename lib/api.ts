@@ -707,10 +707,14 @@ export async function fetchLogisticsSettings(): Promise<LogisticsSettings> {
 }
 
 export async function saveLogisticsSettings(s: Partial<LogisticsSettings>): Promise<void> {
-  await fetch('/api/logistics/settings', {
+  const res = await fetch('/api/logistics/settings', {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(s),
   });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data as { error?: string }).error || `Ошибка сохранения настроек (${res.status})`);
+  }
 }
 
 // Семейство транспорта по подстроке в названии (любая модель LABO/Газели — независимо

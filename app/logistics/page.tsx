@@ -177,12 +177,23 @@ function LogisticsContent() {
   const currentCap = capSettings.cap_by_type[effectiveCapType] || { kg: 0, m3: 0 };
 
   // Вместимость по выбранному виду транспорта — общая для всех водителей этого вида.
+  // next считаем ВНУТРИ функционального обновления setCapSettings (от prev, а не от
+  // внешнего capSettings) — если менеджер быстро редактирует два разных типа подряд,
+  // второй вызов иначе мог взять устаревший снимок (до того как первый рендер успел
+  // долететь) и при сохранении полной карты в Firestore затереть первую правку.
   async function saveCapType(kgVal: string, m3Val: string) {
     const kg = Math.max(0, Number(kgVal) || 0);
     const m3 = Math.max(0, Number(m3Val) || 0);
-    const next = { ...capSettings.cap_by_type, [effectiveCapType]: { kg, m3 } };
-    setCapSettings((prev) => ({ ...prev, cap_by_type: next }));
-    await saveLogisticsSettings({ cap_by_type: next }).catch(() => {});
+    let next: Record<string, { kg: number; m3: number }> = {};
+    setCapSettings((prev) => {
+      next = { ...prev.cap_by_type, [effectiveCapType]: { kg, m3 } };
+      return { ...prev, cap_by_type: next };
+    });
+    try {
+      await saveLogisticsSettings({ cap_by_type: next });
+    } catch (e) {
+      alert(`Не удалось сохранить вместимость: ${(e as Error).message}`);
+    }
   }
 
   async function doAutoAssign() {

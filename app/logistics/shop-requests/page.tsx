@@ -51,6 +51,9 @@ function ShopRequestsContent() {
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [onlyPicked, setOnlyPicked] = useState(false);
+  // Заявка, для которой сейчас открыт выбор произвольного времени отсрочки (id или null).
+  const [deferPickerId, setDeferPickerId] = useState<string | null>(null);
+  const [deferTimeVal, setDeferTimeVal] = useState('');
 
   // Форма создания заявки (от имени магазина) — для админа/менеджера.
   const [showForm, setShowForm] = useState(false);
@@ -198,12 +201,19 @@ function ShopRequestsContent() {
     return 'Заявка разослана водителям рядом — ждём, кто возьмёт';
   }
 
-  // Завтра в 09:00 — стандартная отсрочка по одной кнопке.
-  function tomorrow9am(): string {
+  // Завтра в 08:30 — стандартная отсрочка по одной кнопке.
+  function tomorrow830(): string {
     const d = new Date();
     d.setDate(d.getDate() + 1);
-    d.setHours(9, 0, 0, 0);
+    d.setHours(8, 30, 0, 0);
     return d.toISOString();
+  }
+
+  // Для <input type="datetime-local"> — без таймзоны, в локальном времени браузера.
+  function toLocalInputValue(iso: string): string {
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
   async function setDefer(d: Delivery, until: string | null) {
@@ -483,15 +493,49 @@ function ShopRequestsContent() {
                           ↩ Вернуть сейчас
                         </button>
                       ) : (
-                        <button onClick={() => setDefer(d, tomorrow9am())} disabled={busyId === d.id}
-                          title="Забрать можно завтра — не подсвечивать как зависшую заявку"
-                          className="text-[11px] font-semibold px-2 py-1 rounded-full whitespace-nowrap bg-gray-100 text-gray-600 hover:bg-gray-200">
-                          📅 На завтра
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => setDefer(d, tomorrow830())} disabled={busyId === d.id}
+                            title="Забрать можно завтра — не подсвечивать как зависшую заявку"
+                            className="text-[11px] font-semibold px-2 py-1 rounded-full whitespace-nowrap bg-gray-100 text-gray-600 hover:bg-gray-200">
+                            📅 На завтра
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (deferPickerId === d.id) { setDeferPickerId(null); return; }
+                              setDeferPickerId(d.id);
+                              setDeferTimeVal(toLocalInputValue(tomorrow830()));
+                            }}
+                            disabled={busyId === d.id}
+                            title="Указать своё время"
+                            className="text-[11px] font-semibold px-1.5 py-1 rounded-full whitespace-nowrap bg-gray-100 text-gray-600 hover:bg-gray-200">
+                            🕓
+                          </button>
+                        </div>
                       )
                     )}
                   </div>
                 </div>
+
+                {deferPickerId === d.id && (
+                  <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg p-2">
+                    <input type="datetime-local" value={deferTimeVal} onChange={(e) => setDeferTimeVal(e.target.value)}
+                      className="flex-1 border border-gray-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-blue-400" />
+                    <button
+                      onClick={async () => {
+                        if (!deferTimeVal) return;
+                        await setDefer(d, new Date(deferTimeVal).toISOString());
+                        setDeferPickerId(null);
+                      }}
+                      disabled={busyId === d.id || !deferTimeVal}
+                      className="text-[11px] font-semibold px-2 py-1 rounded-full whitespace-nowrap bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                      ✓ Отложить
+                    </button>
+                    <button onClick={() => setDeferPickerId(null)}
+                      className="text-[11px] font-semibold px-2 py-1 rounded-full whitespace-nowrap bg-gray-100 text-gray-500 hover:bg-gray-200">
+                      ✕
+                    </button>
+                  </div>
+                )}
 
                 {editId === d.id && (
                   <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-3 flex flex-col gap-2">
