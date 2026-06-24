@@ -335,6 +335,13 @@ export async function createDelivery(
     docItems = doc.items.map((it) => ({ product_code: it.product_code, quantity: it.quantity }));
   }
 
+  // Заявки магазина (ProductPicker) не приходят из сессии/документа — товары лежат
+  // прямо в input.items. Без этого их вес/объём считались нулевыми (всегда пустой
+  // docItems), и куб не показывался ни в карточке заявки, ни в загрузке машины.
+  if (!docItems.length && input.items?.length) {
+    docItems = input.items.map((it) => ({ product_code: it.code, quantity: it.qty }));
+  }
+
   const dims = await computeDims(docItems);
 
   // Названия складов «откуда → куда» (если документ — накладная/перемещение).
