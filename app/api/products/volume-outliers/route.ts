@@ -15,11 +15,17 @@ export async function GET() {
     return Response.json({ error: 'Недостаточно прав' }, { status: 403 });
   }
   const catalog = await getCachedCatalog();
-  const top = (key: 'weight' | 'volume_l', n = 20) =>
+  // weight_approx/volume_approx проверяем независимо: товар может иметь реальный вес
+  // в Smartup, но не объём (или наоборот) — раньше оба списка требовали реальности
+  // ОБОИХ полей сразу и теряли ровно те карточки, где сбой только в одном из них.
+  const top = (key: 'weight' | 'volume_l', approxKey: 'weight_approx' | 'volume_approx', n = 20) =>
     [...catalog]
-      .filter((c) => !c.weight_approx && !c.volume_approx) // только реальные данные, не уже-приблизительные
+      .filter((c) => !c[approxKey])
       .sort((a, b) => b[key] - a[key])
       .slice(0, n)
       .map((c) => ({ code: c.code, name: c.name, group: c.group, weight: c.weight, volume_l: c.volume_l, volume_m3: Math.round(c.volume_l) / 1000 }));
-  return Response.json({ top_volume: top('volume_l'), top_weight: top('weight') });
+  return Response.json({
+    top_volume: top('volume_l', 'volume_approx'),
+    top_weight: top('weight', 'weight_approx'),
+  });
 }
