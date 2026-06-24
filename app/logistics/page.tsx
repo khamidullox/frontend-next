@@ -344,6 +344,20 @@ function LogisticsContent() {
     return { byDriver: map, external: ext, unassigned: none };
   }, [items]);
 
+  // Направления, в которых у водителя уже есть активный груз — чтобы при ручном
+  // назначении видно было, если новая доставка тянет его в другую сторону
+  // (а не просто превышает вместимость, как проверялось раньше).
+  const directionsByDriver = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const d of items) {
+      if (!d.driver_username || !d.direction || isDone(d.status)) continue;
+      const set = m.get(d.driver_username) || new Set<string>();
+      set.add(d.direction);
+      m.set(d.driver_username, set);
+    }
+    return m;
+  }, [items]);
+
   // Категории транспорта среди водителей: [категория, кол-во].
   const categories = useMemo(() => {
     const m = new Map<string, number>();
@@ -633,7 +647,7 @@ function LogisticsContent() {
               </div>
               <div className="flex flex-col gap-2">
                 {visibleUnassigned.map((d) => (
-                  <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} />
+                  <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} directionsByDriver={directionsByDriver} />
                 ))}
               </div>
             </div>
@@ -658,7 +672,7 @@ function LogisticsContent() {
                       </div>
                       <div className="flex flex-col gap-2">
                         {shown.map((d) => (
-                          <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} compact />
+                          <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} compact directionsByDriver={directionsByDriver} />
                         ))}
                       </div>
                     </div>
@@ -717,6 +731,7 @@ function LogisticsContent() {
                   onRemove={remove}
                   onAssign={() => setAssignTo(dr)}
                   capSettings={capSettings}
+                  directionsByDriver={directionsByDriver}
                 />
               ))}
             </div>
@@ -746,7 +761,7 @@ function LogisticsContent() {
 
 // ─── Карточка водителя ──────────────────────────────────────────────────────
 function DriverCard({
-  driver, deliveries, allDrivers, hideDone, onlyPicked, fuelRate, activeRoute, onPatch, onRemove, onAssign, capSettings,
+  driver, deliveries, allDrivers, hideDone, onlyPicked, fuelRate, activeRoute, onPatch, onRemove, onAssign, capSettings, directionsByDriver,
 }: {
   driver: UserInfo;
   deliveries: Delivery[];
@@ -759,6 +774,7 @@ function DriverCard({
   onRemove: (id: string) => void;
   onAssign: () => void;
   capSettings: LogisticsSettings;
+  directionsByDriver: Map<string, Set<string>>;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -880,7 +896,7 @@ function DriverCard({
           ) : (
             <div className="flex flex-col gap-2">
               {shown.map((d) => (
-                <DeliveryRow key={d.id} d={d} drivers={allDrivers} onPatch={onPatch} onRemove={onRemove} compact capSettings={capSettings} />
+                <DeliveryRow key={d.id} d={d} drivers={allDrivers} onPatch={onPatch} onRemove={onRemove} compact capSettings={capSettings} directionsByDriver={directionsByDriver} />
               ))}
             </div>
           )}
@@ -895,7 +911,7 @@ function DriverCard({
               {showDone && (
                 <div className="flex flex-col gap-2 mt-2 opacity-80">
                   {doneDeliveries.map((d) => (
-                    <DeliveryRow key={d.id} d={d} drivers={allDrivers} onPatch={onPatch} onRemove={onRemove} compact capSettings={capSettings} />
+                    <DeliveryRow key={d.id} d={d} drivers={allDrivers} onPatch={onPatch} onRemove={onRemove} compact capSettings={capSettings} directionsByDriver={directionsByDriver} />
                   ))}
                 </div>
               )}
@@ -909,7 +925,7 @@ function DriverCard({
 
 // ─── Строка доставки ──────────────────────────────────────────────────────────
 function DeliveryRow({
-  d, drivers, onPatch, onRemove, compact, capSettings,
+  d, drivers, onPatch, onRemove, compact, capSettings, directionsByDriver,
 }: {
   d: Delivery;
   drivers: UserInfo[];
@@ -917,6 +933,7 @@ function DeliveryRow({
   onRemove: (id: string) => void;
   compact?: boolean;
   capSettings?: LogisticsSettings;
+  directionsByDriver?: Map<string, Set<string>>;
 }) {
   const [editAddr, setEditAddr] = useState(false);
   const [addr, setAddr] = useState(d.address);
@@ -1026,12 +1043,26 @@ function DeliveryRow({
         <select value={d.driver_username || ''} onChange={(e) => onPatch(d.id, { driver_username: e.target.value || null })}
           className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:border-blue-400">
           <option value="">— назначить водителя —</option>
-          {drivers.map((dr) => (
-            <option key={dr.username} value={dr.username}>
-              {dr.name}{dr.car_number ? ` · ${dr.car_number}` : ''}
-            </option>
-          ))}
+          {drivers.map((dr) => {
+            const dirs = directionsByDriver?.get(dr.username);
+            const mismatch = !!d.direction && !!dirs?.size && !dirs.has(d.direction);
+            return (
+              <option key={dr.username} value={dr.username}>
+                {mismatch ? '⚠️ ' : ''}{dr.name}{dr.car_number ? ` · ${dr.car_number}` : ''}
+                {mismatch ? ` (едет в ${[...dirs].join('/')})` : ''}
+              </option>
+            );
+          })}
         </select>
+        {(() => {
+          const dirs = directionsByDriver?.get(d.driver_username || '');
+          const mismatch = !!d.direction && !!dirs?.size && !dirs.has(d.direction);
+          return mismatch ? (
+            <span className="text-[11px] text-amber-600 bg-amber-50 rounded-full px-2 py-1 whitespace-nowrap">
+              ⚠️ у водителя другой груз в {[...dirs].join('/')}, а эта доставка — в {d.direction}
+            </span>
+          ) : null;
+        })()}
         <select value={d.status} onChange={(e) => onPatch(d.id, { status: e.target.value as DeliveryStatus })}
           className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:border-blue-400">
           {STATUSES.map((s) => (
