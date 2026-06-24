@@ -383,6 +383,11 @@ function ReportsContent() {
                                     )}
                                     <div className="flex flex-wrap gap-2 mt-0.5">
                                       {d.km > 0 && <span className="text-xs text-emerald-600">🛣️ {d.km} км</span>}
+                                      {d.shop_distance_km != null && d.shop_distance_km !== d.km && (
+                                        <span className="text-xs text-gray-400" title="Прямое расстояние от магазина до клиента, без учёта цепочки маршрута">
+                                          🏪→📍 {d.shop_distance_km} км
+                                        </span>
+                                      )}
                                       {d.direction && <span className="text-xs text-sky-500">{d.direction}</span>}
                                     </div>
                                   </div>

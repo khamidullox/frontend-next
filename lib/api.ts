@@ -556,6 +556,7 @@ export interface Delivery {
   last_notified_at?: string | null;
   direction: string;
   km: number;
+  shop_distance_km?: number | null;
   driver_username: string | null;
   driver_name: string | null;
   car_number: string | null;

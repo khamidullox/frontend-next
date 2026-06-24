@@ -70,7 +70,14 @@ export function computeRouteKm(deliveries: Delivery[], shops: Shop[]): Map<strin
   for (const d of sorted) {
     const dest = resolveDestPoint(d, shops);
     if (!dest) continue;
-    const destKey = d.shop_id || `${dest[0].toFixed(3)},${dest[1].toFixed(3)}`;
+    // shop_id у заявок «магазин → клиент» — это магазин-ОТПРАВИТЕЛЬ, а не точка
+    // назначения (см. resolveDestPoint выше). Если использовать его как ключ
+    // дедупликации, две доставки из одного магазина к двум разным клиентам
+    // считались бы «одной и той же остановкой» — вторая получала бы 0 км вместо
+    // реального расстояния. Для этого вида ключ всегда по координатам клиента.
+    const destKey = d.kind !== 'shop_to_client' && d.shop_id
+      ? d.shop_id
+      : `${dest[0].toFixed(3)},${dest[1].toFixed(3)}`;
     const manual = d.km_auto === false;
 
     if (seen.has(destKey)) {
@@ -103,15 +110,26 @@ export async function recomputeRouteKm(routeId: string): Promise<void> {
 
   const shops = await listShops();
   const kmMap = computeRouteKm(deliveries, shops);
-  if (!kmMap.size) return;
 
   const now = new Date().toISOString();
   const batch = db.batch();
   let changed = false;
   for (const d of deliveries) {
+    const update: Record<string, unknown> = {};
     const km = kmMap.get(d.id);
     if (km !== undefined && km !== d.km) {
-      batch.update(db.collection(COLLECTION).doc(d.id), { km, km_auto: true, updated_at: now });
+      update.km = km;
+      update.km_auto = true;
+    }
+    // Справочное «от магазина прямо до клиента», независимо от дедупликации/цепочки
+    // выше — чтобы видеть реальное плечо каждой заявки, даже если в маршруте она
+    // встала «второй точкой» и её km по цепочке вышел 0 или от другого места.
+    if (d.kind === 'shop_to_client') {
+      const shopDist = computeDeliveryKm(d, shops);
+      if (shopDist !== d.shop_distance_km) update.shop_distance_km = shopDist;
+    }
+    if (Object.keys(update).length) {
+      batch.update(db.collection(COLLECTION).doc(d.id), { ...update, updated_at: now });
       changed = true;
     }
   }
@@ -213,6 +231,10 @@ export interface Delivery {
   // false — км выставлен вручную (менеджером), не пересчитывать автоматически.
   // true/undefined — км посчитан автоматически и может быть пересчитан при изменении маршрута.
   km_auto?: boolean;
+  // Для заявки магазина (kind=shop_to_client): прямое расстояние магазин→клиент,
+  // независимо от цепочки маршрута (km выше может быть короче/0, если эта точка не
+  // первая в цепочке после такой же остановки). Справочное — не используется в КПИ.
+  shop_distance_km?: number | null;
 
   // Привязка к маршруту водителя (заход за один раз, см. lib/routes.ts).
   route_id: string | null;
@@ -416,6 +438,10 @@ export async function createDelivery(
     delivery.car_number = str(input.external_car) || null;
     delivery.transport = null;
     delivery.status = 'assigned';
+  }
+
+  if (delivery.kind === 'shop_to_client' && delivery.lat != null && delivery.lng != null) {
+    delivery.shop_distance_km = computeDeliveryKm(delivery, await listShops());
   }
 
   await getDb().collection(COLLECTION).doc(delivery.id).set(delivery);
@@ -726,6 +752,11 @@ export async function updateDeliveryFields(
   if (fields.direction !== undefined) delivery.direction = str(fields.direction);
   if (fields.lat !== undefined) delivery.lat = fields.lat;
   if (fields.lng !== undefined) delivery.lng = fields.lng;
+  if ((fields.lat !== undefined || fields.lng !== undefined) && delivery.kind === 'shop_to_client') {
+    delivery.shop_distance_km = delivery.lat != null && delivery.lng != null
+      ? computeDeliveryKm(delivery, await listShops())
+      : null;
+  }
   if (fields.km !== undefined) {
     delivery.km = Math.max(0, Number(fields.km) || 0);
     delivery.km_auto = false; // ручная правка — больше не пересчитывать автоматически.
