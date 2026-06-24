@@ -138,39 +138,50 @@ export async function getProductCatalog(): Promise<CatalogItem[]> {
 
     // У части товаров в Smartup нет веса/объёма вообще (карточка не заполнена). Чтобы
     // логистика (грузоподъёмность машины, КПИ) не считала такой товар «невесомым», берём
-    // приблизительное значение — среднее по той же товарной группе (вид), а если в группе
-    // вообще ни у кого нет данных — среднее по всему каталогу. Помечаем weight_approx/
-    // volume_approx, чтобы можно было показать «≈» там, где это видно пользователю.
-    const groupWeight = new Map<string, { sum: number; n: number }>();
-    const groupVol = new Map<string, { sum: number; n: number }>();
-    let globalWeightSum = 0, globalWeightN = 0, globalVolSum = 0, globalVolN = 0;
+    // приблизительное значение — медиану по той же товарной группе (вид), а если в группе
+    // вообще ни у кого нет данных — медиану по всему каталогу. Именно медиана, а не
+    // среднее: пары товаров с в разы перепутанными единицами (например, объём в литрах,
+    // а не в м³ — та же путаница, что была у стиральных машин) утягивают среднее вверх,
+    // а медиану почти не трогают. Помечаем weight_approx/volume_approx, чтобы можно было
+    // показать «≈» там, где это видно пользователю.
+    function median(nums: number[]): number {
+      if (!nums.length) return 0;
+      const sorted = [...nums].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+
+    const groupWeight = new Map<string, number[]>();
+    const groupVol = new Map<string, number[]>();
+    const globalWeight: number[] = [];
+    const globalVol: number[] = [];
     for (const it of raw) {
       if (it.weight > 0) {
-        globalWeightSum += it.weight; globalWeightN++;
-        const g = groupWeight.get(it.group) || { sum: 0, n: 0 };
-        g.sum += it.weight; g.n++; groupWeight.set(it.group, g);
+        globalWeight.push(it.weight);
+        const g = groupWeight.get(it.group) || [];
+        g.push(it.weight); groupWeight.set(it.group, g);
       }
       if (it.volume_l > 0) {
-        globalVolSum += it.volume_l; globalVolN++;
-        const g = groupVol.get(it.group) || { sum: 0, n: 0 };
-        g.sum += it.volume_l; g.n++; groupVol.set(it.group, g);
+        globalVol.push(it.volume_l);
+        const g = groupVol.get(it.group) || [];
+        g.push(it.volume_l); groupVol.set(it.group, g);
       }
     }
-    const globalWeightAvg = globalWeightN ? globalWeightSum / globalWeightN : 0;
-    const globalVolAvg = globalVolN ? globalVolSum / globalVolN : 0;
+    const globalWeightMedian = median(globalWeight);
+    const globalVolMedian = median(globalVol);
 
     return raw
       .map((it) => {
         let weight = it.weight, weight_approx = false;
         if (weight <= 0) {
           const g = groupWeight.get(it.group);
-          weight = g?.n ? g.sum / g.n : globalWeightAvg;
+          weight = g?.length ? median(g) : globalWeightMedian;
           weight_approx = weight > 0;
         }
         let volume_l = it.volume_l, volume_approx = false;
         if (volume_l <= 0) {
           const g = groupVol.get(it.group);
-          volume_l = g?.n ? g.sum / g.n : globalVolAvg;
+          volume_l = g?.length ? median(g) : globalVolMedian;
           volume_approx = volume_l > 0;
         }
         return {
