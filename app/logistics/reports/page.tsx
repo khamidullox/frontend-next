@@ -375,6 +375,12 @@ function ReportsContent() {
                                       {d.doc_number ? `№ ${d.doc_number} · ` : ''}{d.client_name || d.to_name || d.from_name || '—'}
                                     </div>
                                     {d.address && <div className="text-xs text-gray-400 truncate">📍 {d.address}</div>}
+                                    {d.shop_name && <div className="text-xs text-gray-400 truncate">🏪 откуда: {d.shop_name}</div>}
+                                    {d.client_phone && (
+                                      <div className="text-xs text-gray-400 truncate">
+                                        📞 <a href={`tel:${d.client_phone}`} className="text-sky-600">{d.client_phone}</a>
+                                      </div>
+                                    )}
                                     <div className="flex flex-wrap gap-2 mt-0.5">
                                       {d.km > 0 && <span className="text-xs text-emerald-600">🛣️ {d.km} км</span>}
                                       {d.direction && <span className="text-xs text-sky-500">{d.direction}</span>}
