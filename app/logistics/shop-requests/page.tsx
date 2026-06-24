@@ -62,6 +62,17 @@ function ShopRequestsContent() {
   const [shopSearch, setShopSearch] = useState('');
   const [showShopList, setShowShopList] = useState(false);
 
+  // Редактирование уже созданной заявки (открыта одна за раз).
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editClient, setEditClient] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [editNote, setEditNote] = useState('');
+  const [editItems, setEditItems] = useState<DeliveryItem[]>([]);
+  const [editLat, setEditLat] = useState<number | undefined>(undefined);
+  const [editLng, setEditLng] = useState<number | undefined>(undefined);
+  const [editBusy, setEditBusy] = useState(false);
+
   const load = useCallback(async () => {
     try {
       const [reqs, drv, routes, shopList, deliveries] = await Promise.all([
@@ -177,6 +188,43 @@ function ShopRequestsContent() {
       setError((e as Error).message);
     } finally {
       setBusyId(null);
+    }
+  }
+
+  function startEdit(d: Delivery) {
+    setEditId(d.id);
+    setEditClient(d.client_name || '');
+    setEditPhone(d.client_phone || '');
+    setEditAddress(d.address || '');
+    setEditNote(d.note || '');
+    setEditItems(d.items || []);
+    setEditLat(d.lat ?? undefined);
+    setEditLng(d.lng ?? undefined);
+  }
+
+  function cancelEdit() {
+    setEditId(null);
+  }
+
+  async function saveEdit(d: Delivery) {
+    setEditBusy(true);
+    setError('');
+    try {
+      const updated = await updateDelivery(d.id, {
+        client_name: editClient.trim(),
+        client_phone: editPhone.trim(),
+        address: editAddress.trim(),
+        note: editNote.trim(),
+        items: editItems,
+        lat: editLat ?? null,
+        lng: editLng ?? null,
+      });
+      setItems((prev) => prev.map((x) => (x.id === d.id ? updated : x)));
+      setEditId(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setEditBusy(false);
     }
   }
 
@@ -361,8 +409,42 @@ function ShopRequestsContent() {
                       }`}>
                       {d.picked ? '✓ Собрано' : '📦 Собрать'}
                     </button>
+                    <button onClick={() => (editId === d.id ? cancelEdit() : startEdit(d))}
+                      className="text-[11px] font-semibold px-2 py-1 rounded-full whitespace-nowrap bg-blue-50 text-blue-700 hover:bg-blue-100">
+                      {editId === d.id ? '✕ Отмена' : '✏️ Изменить'}
+                    </button>
                   </div>
                 </div>
+
+                {editId === d.id && (
+                  <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-3 flex flex-col gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input value={editClient} onChange={(e) => setEditClient(e.target.value)} autoComplete="off"
+                        placeholder="Имя клиента"
+                        className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                      <input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} autoComplete="off" type="tel"
+                        placeholder="Телефон клиента"
+                        className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                    </div>
+                    <input value={editAddress} onChange={(e) => setEditAddress(e.target.value)} autoComplete="off"
+                      placeholder="Адрес доставки"
+                      className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                    <input value={editNote} onChange={(e) => setEditNote(e.target.value)} autoComplete="off"
+                      placeholder="Примечание (необязательно)"
+                      className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                    <ProductPicker items={editItems} onChange={setEditItems} />
+                    <LocationPicker lat={editLat} lng={editLng} onChange={(la, ln) => { setEditLat(la); setEditLng(ln); }} />
+                    <div className="flex gap-2">
+                      <button onClick={() => saveEdit(d)} disabled={editBusy || !editClient.trim() || !editAddress.trim()}
+                        className="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg">
+                        {editBusy ? '⏳…' : '💾 Сохранить'}
+                      </button>
+                      <button onClick={cancelEdit} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm font-semibold rounded-lg">
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex items-center gap-2 flex-wrap">
                   <select value={d.driver_username || ''} disabled={busyId === d.id}

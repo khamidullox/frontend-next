@@ -78,15 +78,25 @@ export async function PATCH(
       await recomputeRouteKm(res.delivery.route_id).catch(() => {});
     }
   }
-  if (body.client_name !== undefined || body.address !== undefined || body.note !== undefined ||
-      body.direction !== undefined || body.km !== undefined || body.total_weight !== undefined) {
+  if (body.client_name !== undefined || body.client_phone !== undefined || body.address !== undefined ||
+      body.note !== undefined || body.direction !== undefined || body.km !== undefined ||
+      body.total_weight !== undefined || body.items !== undefined || body.lat !== undefined || body.lng !== undefined) {
+    const items = Array.isArray(body.items)
+      ? body.items.map((it: { code?: unknown; name?: unknown; qty?: unknown }) => ({
+          code: String(it.code || ''), name: String(it.name || ''), qty: Math.max(0, Number(it.qty) || 0),
+        })).filter((it: { code: string; qty: number }) => it.code && it.qty > 0)
+      : undefined;
     const res = await updateDeliveryFields(id, {
       client_name: body.client_name,
+      client_phone: body.client_phone,
       address: body.address,
       note: body.note,
       direction: body.direction,
       km: body.km,
       total_weight: body.total_weight,
+      items,
+      lat: body.lat != null ? Number(body.lat) : (body.lat === null ? null : undefined),
+      lng: body.lng != null ? Number(body.lng) : (body.lng === null ? null : undefined),
     });
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
   }

@@ -658,7 +658,10 @@ export async function setDeliveryStatus(
 // Правка текстовых полей (адрес/клиент/примечание) — для менеджера.
 export async function updateDeliveryFields(
   id: string,
-  fields: { client_name?: string; address?: string; note?: string; direction?: string; km?: number; total_weight?: number }
+  fields: {
+    client_name?: string; client_phone?: string; address?: string; note?: string; direction?: string;
+    km?: number; total_weight?: number; items?: DeliveryItem[]; lat?: number | null; lng?: number | null;
+  }
 ): Promise<{ delivery: Delivery } | { error: string }> {
   const db = getDb();
   const ref = db.collection(COLLECTION).doc(str(id));
@@ -667,14 +670,26 @@ export async function updateDeliveryFields(
 
   const delivery = normalizeDelivery(snap.data() as Delivery);
   if (fields.client_name !== undefined) delivery.client_name = str(fields.client_name);
+  if (fields.client_phone !== undefined) delivery.client_phone = str(fields.client_phone) || null;
   if (fields.address !== undefined) delivery.address = str(fields.address);
   if (fields.note !== undefined) delivery.note = str(fields.note);
   if (fields.direction !== undefined) delivery.direction = str(fields.direction);
+  if (fields.lat !== undefined) delivery.lat = fields.lat;
+  if (fields.lng !== undefined) delivery.lng = fields.lng;
   if (fields.km !== undefined) {
     delivery.km = Math.max(0, Number(fields.km) || 0);
     delivery.km_auto = false; // ручная правка — больше не пересчитывать автоматически.
   }
   if (fields.total_weight !== undefined) delivery.total_weight = Math.max(0, Number(fields.total_weight) || 0);
+  // Правка состава заявки (товары/количество) — пересчитываем вес/объём по каталогу,
+  // иначе после редактирования куб/вес остался бы от старого набора товаров.
+  if (fields.items !== undefined) {
+    delivery.items = fields.items;
+    const dims = await computeDims(fields.items.map((it) => ({ product_code: it.code, quantity: it.qty })));
+    delivery.total_weight = dims.weight;
+    delivery.total_volume_l = dims.volume_l;
+    delivery.total_qty = dims.qty;
+  }
   delivery.updated_at = new Date().toISOString();
   await ref.set(delivery);
   return { delivery };

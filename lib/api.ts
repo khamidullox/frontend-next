@@ -636,7 +636,11 @@ export async function createDelivery(input: {
 
 export async function updateDelivery(
   id: string,
-  patch: { status?: DeliveryStatus; driver_username?: string | null; client_name?: string; address?: string; note?: string; direction?: string; km?: number; total_weight?: number; picked?: boolean }
+  patch: {
+    status?: DeliveryStatus; driver_username?: string | null; client_name?: string; client_phone?: string;
+    address?: string; note?: string; direction?: string; km?: number; total_weight?: number; picked?: boolean;
+    items?: DeliveryItem[]; lat?: number | null; lng?: number | null;
+  }
 ): Promise<Delivery> {
   const res = await fetch(`/api/deliveries/${encodeURIComponent(id)}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
