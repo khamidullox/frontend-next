@@ -554,6 +554,7 @@ export interface Delivery {
   total_qty: number;
   dims_approx?: boolean;
   last_notified_at?: string | null;
+  defer_until?: string | null;
   direction: string;
   km: number;
   shop_distance_km?: number | null;
@@ -563,7 +564,7 @@ export interface Delivery {
   transport: string | null;
   route_id: string | null;
   status: DeliveryStatus;
-  history: { at: string; status: DeliveryStatus; by: string }[];
+  history: { at: string; status: DeliveryStatus; by: string; role?: string }[];
 }
 
 // Координаты точки доставки (для отрисовки маршрута на карте у водителя):
@@ -642,7 +643,7 @@ export async function updateDelivery(
   patch: {
     status?: DeliveryStatus; driver_username?: string | null; client_name?: string; client_phone?: string;
     address?: string; note?: string; direction?: string; km?: number; total_weight?: number; picked?: boolean;
-    items?: DeliveryItem[]; lat?: number | null; lng?: number | null;
+    items?: DeliveryItem[]; lat?: number | null; lng?: number | null; defer_until?: string | null;
   }
 ): Promise<Delivery> {
   const res = await fetch(`/api/deliveries/${encodeURIComponent(id)}`, {

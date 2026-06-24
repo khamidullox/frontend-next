@@ -166,6 +166,7 @@ interface StatusEvent {
   at: string;
   status: DeliveryStatus;
   by: string;
+  role?: string;
 }
 
 export interface Delivery {
@@ -224,6 +225,10 @@ export interface Delivery {
   // Когда последний раз рассылали push водителям рядом (заявка магазина без водителя) —
   // см. lib/shopOffers.ts. Нужно, чтобы повторить рассылку, если за это время не взяли.
   last_notified_at?: string | null;
+  // Отложено логистом до этого момента (например, «забрать только завтра») — пока не
+  // наступило, заявка не подсвечивается как «зависшая» и не попадает в повторную
+  // рассылку водителям, хотя формально ещё «новая» и без водителя.
+  defer_until?: string | null;
 
   // Маршрутизация.
   direction: string;      // Север / Юг / Восток / Запад / Центр
@@ -255,6 +260,7 @@ function normalizeDelivery(d: Delivery): Delivery {
     lng: d.lng ?? null,
     km_auto: d.km_auto ?? true,
     client_phone: d.client_phone ?? null,
+    defer_until: d.defer_until ?? null,
     items: d.items ?? [],
     // Старые доставки созданы до появления «Собрано» — не блокируем их задним числом.
     picked: d.picked ?? true,
@@ -701,7 +707,8 @@ export async function markPickedByDocId(docId: string): Promise<void> {
 export async function setDeliveryStatus(
   id: string,
   status: DeliveryStatus,
-  by: string
+  by: string,
+  role?: string
 ): Promise<{ delivery: Delivery } | { error: string }> {
   if (!DELIVERY_STATUS_LABEL[status]) return { error: 'Неверный статус' };
   const db = getDb();
@@ -713,7 +720,7 @@ export async function setDeliveryStatus(
   const now = new Date().toISOString();
   delivery.status = status;
   delivery.updated_at = now;
-  delivery.history = [...(delivery.history || []), { at: now, status, by: str(by) }].slice(-50);
+  delivery.history = [...(delivery.history || []), { at: now, status, by: str(by), role: role ? str(role) : undefined }].slice(-50);
 
   // Считаем км по координатам при выезде/доставке, если ещё не заполнен. Доставка без
   // маршрута считается по одному плечу склад→точка; если есть маршрут — км для всего
@@ -737,6 +744,7 @@ export async function updateDeliveryFields(
   fields: {
     client_name?: string; client_phone?: string; address?: string; note?: string; direction?: string;
     km?: number; total_weight?: number; items?: DeliveryItem[]; lat?: number | null; lng?: number | null;
+    defer_until?: string | null;
   }
 ): Promise<{ delivery: Delivery } | { error: string }> {
   const db = getDb();
@@ -750,6 +758,7 @@ export async function updateDeliveryFields(
   if (fields.address !== undefined) delivery.address = str(fields.address);
   if (fields.note !== undefined) delivery.note = str(fields.note);
   if (fields.direction !== undefined) delivery.direction = str(fields.direction);
+  if (fields.defer_until !== undefined) delivery.defer_until = fields.defer_until;
   if (fields.lat !== undefined) delivery.lat = fields.lat;
   if (fields.lng !== undefined) delivery.lng = fields.lng;
   if ((fields.lat !== undefined || fields.lng !== undefined) && delivery.kind === 'shop_to_client') {

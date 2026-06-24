@@ -5,7 +5,7 @@ import AdminGate from '@/components/AdminGate';
 import LogisticsTabs from '@/components/LogisticsTabs';
 import {
   listShopRequests, updateDelivery, addDeliveriesToRoute, listDrivers, listRoutes, createShopRequest, listShops,
-  listDeliveries, resolveDeliveryPoint,
+  listDeliveries, resolveDeliveryPoint, ROLE_LABEL,
   Delivery, DeliveryItem, DeliveryStatus, DELIVERY_STATUS_LABEL, UserInfo, Route, Shop,
 } from '@/lib/api';
 import { haversineKm } from '@/lib/geo';
@@ -181,14 +181,41 @@ function ShopRequestsContent() {
     return Math.floor((now - new Date(d.created_at).getTime()) / 60_000);
   }
 
+  // Отложено логистом («забрать только завтра») — пока не наступило, не считаем
+  // зависшей, даже если формально давно висит без водителя.
+  function isDeferred(d: Delivery): boolean {
+    return !!d.defer_until && new Date(d.defer_until).getTime() > now;
+  }
+
   // Почему заявка ещё не назначена — текст для менеджера (раньше просто молча висела «Новый»).
   function reasonFor(d: Delivery): string | null {
     if (d.driver_username) return null;
+    if (isDeferred(d)) return `Отложено до ${fmt(d.defer_until!)} — не подсвечиваем как зависшую`;
     if (!pickupPoint(d)) return 'Нет координат точки выдачи — рассылка водителям не сработает, назначьте вручную';
     const mins = minutesUnclaimed(d);
     if (mins >= UNCLAIMED_ALERT_MIN) return `Никто не взял уже ${mins} мин — назначьте вручную`;
     if (suggestionsFor(d).length) return null; // вместо причины покажем подсказки
     return 'Заявка разослана водителям рядом — ждём, кто возьмёт';
+  }
+
+  // Завтра в 09:00 — стандартная отсрочка по одной кнопке.
+  function tomorrow9am(): string {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    return d.toISOString();
+  }
+
+  async function setDefer(d: Delivery, until: string | null) {
+    setBusyId(d.id);
+    try {
+      const updated = await updateDelivery(d.id, { defer_until: until });
+      setItems((prev) => prev.map((x) => (x.id === d.id ? updated : x)));
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
   }
 
   async function assign(d: Delivery, driverUsername: string) {
@@ -284,7 +311,7 @@ function ShopRequestsContent() {
     return pts;
   }, [pending, shops]);
 
-  const staleCount = pending.filter((d) => !d.driver_username && minutesUnclaimed(d) >= UNCLAIMED_ALERT_MIN).length;
+  const staleCount = pending.filter((d) => !d.driver_username && !isDeferred(d) && minutesUnclaimed(d) >= UNCLAIMED_ALERT_MIN).length;
 
   return (
     <div>
@@ -399,10 +426,11 @@ function ShopRequestsContent() {
             const driverHasActiveRoute = d.driver_username ? routeByDriver.has(d.driver_username) : false;
             const suggestions = !d.driver_username ? suggestionsFor(d) : [];
             const reason = reasonFor(d);
-            const stale = !d.driver_username && minutesUnclaimed(d) >= UNCLAIMED_ALERT_MIN;
+            const deferred = isDeferred(d);
+            const stale = !d.driver_username && !deferred && minutesUnclaimed(d) >= UNCLAIMED_ALERT_MIN;
             return (
               <div key={d.id} className={`rounded-xl shadow-sm p-3 flex flex-col gap-2 ${
-                stale ? 'bg-red-50 ring-2 ring-red-300' : 'bg-white'
+                stale ? 'bg-red-50 ring-2 ring-red-300' : deferred ? 'bg-sky-50 ring-1 ring-sky-200' : 'bg-white'
               }`}>
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
@@ -411,6 +439,11 @@ function ShopRequestsContent() {
                         🏪 {d.shop_name || 'Магазин'}
                       </span>
                       <span className="truncate">🚚 {d.client_name || 'Без названия'}</span>
+                      {deferred && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 whitespace-nowrap">
+                          📅 отложено до {fmt(d.defer_until!)}
+                        </span>
+                      )}
                     </div>
                     {d.address && <div className="text-xs text-gray-500 mt-0.5">📍 {d.address}</div>}
                     {d.client_phone && (
@@ -443,6 +476,20 @@ function ShopRequestsContent() {
                       className="text-[11px] font-semibold px-2 py-1 rounded-full whitespace-nowrap bg-blue-50 text-blue-700 hover:bg-blue-100">
                       {editId === d.id ? '✕ Отмена' : '✏️ Изменить'}
                     </button>
+                    {!d.driver_username && (
+                      deferred ? (
+                        <button onClick={() => setDefer(d, null)} disabled={busyId === d.id}
+                          className="text-[11px] font-semibold px-2 py-1 rounded-full whitespace-nowrap bg-sky-50 text-sky-700 hover:bg-sky-100">
+                          ↩ Вернуть сейчас
+                        </button>
+                      ) : (
+                        <button onClick={() => setDefer(d, tomorrow9am())} disabled={busyId === d.id}
+                          title="Забрать можно завтра — не подсвечивать как зависшую заявку"
+                          className="text-[11px] font-semibold px-2 py-1 rounded-full whitespace-nowrap bg-gray-100 text-gray-600 hover:bg-gray-200">
+                          📅 На завтра
+                        </button>
+                      )
+                    )}
                   </div>
                 </div>
 
@@ -521,17 +568,28 @@ function ShopRequestsContent() {
         <>
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Завершённые ({done.length})</div>
           <div className="flex flex-col gap-2 opacity-70">
-            {done.map((d) => (
-              <div key={d.id} className="bg-white rounded-xl shadow-sm px-4 py-3 flex items-start gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold truncate">🏪 {d.shop_name} · {d.client_name}</div>
-                  {d.address && <div className="text-xs text-gray-400 mt-0.5 truncate">📍 {d.address}</div>}
+            {done.map((d) => {
+              const ev = d.history?.[d.history.length - 1];
+              const who = ev ? `${ev.by}${ev.role ? ` (${ROLE_LABEL[ev.role as keyof typeof ROLE_LABEL] || ev.role})` : ''}` : '';
+              return (
+                <div key={d.id} className="bg-white rounded-xl shadow-sm px-4 py-3 flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold truncate">🏪 {d.shop_name} · {d.client_name}</div>
+                    {d.address && <div className="text-xs text-gray-400 mt-0.5 truncate">📍 {d.address}</div>}
+                  </div>
+                  <div className="flex flex-col items-end gap-0.5 shrink-0">
+                    <span className={`text-xs font-semibold px-2 py-1 rounded-full ${statusClass(d.status)}`}>
+                      {DELIVERY_STATUS_LABEL[d.status]}
+                    </span>
+                    {ev && (
+                      <span className="text-[10px] text-gray-400 whitespace-nowrap" title="Кто и когда поставил этот статус">
+                        {who} · {fmt(ev.at)}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <span className={`text-xs font-semibold px-2 py-1 rounded-full shrink-0 ${statusClass(d.status)}`}>
-                  {DELIVERY_STATUS_LABEL[d.status]}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}

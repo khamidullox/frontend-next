@@ -63,6 +63,8 @@ export async function rebroadcastStaleOffers(): Promise<void> {
 
   const unclaimed = await listUnclaimedShopRequests();
   const stale = unclaimed.filter((d) => {
+    // Отложено логистом (забрать позже, например завтра) — не спамим водителей раньше времени.
+    if (d.defer_until && new Date(d.defer_until).getTime() > now) return false;
     const last = d.last_notified_at ? new Date(d.last_notified_at).getTime() : new Date(d.created_at).getTime();
     return now - last >= REBROADCAST_AFTER_MS;
   });

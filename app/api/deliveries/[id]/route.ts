@@ -49,7 +49,7 @@ export async function PATCH(
     if (typeof body.status !== 'string') {
       return Response.json({ error: 'Можно изменить только статус' }, { status: 400 });
     }
-    const res = await setDeliveryStatus(id, body.status as DeliveryStatus, s.name || s.username);
+    const res = await setDeliveryStatus(id, body.status as DeliveryStatus, s.name || s.username, s.role);
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
     if (res.delivery.route_id && ['on_way', 'delivered'].includes(body.status)) {
       await recomputeRouteKm(res.delivery.route_id).catch(() => {});
@@ -72,7 +72,7 @@ export async function PATCH(
     }
   }
   if (typeof body.status === 'string') {
-    const res = await setDeliveryStatus(id, body.status as DeliveryStatus, s.name || s.username);
+    const res = await setDeliveryStatus(id, body.status as DeliveryStatus, s.name || s.username, s.role);
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
     if (res.delivery.route_id && ['on_way', 'delivered'].includes(body.status)) {
       await recomputeRouteKm(res.delivery.route_id).catch(() => {});
@@ -80,7 +80,8 @@ export async function PATCH(
   }
   if (body.client_name !== undefined || body.client_phone !== undefined || body.address !== undefined ||
       body.note !== undefined || body.direction !== undefined || body.km !== undefined ||
-      body.total_weight !== undefined || body.items !== undefined || body.lat !== undefined || body.lng !== undefined) {
+      body.total_weight !== undefined || body.items !== undefined || body.lat !== undefined || body.lng !== undefined ||
+      body.defer_until !== undefined) {
     const items = Array.isArray(body.items)
       ? body.items.map((it: { code?: unknown; name?: unknown; qty?: unknown }) => ({
           code: String(it.code || ''), name: String(it.name || ''), qty: Math.max(0, Number(it.qty) || 0),
@@ -97,6 +98,7 @@ export async function PATCH(
       items,
       lat: body.lat != null ? Number(body.lat) : (body.lat === null ? null : undefined),
       lng: body.lng != null ? Number(body.lng) : (body.lng === null ? null : undefined),
+      defer_until: body.defer_until !== undefined ? (body.defer_until || null) : undefined,
     });
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
   }
