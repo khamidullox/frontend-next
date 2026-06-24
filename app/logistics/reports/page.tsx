@@ -191,6 +191,10 @@ function ReportsContent() {
       m.set(d.username, { username: d.username, name: d.name, car: d.car_number || '', transport: d.transport || '', trips: new Set(), stops: new Set(), km: 0, points: 0 });
     }
     for (const d of periodDeliveries) {
+      // Возврат — клиент не принял товар, реальной доставки не было: не считаем в км/точки/
+      // выезды и, соответственно, в КПИ. Сама заявка всё равно видна в списке выезда ниже
+      // (statusClass/DELIVERY_STATUS_LABEL покажут «Возврат») — просто не оплачивается.
+      if (d.status === 'returned') continue;
       const key = d.driver_username || d.driver_name || '—';
       const cur = m.get(key) || { username: key, name: d.driver_name || key, car: d.car_number || '', transport: d.transport || '', trips: new Set<string>(), stops: new Set<string>(), km: 0, points: 0 };
       cur.km += d.km || 0;
