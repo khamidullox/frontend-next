@@ -1,28 +1,31 @@
 import { NextRequest } from 'next/server';
 import { getSession, ROLE_RANK } from '@/lib/auth';
-import { createDelivery, listShopRequests, listShopRequestsForShop, assignDriver, getDeliveriesByIds, resolveDestPoint, Delivery } from '@/lib/deliveries';
-import { getShop, listShops, Shop } from '@/lib/shops';
-import { listRoutes, addDeliveriesToRoute, Route } from '@/lib/routes';
-import { notifyDriverAssigned, sendPushToUser } from '@/lib/push';
+import { createDelivery, listShopRequests, listShopRequestsForShop, Delivery } from '@/lib/deliveries';
+import { getShop, Shop } from '@/lib/shops';
+import { sendPushToUser } from '@/lib/push';
 import { haversineKm } from '@/lib/geo';
 import { getCachedGpsLocations } from '@/lib/gps';
 import { listDrivers } from '@/lib/users';
-import { getLogisticsSettings, defaultCapacity } from '@/lib/settings';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Водитель «по пути» считается подходящим, если его маршрут проходит не дальше
-// этого расстояния от точки выдачи (магазина) — он заберёт товар по дороге.
-const NEARBY_KM = 10;
 // Радиус рассылки заказа свободным водителям по их текущей позиции GPS.
 const OFFER_RADIUS_KM = 6;
 
-// Если авто-назначение никого не нашло — рассылаем заказ водителям, чья текущая
-// позиция GPS не дальше OFFER_RADIUS_KM от точки выдачи. Первый, кто нажмёт «Взять»
-// на своей странице, заберёт заказ (см. /api/logistics/shop-requests/claim).
-async function broadcastOfferToNearbyDrivers(delivery: Delivery, pickup: [number, number] | null) {
+// Авто-назначения для заявок магазина сейчас нет вообще — только уведомление. Заявка
+// всегда остаётся новой/без водителя; рядом стоящим водителям (≤ OFFER_RADIUS_KM от
+// точки выдачи по их текущему GPS) приходит push, и первый, кто нажмёт «Взять» на своей
+// странице, забирает её (см. /api/logistics/shop-requests/claim). Если точки на карте
+// нет — рассылать некому, заявка просто ждёт ручного назначения логистом (см. highlight
+// «никто не взял» в админке — app/logistics/shop-requests/page.tsx).
+async function notifyNearbyDrivers(delivery: Delivery, shop: Shop): Promise<void> {
+  const pickup: [number, number] | null =
+    shop.lat != null && shop.lng != null ? [shop.lat, shop.lng]
+    : delivery.lat != null && delivery.lng != null ? [delivery.lat, delivery.lng]
+    : null;
   if (!pickup) return;
+
   const [gps, drivers] = await Promise.all([getCachedGpsLocations(), listDrivers()]);
   const label = delivery.shop_name
     ? `Забрать в «${delivery.shop_name}» → ${delivery.client_name || delivery.address || 'клиент'}`
@@ -43,94 +46,6 @@ async function broadcastOfferToNearbyDrivers(delivery: Delivery, pickup: [number
       url: '/logistics/my',
     }).catch(() => {});
   }
-}
-
-// Подбор водителя «по пути» для заявки магазина, по приоритету:
-//   1) у кого в активном маршруте уже есть остановка ровно в этом магазине (точное
-//      совпадение по shop_id — не нужны координаты, это не догадка, а тот же магазин);
-//   2) чей маршрут проходит ближе всего к точке выдачи (≤ NEARBY_KM) — нужны координаты
-//      магазина/заявки на карте.
-// Раньше был и третий, грубый фолбэк — «у кого остановка в том же направлении» (просто
-// по строке direction, без координат). Убрали: для заявок без отметки на карте это была
-// угадайка, которая могла закинуть заказ совсем не туда. Теперь без координат и без
-// точного совпадения по магазину — заявка ВСЕГДА остаётся новой и идёт в рассылку (см.
-// broadcastOfferToNearbyDrivers), а не достаётся «на угад» первому попавшемуся маршруту.
-// Каждый кандидат проверяется на вместимость (не больше 110% от capacity_kg/m3 машины) —
-// иначе все заявки из одного района валились на первого же водителя «в заходе», даже
-// если он уже полностью загружен, пока остальные машины стоят без дела.
-async function autoAssignOnTheWay(delivery: Delivery, shop: Shop): Promise<Delivery> {
-  const [routes, shops, drivers, settings] = await Promise.all([
-    listRoutes(), listShops(), listDrivers(), getLogisticsSettings(),
-  ]);
-  const activeRoutes = routes.filter((r) => r.status === 'active' && r.delivery_ids?.length);
-  if (!activeRoutes.length) return delivery;
-
-  // Точка выдачи (где водитель забирает товар) — координаты магазина-источника.
-  const pickup: [number, number] | null =
-    shop.lat != null && shop.lng != null ? [shop.lat, shop.lng]
-    : delivery.lat != null && delivery.lng != null ? [delivery.lat, delivery.lng]
-    : null;
-
-  let exactRoute: Route | null = null;
-  let nearestRoute: Route | null = null;
-  let nearestKm = Infinity;
-  const routeLoad = new Map<string, { weight: number; vol_l: number }>();
-
-  for (const route of activeRoutes) {
-    const ds = await getDeliveriesByIds(route.delivery_ids);
-    const load = { weight: 0, vol_l: 0 };
-    for (const d of ds) {
-      if (d.status === 'delivered' || d.status === 'returned') continue;
-      load.weight += d.total_weight || 0;
-      load.vol_l += d.total_volume_l || 0;
-    }
-    routeLoad.set(route.id, load);
-    if (!exactRoute && ds.some((d) => d.shop_id === shop.id)) exactRoute = route;
-    if (pickup) {
-      for (const d of ds) {
-        const p = resolveDestPoint(d, shops);
-        if (!p) continue;
-        const km = haversineKm(pickup[0], pickup[1], p[0], p[1]);
-        if (km < nearestKm) { nearestKm = km; nearestRoute = route; }
-      }
-    }
-  }
-
-  // Хватает ли месту в машине этого маршрута ещё на одну доставку (с запасом 10%).
-  function fitsCapacity(route: Route): boolean {
-    const driver = drivers.find((dr) => dr.username === route.driver_username);
-    const cap = driver
-      ? (driver.capacity_kg > 0 || driver.capacity_m3 > 0
-        ? { kg: driver.capacity_kg, m3: driver.capacity_m3 }
-        : defaultCapacity(driver.transport, settings))
-      : { kg: 0, m3: 0 };
-    const load = routeLoad.get(route.id) || { weight: 0, vol_l: 0 };
-    const dw = delivery.total_weight || 0;
-    const dv = delivery.total_volume_l || 0;
-    if (cap.kg > 0 && load.weight + dw > cap.kg * 1.1) return false;
-    if (cap.m3 > 0 && load.vol_l + dv > cap.m3 * 1000 * 1.1) return false;
-    return true;
-  }
-
-  const candidates = [
-    exactRoute,
-    nearestKm <= NEARBY_KM ? nearestRoute : null,
-  ].filter((r): r is Route => !!r);
-  const match = candidates.find(fitsCapacity) || null;
-  if (!match) {
-    // Никто не «по пути» (или все уже полные) — рассылаем заказ свободным водителям рядом.
-    await broadcastOfferToNearbyDrivers(delivery, pickup).catch(() => {});
-    return delivery;
-  }
-
-  const assigned = await assignDriver(delivery.id, match.driver_username);
-  if ('error' in assigned) return delivery;
-  await addDeliveriesToRoute(match.id, [delivery.id]).catch(() => {});
-  notifyDriverAssigned(
-    match.driver_username,
-    assigned.delivery.client_name || assigned.delivery.address || 'новая доставка'
-  ).catch(() => {});
-  return assigned.delivery;
 }
 
 // Раздел 2: заявки магазинов на доставку «магазин → клиент».
@@ -198,6 +113,6 @@ export async function POST(request: NextRequest) {
     created_by: s.name || s.username,
   });
   if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
-  const finalDelivery = await autoAssignOnTheWay(res.delivery, shop).catch(() => res.delivery);
-  return Response.json({ data: finalDelivery });
+  await notifyNearbyDrivers(res.delivery, shop).catch(() => {});
+  return Response.json({ data: res.delivery });
 }

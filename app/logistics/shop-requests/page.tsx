@@ -13,9 +13,13 @@ import LocationPicker from '@/components/LocationPicker';
 import MiniMap, { MapPoint } from '@/components/MiniMap';
 import ProductPicker from '@/components/ProductPicker';
 import { fmtDateTime as fmt } from '@/lib/format';
+import { useLivePoll } from '@/lib/useLivePoll';
 
 // Водитель «по пути», если маршрут проходит не дальше этого от точки выдачи.
 const NEARBY_KM = 10;
+// Авто-назначения для заявок магазина нет — только рассылка водителям рядом (см. API).
+// Если за это время никто не взял заказ — подсвечиваем его логисту, чтобы не пропустил.
+const UNCLAIMED_ALERT_MIN = 15;
 
 function statusClass(s: DeliveryStatus): string {
   switch (s) {
@@ -92,6 +96,15 @@ function ShopRequestsContent() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useLivePoll(load, 30_000);
+
+  // Тикает раз в минуту, чтобы «никто не взял уже N мин» обновлялось само, пока
+  // страница открыта (без этого подсветка появлялась бы только послеload()).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   async function createForShop(e: React.FormEvent) {
     e.preventDefault();
@@ -162,13 +175,20 @@ function ShopRequestsContent() {
     return out.sort((a, b) => a.km - b.km).slice(0, 3);
   }
 
+  // Сколько минут заявка висит без водителя (авто-назначения нет — только рассылка
+  // GPS-водителям рядом, см. API). Используется и для текста причины, и для подсветки.
+  function minutesUnclaimed(d: Delivery): number {
+    return Math.floor((now - new Date(d.created_at).getTime()) / 60_000);
+  }
+
   // Почему заявка ещё не назначена — текст для менеджера (раньше просто молча висела «Новый»).
   function reasonFor(d: Delivery): string | null {
     if (d.driver_username) return null;
-    if (activeRoutes.length === 0) return 'Сейчас нет машин в пути — назначьте вручную или дождитесь выезда';
-    if (!pickupPoint(d)) return 'Нет координат точки выдачи — укажите точку магазина в справочнике';
+    if (!pickupPoint(d)) return 'Нет координат точки выдачи — рассылка водителям не сработает, назначьте вручную';
+    const mins = minutesUnclaimed(d);
+    if (mins >= UNCLAIMED_ALERT_MIN) return `Никто не взял уже ${mins} мин — назначьте вручную`;
     if (suggestionsFor(d).length) return null; // вместо причины покажем подсказки
-    return 'Нет маршрутов рядом — ни одна машина в пути не проходит близко к точке выдачи';
+    return 'Заявка разослана водителям рядом — ждём, кто возьмёт';
   }
 
   async function assign(d: Delivery, driverUsername: string) {
@@ -264,11 +284,18 @@ function ShopRequestsContent() {
     return pts;
   }, [pending, shops]);
 
+  const staleCount = pending.filter((d) => !d.driver_username && minutesUnclaimed(d) >= UNCLAIMED_ALERT_MIN).length;
+
   return (
     <div>
       <LogisticsTabs />
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <h2 className="text-xl font-bold">🏪 Заявки магазинов <span className="text-sm text-gray-400 font-normal">({pending.length})</span></h2>
+        {staleCount > 0 && (
+          <span className="text-xs font-bold px-2 py-1 rounded-full bg-red-100 text-red-700 animate-pulse">
+            ⚠️ {staleCount} никто не взял
+          </span>
+        )}
         <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer ml-2">
           <input type="checkbox" checked={onlyPicked} onChange={(e) => setOnlyPicked(e.target.checked)} />
           Только собранные
@@ -372,8 +399,11 @@ function ShopRequestsContent() {
             const driverHasActiveRoute = d.driver_username ? routeByDriver.has(d.driver_username) : false;
             const suggestions = !d.driver_username ? suggestionsFor(d) : [];
             const reason = reasonFor(d);
+            const stale = !d.driver_username && minutesUnclaimed(d) >= UNCLAIMED_ALERT_MIN;
             return (
-              <div key={d.id} className="bg-white rounded-xl shadow-sm p-3 flex flex-col gap-2">
+              <div key={d.id} className={`rounded-xl shadow-sm p-3 flex flex-col gap-2 ${
+                stale ? 'bg-red-50 ring-2 ring-red-300' : 'bg-white'
+              }`}>
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-sm flex items-center gap-2 flex-wrap">
@@ -477,7 +507,9 @@ function ShopRequestsContent() {
                   </div>
                 )}
                 {reason && (
-                  <div className="text-[11px] text-amber-600 bg-amber-50 rounded-lg px-2 py-1">⚠️ {reason}</div>
+                  <div className={`text-[11px] rounded-lg px-2 py-1 font-semibold ${
+                    stale ? 'text-red-700 bg-red-100' : 'text-amber-600 bg-amber-50'
+                  }`}>⚠️ {reason}</div>
                 )}
               </div>
             );
