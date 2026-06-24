@@ -697,6 +697,12 @@ const DEFAULT_LOGISTICS_SETTINGS: LogisticsSettings = {
 export async function fetchLogisticsSettings(): Promise<LogisticsSettings> {
   const res = await fetch('/api/logistics/settings', { cache: 'no-store' });
   const data = await res.json().catch(() => ({}));
+  // Раньше при сбое запроса (401/403/сеть) тихо подставляли захардкоженные дефолты —
+  // выглядело так, будто только что сохранённое значение «само сбросилось» при
+  // следующем заходе на страницу, хотя в Firestore оно было сохранено верно.
+  if (!res.ok) {
+    throw new Error((data as { error?: string }).error || `Не удалось загрузить настройки логистики (${res.status})`);
+  }
   const d = data.data as Partial<LogisticsSettings> | undefined;
   return {
     cap_by_type: d?.cap_by_type && Object.keys(d.cap_by_type).length ? d.cap_by_type : DEFAULT_LOGISTICS_SETTINGS.cap_by_type,

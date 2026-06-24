@@ -152,11 +152,19 @@ function LogisticsContent() {
     listRoutes().then((r) => setActiveRoutes(r.filter((x) => x.status === 'active'))).catch(() => {});
   }, []);
   const [capSettingsLoaded, setCapSettingsLoaded] = useState(false);
-  useEffect(() => {
-    fetchLogisticsSettings().then((s: LogisticsSettings) => {
-      setCapSettings(s);
-    }).catch(() => {}).finally(() => setCapSettingsLoaded(true));
+  const [capSettingsError, setCapSettingsError] = useState('');
+  const loadCapSettings = useCallback(() => {
+    setCapSettingsError('');
+    fetchLogisticsSettings()
+      .then((s: LogisticsSettings) => {
+        setCapSettings(s);
+        setCapSettingsLoaded(true);
+      })
+      // Не помечаем «загружено» при сбое — иначе показали бы дефолты (300кг/2м³ и т.п.)
+      // как настоящие сохранённые значения, и правка от них могла бы затереть реальные.
+      .catch((e) => setCapSettingsError((e as Error).message));
   }, []);
+  useEffect(() => { loadCapSettings(); }, [loadCapSettings]);
 
   // Список видов транспорта берётся из реальных значений поля «Транспорт» у водителей.
   const vehicleTypes = useMemo(() => {
@@ -427,16 +435,25 @@ function LogisticsContent() {
             <option key={t} value={t}>{t}</option>
           ))}
         </select>
-        <div key={`${effectiveCapType}-${capSettingsLoaded}`} className="flex items-center gap-1.5">
-          <input ref={capKgRef} type="number" min={0} step={1} defaultValue={currentCap.kg}
-            onBlur={(e) => saveCapType(e.target.value, capM3Ref.current?.value ?? String(currentCap.m3))}
-            className="w-20 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
-          <span className="text-[11px] text-gray-400">кг</span>
-          <input ref={capM3Ref} type="number" min={0} step={0.1} defaultValue={currentCap.m3}
-            onBlur={(e) => saveCapType(capKgRef.current?.value ?? String(currentCap.kg), e.target.value)}
-            className="w-16 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
-          <span className="text-[11px] text-gray-400">м³</span>
-        </div>
+        {capSettingsError ? (
+          <span className="text-xs text-red-600 flex items-center gap-2">
+            ⚠️ {capSettingsError}
+            <button onClick={loadCapSettings} className="underline">Повторить</button>
+          </span>
+        ) : !capSettingsLoaded ? (
+          <span className="text-xs text-gray-400">Загрузка…</span>
+        ) : (
+          <div key={effectiveCapType} className="flex items-center gap-1.5">
+            <input ref={capKgRef} type="number" min={0} step={1} defaultValue={currentCap.kg}
+              onBlur={(e) => saveCapType(e.target.value, capM3Ref.current?.value ?? String(currentCap.m3))}
+              className="w-20 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
+            <span className="text-[11px] text-gray-400">кг</span>
+            <input ref={capM3Ref} type="number" min={0} step={0.1} defaultValue={currentCap.m3}
+              onBlur={(e) => saveCapType(capKgRef.current?.value ?? String(currentCap.kg), e.target.value)}
+              className="w-16 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
+            <span className="text-[11px] text-gray-400">м³</span>
+          </div>
+        )}
         <span className="text-[11px] text-gray-400 basis-full">
           Точные модели — из поля «Транспорт» у водителей; для конкретной модели можно задать свою вместимость.
           Если для модели своя вместимость не задана — берётся вместимость её семейства (LABO/Газель), иначе «Прочие».
