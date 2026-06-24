@@ -96,8 +96,7 @@ function ShopsContent() {
 
   // Точки назначения накладных база → клиент (warehouse_dispatch), у которых нет
   // соответствия в справочнике (ни по shop_id, ни по нормализованному названию) —
-  // получатель в этих накладных, по сути, «клиент», но в этом справочнике для него
-  // нет отдельной категории, поэтому предлагаем добавить как обычную точку (🏪).
+  // предлагаем добавить как точку типа «клиент» (👤, см. fillFromUnlinked).
   const [unlinked, setUnlinked] = useState<{ name: string; count: number }[]>([]);
 
   useEffect(() => {
@@ -148,7 +147,7 @@ function ShopsContent() {
 
   function fillFromUnlinked(destName: string) {
     setName(destName);
-    setType('shop');
+    setType('client');
     nameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
@@ -403,6 +402,7 @@ function ShopsContent() {
           <select value={type} onChange={e => setType(e.target.value as ShopType)}
             className="sm:w-36 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
             <option value="shop">🏪 Магазин</option>
+            <option value="client">👤 Клиент (магазин)</option>
             <option value="warehouse">🏭 Склад (база)</option>
           </select>
           <input value={direction} onChange={e => { setDirection(e.target.value); setAutoInfo(null); }}
@@ -449,7 +449,7 @@ function ShopsContent() {
         <div className="flex flex-col gap-1.5">
           {items.map(s => (
             <div key={s.id} className="bg-white rounded-lg shadow-sm px-3 py-2.5 flex items-center gap-3">
-              <span className="text-xl shrink-0">{s.type === 'warehouse' ? '🏭' : '🏪'}</span>
+              <span className="text-xl shrink-0">{s.type === 'warehouse' ? '🏭' : s.type === 'client' ? '👤' : '🏪'}</span>
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-sm truncate">{s.name}</div>
                 <div className="text-[11px] text-gray-400 truncate">
@@ -501,7 +501,7 @@ function EditShopModal({
   const [phone, setPhone] = useState(shop.phone || '');
   const [lat, setLat] = useState(shop.lat != null ? String(shop.lat) : '');
   const [lng, setLng] = useState(shop.lng != null ? String(shop.lng) : '');
-  const [type, setType] = useState<ShopType>(shop.type === 'warehouse' ? 'warehouse' : 'shop');
+  const [type, setType] = useState<ShopType>(shop.type === 'warehouse' || shop.type === 'client' ? shop.type : 'shop');
   const [detecting, setDetecting] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -546,6 +546,7 @@ function EditShopModal({
             <select value={type} onChange={e => setType(e.target.value as ShopType)}
               className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
               <option value="shop">🏪 Магазин</option>
+              <option value="client">👤 Клиент (магазин)</option>
               <option value="warehouse">🏭 Склад (база)</option>
             </select>
             <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Телефон"

@@ -116,13 +116,6 @@ function ReportsContent() {
     await saveLogisticsSettings({ rate_by_type: next }).catch(() => {});
   }
 
-  async function saveFuel(val: string) {
-    if (!settings) return;
-    const n = Math.max(0, Number(val) || 0);
-    setSettings((prev) => (prev ? { ...prev, fuel_rate_per_km: n } : prev));
-    await saveLogisticsSettings({ fuel_rate_per_km: n }).catch(() => {});
-  }
-
   const currentPointRate = settings?.point_rate_by_type[effectiveRateType] ?? 0;
   async function savePointRate(val: string) {
     if (!settings) return;
@@ -130,6 +123,15 @@ function ReportsContent() {
     const next = { ...settings.point_rate_by_type, [effectiveRateType]: n };
     setSettings((prev) => (prev ? { ...prev, point_rate_by_type: next } : prev));
     await saveLogisticsSettings({ point_rate_by_type: next }).catch(() => {});
+  }
+
+  const currentFuelRate = settings?.fuel_rate_by_type[effectiveRateType] ?? 0;
+  async function saveFuelRate(val: string) {
+    if (!settings) return;
+    const n = Math.max(0, Number(val) || 0);
+    const next = { ...settings.fuel_rate_by_type, [effectiveRateType]: n };
+    setSettings((prev) => (prev ? { ...prev, fuel_rate_by_type: next } : prev));
+    await saveLogisticsSettings({ fuel_rate_by_type: next }).catch(() => {});
   }
 
   function applyQuick(q: typeof quick) {
@@ -172,15 +174,16 @@ function ReportsContent() {
     }
     const rates = settings?.rate_by_type ?? {};
     const pointRates = settings?.point_rate_by_type ?? {};
-    const fuelRate = settings?.fuel_rate_per_km ?? 0;
+    const fuelRates = settings?.fuel_rate_by_type ?? {};
     return [...m.values()]
       .map(d => ({
         username: d.username, name: d.name, car: d.car, km: d.km, points: d.points, trips: d.trips.size,
         stops: d.stops.size,
         kpi: Math.round(d.km * rateForType(d.transport, rates)),
         pointKpi: Math.round(d.stops.size * rateForType(d.transport, pointRates)),
-        // Топливо — по фактически пройденному пути (туда-обратно), отсюда ×2.
-        fuel: Math.round(d.km * 2 * fuelRate),
+        // Топливо — по фактически пройденному пути (туда-обратно), отсюда ×2, ставка своя
+        // для каждого вида транспорта (расход у LABO и Газели разный).
+        fuel: Math.round(d.km * 2 * rateForType(d.transport, fuelRates)),
       }))
       .sort((a, b) => b.points - a.points || b.km - a.km || a.name.localeCompare(b.name, 'ru'));
   }, [drivers, periodDeliveries, settings]);
@@ -265,12 +268,13 @@ function ReportsContent() {
           <span className="text-[11px] text-gray-400">сум/точку</span>
           <span className="w-px h-6 bg-gray-200 mx-1" />
           <span className="text-xs text-gray-500 whitespace-nowrap">⛽ Топливо (сум/км):</span>
-          <input type="number" min={0} step={100} defaultValue={settings.fuel_rate_per_km}
-            onBlur={(e) => saveFuel(e.target.value)}
+          <input key={`fuel-${effectiveRateType}`} type="number" min={0} step={100} defaultValue={currentFuelRate}
+            onBlur={(e) => saveFuelRate(e.target.value)}
             className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-right outline-none focus:border-blue-400" />
           <span className="text-[11px] text-gray-400 basis-full">
             КПИ — пройденный км (в одну сторону) × ставка транспорта. За точку — число точек доставки (магазин за выезд,
-            независимо от числа накладных/складов) × ставка. Топливо — по факту туда-обратно (км × 2 × ставка).
+            независимо от числа накладных/складов) × ставка. Топливо — по факту туда-обратно (км × 2 × ставка), своя
+            ставка для каждого вида транспорта — выберите его в списке выше.
           </span>
         </div>
       )}

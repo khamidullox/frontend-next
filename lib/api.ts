@@ -670,7 +670,6 @@ export async function autoAssign(): Promise<{ assigned: number; skipped: number 
 export const CAP_DEFAULT_KEY = '__default__';
 
 export interface LogisticsSettings {
-  fuel_rate_per_km: number;
   // Вместимость по умолчанию по виду транспорта — ключ — точное значение поля
   // «Транспорт» у водителя; CAP_DEFAULT_KEY — для видов без своей настройки.
   cap_by_type: Record<string, { kg: number; m3: number }>;
@@ -678,10 +677,11 @@ export interface LogisticsSettings {
   rate_by_type: Record<string, number>;
   // КПИ за точку доставки (сумма за заезд в магазин) по виду транспорта.
   point_rate_by_type: Record<string, number>;
+  // Стоимость топлива (сум/км, в одну сторону) по виду транспорта — тот же принцип ключей.
+  fuel_rate_by_type: Record<string, number>;
 }
 
 const DEFAULT_LOGISTICS_SETTINGS: LogisticsSettings = {
-  fuel_rate_per_km: 0,
   cap_by_type: {
     LABO: { kg: 600, m3: 3 },
     'Газель': { kg: 1500, m3: 9 },
@@ -689,6 +689,7 @@ const DEFAULT_LOGISTICS_SETTINGS: LogisticsSettings = {
   },
   rate_by_type: {},
   point_rate_by_type: {},
+  fuel_rate_by_type: {},
 };
 
 export async function fetchLogisticsSettings(): Promise<LogisticsSettings> {
@@ -696,10 +697,10 @@ export async function fetchLogisticsSettings(): Promise<LogisticsSettings> {
   const data = await res.json().catch(() => ({}));
   const d = data.data as Partial<LogisticsSettings> | undefined;
   return {
-    fuel_rate_per_km: d?.fuel_rate_per_km ?? DEFAULT_LOGISTICS_SETTINGS.fuel_rate_per_km,
     cap_by_type: d?.cap_by_type && Object.keys(d.cap_by_type).length ? d.cap_by_type : DEFAULT_LOGISTICS_SETTINGS.cap_by_type,
     rate_by_type: d?.rate_by_type ?? DEFAULT_LOGISTICS_SETTINGS.rate_by_type,
     point_rate_by_type: d?.point_rate_by_type ?? DEFAULT_LOGISTICS_SETTINGS.point_rate_by_type,
+    fuel_rate_by_type: d?.fuel_rate_by_type ?? DEFAULT_LOGISTICS_SETTINGS.fuel_rate_by_type,
   };
 }
 
@@ -751,7 +752,7 @@ export const DIRECTIONS = ['Север', 'Юг', 'Восток', 'Запад', '
 // direction теперь произвольная строка (город/зона), а не только сторона света.
 export type Direction = string;
 
-export type ShopType = 'warehouse' | 'shop';
+export type ShopType = 'warehouse' | 'shop' | 'client';
 
 export interface Shop {
   id: string;

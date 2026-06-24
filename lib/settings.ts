@@ -3,7 +3,6 @@ import { getDb } from './firebase';
 export const CAP_DEFAULT_KEY = '__default__';
 
 export interface LogisticsSettings {
-  fuel_rate_per_km: number; // стоимость 1 км (в сумах, round-trip × 2 в UI)
   // Вместимость по умолчанию по виду транспорта (когда у водителя своя не задана).
   // Ключ — точное значение поля «Транспорт» у водителя; CAP_DEFAULT_KEY — для
   // видов транспорта без своей настройки («Прочие»).
@@ -14,10 +13,12 @@ export interface LogisticsSettings {
   // КПИ за точку доставки (сумма за один заезд в магазин, независимо от числа
   // накладных/складов) по виду транспорта. Тот же принцип ключей.
   point_rate_by_type: Record<string, number>;
+  // Стоимость топлива (сум/км, в одну сторону — ×2 при подсчёте туда-обратно) по виду
+  // транспорта, тот же принцип ключей — у LABO свой расход, у Газели свой и т.д.
+  fuel_rate_by_type: Record<string, number>;
 }
 
 const DEFAULTS: LogisticsSettings = {
-  fuel_rate_per_km: 0,
   cap_by_type: {
     LABO: { kg: 600, m3: 3 },
     'Газель': { kg: 1500, m3: 9 },
@@ -25,17 +26,23 @@ const DEFAULTS: LogisticsSettings = {
   },
   rate_by_type: {},
   point_rate_by_type: {},
+  fuel_rate_by_type: {},
 };
 
 export async function getLogisticsSettings(): Promise<LogisticsSettings> {
   const snap = await getDb().collection('settings').doc('logistics').get();
   if (!snap.exists) return { ...DEFAULTS, cap_by_type: { ...DEFAULTS.cap_by_type } };
-  const data = snap.data() as Partial<LogisticsSettings>;
+  const data = snap.data() as Partial<LogisticsSettings> & { fuel_rate_per_km?: number };
+  // Старое единое fuel_rate_per_km (до перехода на ставку по виду транспорта) —
+  // переносим в «Прочие», чтобы у тех, кто уже настроил топливо, цифра не пропала.
+  const fuelByType = data.fuel_rate_by_type && Object.keys(data.fuel_rate_by_type).length
+    ? data.fuel_rate_by_type
+    : (data.fuel_rate_per_km ? { [CAP_DEFAULT_KEY]: data.fuel_rate_per_km } : DEFAULTS.fuel_rate_by_type);
   return {
-    fuel_rate_per_km: data.fuel_rate_per_km ?? DEFAULTS.fuel_rate_per_km,
     cap_by_type: data.cap_by_type && Object.keys(data.cap_by_type).length ? data.cap_by_type : { ...DEFAULTS.cap_by_type },
     rate_by_type: data.rate_by_type ?? DEFAULTS.rate_by_type,
     point_rate_by_type: data.point_rate_by_type ?? DEFAULTS.point_rate_by_type,
+    fuel_rate_by_type: fuelByType,
   };
 }
 

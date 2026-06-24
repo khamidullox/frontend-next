@@ -47,7 +47,6 @@ function vehicleCategory(transport: string | null | undefined): string {
 }
 
 const DEFAULT_CAP_SETTINGS: LogisticsSettings = {
-  fuel_rate_per_km: 0,
   cap_by_type: {
     LABO: { kg: 600, m3: 3 },
     'Газель': { kg: 1500, m3: 9 },
@@ -55,6 +54,7 @@ const DEFAULT_CAP_SETTINGS: LogisticsSettings = {
   },
   rate_by_type: {},
   point_rate_by_type: {},
+  fuel_rate_by_type: {},
 };
 
 export default function LogisticsPage() {
@@ -469,7 +469,7 @@ function LogisticsContent() {
                   ).length;
                   return (
                     <div key={shop.id} className="flex items-center gap-2 py-1">
-                      <span className="text-lg shrink-0">{shop.type === 'warehouse' ? '🏭' : '🏪'}</span>
+                      <span className="text-lg shrink-0">{shop.type === 'warehouse' ? '🏭' : shop.type === 'client' ? '👤' : '🏪'}</span>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium truncate">{shop.name}</div>
                         <div className="text-xs text-gray-400 truncate">

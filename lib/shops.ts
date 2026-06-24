@@ -8,7 +8,8 @@ export const DIRECTIONS = ['Север', 'Юг', 'Восток', 'Запад', '
 // direction теперь хранит произвольную строку (город/зона), а не только сторону света.
 export type Direction = string;
 
-export type ShopType = 'warehouse' | 'shop';
+export type ShopType = 'warehouse' | 'shop' | 'client';
+const SHOP_TYPES: ShopType[] = ['warehouse', 'shop', 'client'];
 
 export interface Shop {
   id: string;
@@ -19,12 +20,18 @@ export interface Shop {
   phone: string;
   lat?: number;      // широта (десятичные градусы)
   lng?: number;      // долгота
-  type?: ShopType;   // warehouse = база/склад, shop = магазин
+  // warehouse = база/склад, shop = магазин, client = конечный клиент при прямой
+  // доставке база → клиент (та же категория точек, просто другая подпись/иконка).
+  type?: ShopType;
   created_at: string;
 }
 
 function str(v: unknown): string {
   return String(v ?? '').trim();
+}
+
+function normShopType(v: unknown): ShopType {
+  return SHOP_TYPES.includes(v as ShopType) ? (v as ShopType) : 'shop';
 }
 
 function normDirection(v: unknown): Direction {
@@ -68,7 +75,7 @@ export async function createShop(input: ShopInput): Promise<{ shop: Shop } | { e
     phone: str(input.phone),
     lat: input.lat !== undefined ? Number(input.lat) || undefined : undefined,
     lng: input.lng !== undefined ? Number(input.lng) || undefined : undefined,
-    type: input.type === 'warehouse' ? 'warehouse' : 'shop',
+    type: normShopType(input.type),
     created_at: new Date().toISOString(),
   };
   await getDb().collection(COLLECTION).doc(shop.id).set(shop);
@@ -87,7 +94,7 @@ export async function updateShop(id: string, input: ShopInput): Promise<{ shop: 
   if (input.phone !== undefined) shop.phone = str(input.phone);
   if (input.lat !== undefined) shop.lat = Number(input.lat) || undefined;
   if (input.lng !== undefined) shop.lng = Number(input.lng) || undefined;
-  if (input.type !== undefined) shop.type = input.type === 'warehouse' ? 'warehouse' : 'shop';
+  if (input.type !== undefined) shop.type = normShopType(input.type);
   await ref.set(shop);
   return { shop };
 }
