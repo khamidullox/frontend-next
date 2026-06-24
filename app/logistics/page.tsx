@@ -205,15 +205,17 @@ function LogisticsContent() {
     });
     setCapSaveStatus('Сохраняю…');
     try {
-      await saveLogisticsSettings({ cap_by_type: next });
-      const fresh = await fetchLogisticsSettings();
-      const got = fresh.cap_by_type[type];
+      // saveLogisticsSettings возвращает то, что сервер перечитал из Firestore СРАЗУ
+      // после записи (в том же запросе) — без отдельного GET, чтобы не оставалось
+      // сомнений в таймингах при сравнении.
+      const saved = await saveLogisticsSettings({ cap_by_type: next });
+      const got = saved.cap_by_type[type];
       if (got?.kg === kg && got?.m3 === m3) {
         setCapSaveStatus(`✓ Сохранено (проверено) ${new Date().toLocaleTimeString('ru-RU')}`);
       } else {
         setCapSaveStatus(`⚠️ После сохранения сервер вернул другое значение: ${got?.kg ?? '—'} кг / ${got?.m3 ?? '—'} м³`);
       }
-      setCapSettings(fresh);
+      setCapSettings(saved);
     } catch (e) {
       setCapSaveStatus(`⚠️ Ошибка сохранения: ${(e as Error).message}`);
     }

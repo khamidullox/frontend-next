@@ -42,6 +42,9 @@ export async function PATCH(request: NextRequest) {
     const fuelRateClean = cleanRateMap(body.fuel_rate_by_type);
     if (fuelRateClean) patch.fuel_rate_by_type = fuelRateClean;
     if (Object.keys(patch).length) await setLogisticsSettings(patch);
-    return Response.json({ ok: true });
+    // Перечитываем сразу здесь же (на сервере, без отдельного round-trip от клиента) —
+    // чтобы исключить любую неоднозначность с таймингом при диагностике «не сохраняется».
+    const saved = await getLogisticsSettings();
+    return Response.json({ ok: true, saved });
   });
 }

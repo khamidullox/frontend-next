@@ -712,15 +712,18 @@ export async function fetchLogisticsSettings(): Promise<LogisticsSettings> {
   };
 }
 
-export async function saveLogisticsSettings(s: Partial<LogisticsSettings>): Promise<void> {
+// Возвращает то, что реально сохранилось (сервер перечитывает сразу после записи) —
+// чтобы проверка после сохранения сравнивала с тем же запросом, а не отдельным.
+export async function saveLogisticsSettings(s: Partial<LogisticsSettings>): Promise<LogisticsSettings> {
   const res = await fetch('/api/logistics/settings', {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(s),
   });
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
     throw new Error((data as { error?: string }).error || `Ошибка сохранения настроек (${res.status})`);
   }
+  return data.saved as LogisticsSettings;
 }
 
 // Семейство транспорта по подстроке в названии (любая модель LABO/Газели — независимо
