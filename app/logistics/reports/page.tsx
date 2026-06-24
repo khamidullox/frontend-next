@@ -84,12 +84,18 @@ function ReportsContent() {
 
   // КПИ — ставка за км по виду транспорта (редактируется прямо в отчёте).
   const [settings, setSettings] = useState<LogisticsSettings | null>(null);
+  // Синхронный «снимок» settings — функции сохранения ниже читают/пишут его напрямую,
+  // не через обновитель setSettings(prev => ...). Раньше next вычислялся ВНУТРИ такого
+  // обновителя и читался сразу следующей строкой — но React не гарантирует, что
+  // обновитель выполнится до неё, и на практике next иногда уходил на сервер пустым
+  // объектом (реальная причина, по которой КПИ/ставки не сохранялись).
+  const settingsRef = useRef<LogisticsSettings | null>(null);
   const [rateType, setRateType] = useState<string>(CAP_DEFAULT_KEY);
   const rateInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     Promise.all([listRoutes(), listDrivers(), listDeliveries(), fetchLogisticsSettings()])
-      .then(([r, d, dl, s]) => { setRoutes(r); setDrivers(d); setDeliveries(dl); setSettings(s); })
+      .then(([r, d, dl, s]) => { setRoutes(r); setDrivers(d); setDeliveries(dl); setSettings(s); settingsRef.current = s; })
       .catch(e => setError((e as Error).message))
       .finally(() => setLoading(false));
   }, []);
@@ -108,20 +114,18 @@ function ReportsContent() {
   const effectiveRateType = rateTypeOptions.includes(rateType) ? rateType : CAP_DEFAULT_KEY;
   const currentRate = settings?.rate_by_type[effectiveRateType] ?? 0;
 
-  // next считаем внутри функционального обновления setSettings (от prev) — иначе быстрая
-  // правка двух разных типов подряд могла взять устаревший снимок настроек и при
-  // сохранении полной карты в Firestore затереть только что сделанную первую правку.
+  // next считаем синхронно из settingsRef (не из обновителя setSettings — см. комментарий
+  // у объявления settingsRef выше).
   async function saveRate(val: string) {
-    if (!settings) return;
+    if (!settingsRef.current) return;
     const n = Math.max(0, Number(val) || 0);
-    let next: Record<string, number> = {};
-    setSettings((prev) => {
-      if (!prev) return prev;
-      next = { ...prev.rate_by_type, [effectiveRateType]: n };
-      return { ...prev, rate_by_type: next };
-    });
+    const next = { ...settingsRef.current.rate_by_type, [effectiveRateType]: n };
+    settingsRef.current = { ...settingsRef.current, rate_by_type: next };
+    setSettings(settingsRef.current);
     try {
-      await saveLogisticsSettings({ rate_by_type: next });
+      const saved = await saveLogisticsSettings({ rate_by_type: next });
+      settingsRef.current = saved;
+      setSettings(saved);
     } catch (e) {
       alert(`Не удалось сохранить КПИ: ${(e as Error).message}`);
     }
@@ -129,16 +133,15 @@ function ReportsContent() {
 
   const currentPointRate = settings?.point_rate_by_type[effectiveRateType] ?? 0;
   async function savePointRate(val: string) {
-    if (!settings) return;
+    if (!settingsRef.current) return;
     const n = Math.max(0, Number(val) || 0);
-    let next: Record<string, number> = {};
-    setSettings((prev) => {
-      if (!prev) return prev;
-      next = { ...prev.point_rate_by_type, [effectiveRateType]: n };
-      return { ...prev, point_rate_by_type: next };
-    });
+    const next = { ...settingsRef.current.point_rate_by_type, [effectiveRateType]: n };
+    settingsRef.current = { ...settingsRef.current, point_rate_by_type: next };
+    setSettings(settingsRef.current);
     try {
-      await saveLogisticsSettings({ point_rate_by_type: next });
+      const saved = await saveLogisticsSettings({ point_rate_by_type: next });
+      settingsRef.current = saved;
+      setSettings(saved);
     } catch (e) {
       alert(`Не удалось сохранить ставку за точку: ${(e as Error).message}`);
     }
@@ -146,16 +149,15 @@ function ReportsContent() {
 
   const currentFuelRate = settings?.fuel_rate_by_type[effectiveRateType] ?? 0;
   async function saveFuelRate(val: string) {
-    if (!settings) return;
+    if (!settingsRef.current) return;
     const n = Math.max(0, Number(val) || 0);
-    let next: Record<string, number> = {};
-    setSettings((prev) => {
-      if (!prev) return prev;
-      next = { ...prev.fuel_rate_by_type, [effectiveRateType]: n };
-      return { ...prev, fuel_rate_by_type: next };
-    });
+    const next = { ...settingsRef.current.fuel_rate_by_type, [effectiveRateType]: n };
+    settingsRef.current = { ...settingsRef.current, fuel_rate_by_type: next };
+    setSettings(settingsRef.current);
     try {
-      await saveLogisticsSettings({ fuel_rate_by_type: next });
+      const saved = await saveLogisticsSettings({ fuel_rate_by_type: next });
+      settingsRef.current = saved;
+      setSettings(saved);
     } catch (e) {
       alert(`Не удалось сохранить ставку топлива: ${(e as Error).message}`);
     }

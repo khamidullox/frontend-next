@@ -74,6 +74,12 @@ function LogisticsContent() {
   const [hideDone, setHideDone] = useState(true);
   const [onlyPicked, setOnlyPicked] = useState(false);
   const [capSettings, setCapSettings] = useState<LogisticsSettings>(DEFAULT_CAP_SETTINGS);
+  // Синхронный «снимок» cap_by_type — для saveCapType. Обновление state через функцию-
+  // обновитель (prev => ...) НЕ гарантирует, что она выполнится до следующей строки кода
+  // (это и было реальным багом: next оставался {} — начальным значением — потому что
+  // обновитель setCapSettings успевал выполниться позже, уже после отправки на сервер).
+  // ref читается/пишется синхронно, без этой неопределённости.
+  const capByTypeRef = useRef(capSettings.cap_by_type);
   const [capType, setCapType] = useState<string>(CAP_DEFAULT_KEY);
   const capKgRef = useRef<HTMLInputElement>(null);
   const capM3Ref = useRef<HTMLInputElement>(null);
@@ -158,6 +164,7 @@ function LogisticsContent() {
     fetchLogisticsSettings()
       .then((s: LogisticsSettings) => {
         setCapSettings(s);
+        capByTypeRef.current = s.cap_by_type;
         setCapSettingsLoaded(true);
       })
       // Не помечаем «загружено» при сбое — иначе показали бы дефолты (300кг/2м³ и т.п.)
@@ -187,22 +194,18 @@ function LogisticsContent() {
   const [capSaveStatus, setCapSaveStatus] = useState('');
 
   // Вместимость по выбранному виду транспорта — общая для всех водителей этого вида.
-  // next считаем ВНУТРИ функционального обновления setCapSettings (от prev, а не от
-  // внешнего capSettings) — если менеджер быстро редактирует два разных типа подряд,
-  // второй вызов иначе мог взять устаревший снимок (до того как первый рендер успел
-  // долететь) и при сохранении полной карты в Firestore затереть первую правку.
-  // После сохранения сразу перечитываем настройки с сервера и сверяем — раньше
-  // полагались на сам факт «PATCH вернул 200», что не доказывает, что значение
-  // реально осталось в Firestore таким, каким его записали.
+  // next считаем синхронно из capByTypeRef (не из обновителя setCapSettings — обновитель
+  // прошлой версии кода и был реальным багом: он мог выполниться позже, чем строка с
+  // saveLogisticsSettings(), и тогда отправлялся пустой объект). ref всегда актуален
+  // немедленно, без этой неопределённости — и так же защищает от потери правки при
+  // быстром редактировании двух разных типов подряд.
   async function saveCapType(kgVal: string, m3Val: string) {
     const kg = Math.max(0, Number(kgVal) || 0);
     const m3 = Math.max(0, Number(m3Val) || 0);
     const type = effectiveCapType;
-    let next: Record<string, { kg: number; m3: number }> = {};
-    setCapSettings((prev) => {
-      next = { ...prev.cap_by_type, [type]: { kg, m3 } };
-      return { ...prev, cap_by_type: next };
-    });
+    const next = { ...capByTypeRef.current, [type]: { kg, m3 } };
+    capByTypeRef.current = next;
+    setCapSettings((prev) => ({ ...prev, cap_by_type: next }));
     setCapSaveStatus('Сохраняю…');
     try {
       // saveLogisticsSettings возвращает то, что сервер перечитал из Firestore СРАЗУ
@@ -215,6 +218,7 @@ function LogisticsContent() {
       } else {
         setCapSaveStatus(`⚠️ После сохранения сервер вернул другое значение: ${got?.kg ?? '—'} кг / ${got?.m3 ?? '—'} м³`);
       }
+      capByTypeRef.current = saved.cap_by_type;
       setCapSettings(saved);
     } catch (e) {
       setCapSaveStatus(`⚠️ Ошибка сохранения: ${(e as Error).message}`);
