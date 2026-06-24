@@ -7,6 +7,7 @@ import { notifyDriverAssigned, sendPushToUser } from '@/lib/push';
 import { haversineKm } from '@/lib/geo';
 import { getCachedGpsLocations } from '@/lib/gps';
 import { listDrivers } from '@/lib/users';
+import { getLogisticsSettings, defaultCapacity } from '@/lib/settings';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -48,9 +49,14 @@ async function broadcastOfferToNearbyDrivers(delivery: Delivery, pickup: [number
 //   1) у кого в активном маршруте уже есть остановка ровно в этом магазине;
 //   2) чей маршрут проходит ближе всего к магазину (≤ NEARBY_KM) — по координатам;
 //   3) у кого есть остановка в том же городе/направлении (грубый фолбэк без координат).
-// Если ничего не подошло — заявка остаётся без водителя, менеджер назначит вручную.
+// Каждый кандидат проверяется на вместимость (не больше 110% от capacity_kg/m3 машины) —
+// иначе все заявки из одного района валились на первого же водителя «в заходе», даже
+// если он уже полностью загружен, пока остальные машины стоят без дела.
+// Если никто не подошёл — заявка остаётся без водителя, менеджер назначит вручную.
 async function autoAssignOnTheWay(delivery: Delivery, shop: Shop): Promise<Delivery> {
-  const [routes, shops] = await Promise.all([listRoutes(), listShops()]);
+  const [routes, shops, drivers, settings] = await Promise.all([
+    listRoutes(), listShops(), listDrivers(), getLogisticsSettings(),
+  ]);
   const activeRoutes = routes.filter((r) => r.status === 'active' && r.delivery_ids?.length);
   if (!activeRoutes.length) return delivery;
 
@@ -64,10 +70,18 @@ async function autoAssignOnTheWay(delivery: Delivery, shop: Shop): Promise<Deliv
   let directionRoute: Route | null = null;
   let nearestRoute: Route | null = null;
   let nearestKm = Infinity;
+  const routeLoad = new Map<string, { weight: number; vol_l: number }>();
 
   for (const route of activeRoutes) {
     const ds = await getDeliveriesByIds(route.delivery_ids);
-    if (ds.some((d) => d.shop_id === shop.id)) { exactRoute = route; break; }
+    const load = { weight: 0, vol_l: 0 };
+    for (const d of ds) {
+      if (d.status === 'delivered' || d.status === 'returned') continue;
+      load.weight += d.total_weight || 0;
+      load.vol_l += d.total_volume_l || 0;
+    }
+    routeLoad.set(route.id, load);
+    if (!exactRoute && ds.some((d) => d.shop_id === shop.id)) exactRoute = route;
     if (pickup) {
       for (const d of ds) {
         const p = resolveDestPoint(d, shops);
@@ -81,11 +95,30 @@ async function autoAssignOnTheWay(delivery: Delivery, shop: Shop): Promise<Deliv
     }
   }
 
-  const match = exactRoute
-    || (nearestKm <= NEARBY_KM ? nearestRoute : null)
-    || directionRoute;
+  // Хватает ли месту в машине этого маршрута ещё на одну доставку (с запасом 10%).
+  function fitsCapacity(route: Route): boolean {
+    const driver = drivers.find((dr) => dr.username === route.driver_username);
+    const cap = driver
+      ? (driver.capacity_kg > 0 || driver.capacity_m3 > 0
+        ? { kg: driver.capacity_kg, m3: driver.capacity_m3 }
+        : defaultCapacity(driver.transport, settings))
+      : { kg: 0, m3: 0 };
+    const load = routeLoad.get(route.id) || { weight: 0, vol_l: 0 };
+    const dw = delivery.total_weight || 0;
+    const dv = delivery.total_volume_l || 0;
+    if (cap.kg > 0 && load.weight + dw > cap.kg * 1.1) return false;
+    if (cap.m3 > 0 && load.vol_l + dv > cap.m3 * 1000 * 1.1) return false;
+    return true;
+  }
+
+  const candidates = [
+    exactRoute,
+    nearestKm <= NEARBY_KM ? nearestRoute : null,
+    directionRoute,
+  ].filter((r): r is Route => !!r);
+  const match = candidates.find(fitsCapacity) || null;
   if (!match) {
-    // Никто не «по пути» — рассылаем заказ свободным водителям рядом, пусть берут сами.
+    // Никто не «по пути» (или все уже полные) — рассылаем заказ свободным водителям рядом.
     await broadcastOfferToNearbyDrivers(delivery, pickup).catch(() => {});
     return delivery;
   }

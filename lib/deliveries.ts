@@ -196,6 +196,9 @@ export interface Delivery {
   total_weight: number;   // кг
   total_volume_l: number; // л
   total_qty: number;      // суммарное количество позиций
+  // true — вес и/или объём хотя бы одной позиции не из карточки Smartup, а приблизительно
+  // (среднее по товарной группе/каталогу) — см. computeDims/getProductCatalog.
+  dims_approx?: boolean;
 
   // Маршрутизация.
   direction: string;      // Север / Юг / Восток / Запад / Центр
@@ -234,10 +237,12 @@ function str(v: unknown): string {
 }
 
 // Считает вес/объём/количество груза по позициям документа и каталогу Smartup.
+// approx — true, если вес/объём хоть одной позиции взят приблизительно (в карточке
+// Smartup пусто, см. weight_approx/volume_approx в getProductCatalog).
 async function computeDims(
   items: { product_code: string; quantity: number | string }[]
-): Promise<{ weight: number; volume_l: number; qty: number }> {
-  let weight = 0, volume_l = 0, qty = 0;
+): Promise<{ weight: number; volume_l: number; qty: number; approx: boolean }> {
+  let weight = 0, volume_l = 0, qty = 0, approx = false;
   if (items.length) {
     const catalog = await getCachedCatalog();
     const m = new Map(catalog.map((c) => [c.code, c]));
@@ -245,10 +250,13 @@ async function computeDims(
       const q = Number(it.quantity) || 0;
       qty += q;
       const c = m.get(str(it.product_code));
-      if (c) { weight += q * c.weight; volume_l += q * c.volume_l; }
+      if (c) {
+        weight += q * c.weight; volume_l += q * c.volume_l;
+        if (c.weight_approx || c.volume_approx) approx = true;
+      }
     }
   }
-  return { weight: Math.round(weight * 100) / 100, volume_l: Math.round(volume_l * 100) / 100, qty };
+  return { weight: Math.round(weight * 100) / 100, volume_l: Math.round(volume_l * 100) / 100, qty, approx };
 }
 
 // ─── Создание ────────────────────────────────────────────────────────────────
@@ -379,6 +387,7 @@ export async function createDelivery(
     total_weight: input.weight_kg != null ? input.weight_kg : dims.weight,
     total_volume_l: input.volume_m3 != null ? input.volume_m3 * 1000 : dims.volume_l,
     total_qty: dims.qty,
+    dims_approx: input.weight_kg == null && input.volume_m3 == null ? dims.approx : false,
     direction: str(input.direction),
     km: Math.max(0, Number(input.km) || 0),
     driver_username: null,
@@ -689,6 +698,7 @@ export async function updateDeliveryFields(
     delivery.total_weight = dims.weight;
     delivery.total_volume_l = dims.volume_l;
     delivery.total_qty = dims.qty;
+    delivery.dims_approx = dims.approx;
   }
   delivery.updated_at = new Date().toISOString();
   await ref.set(delivery);

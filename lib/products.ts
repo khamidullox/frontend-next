@@ -69,6 +69,8 @@ export interface CatalogItem {
   price: number;      // оптовая цена продажи
   weight: number;     // вес единицы (брутто/нетто), кг — для логистики
   volume_l: number;   // объём (литраж), л — для логистики
+  weight_approx: boolean; // true — в Smartup веса нет, взято среднее по группе/каталогу
+  volume_approx: boolean; // true — в Smartup объёма нет, взято среднее по группе/каталогу
 }
 
 const PRODUCT_GROUP_EXPORT_ENDPOINT = '/b/anor/mxsx/mr/product_group$export';
@@ -112,7 +114,7 @@ export async function getProductCatalog(): Promise<CatalogItem[]> {
       fetchTypeNameMap(),
       getWholesalePriceMap(),
     ]);
-    return (data.inventory || [])
+    const raw = (data.inventory || [])
       .filter((i) => normalizeCode(i.state) === 'A')
       .map((i) => {
         const code = normalizeCode(i.code);
@@ -132,7 +134,52 @@ export async function getProductCatalog(): Promise<CatalogItem[]> {
           volume_l: (Number(i.litr) || 0) * 1000,
         };
       })
-      .filter((i) => i.code)
+      .filter((i) => i.code);
+
+    // У части товаров в Smartup нет веса/объёма вообще (карточка не заполнена). Чтобы
+    // логистика (грузоподъёмность машины, КПИ) не считала такой товар «невесомым», берём
+    // приблизительное значение — среднее по той же товарной группе (вид), а если в группе
+    // вообще ни у кого нет данных — среднее по всему каталогу. Помечаем weight_approx/
+    // volume_approx, чтобы можно было показать «≈» там, где это видно пользователю.
+    const groupWeight = new Map<string, { sum: number; n: number }>();
+    const groupVol = new Map<string, { sum: number; n: number }>();
+    let globalWeightSum = 0, globalWeightN = 0, globalVolSum = 0, globalVolN = 0;
+    for (const it of raw) {
+      if (it.weight > 0) {
+        globalWeightSum += it.weight; globalWeightN++;
+        const g = groupWeight.get(it.group) || { sum: 0, n: 0 };
+        g.sum += it.weight; g.n++; groupWeight.set(it.group, g);
+      }
+      if (it.volume_l > 0) {
+        globalVolSum += it.volume_l; globalVolN++;
+        const g = groupVol.get(it.group) || { sum: 0, n: 0 };
+        g.sum += it.volume_l; g.n++; groupVol.set(it.group, g);
+      }
+    }
+    const globalWeightAvg = globalWeightN ? globalWeightSum / globalWeightN : 0;
+    const globalVolAvg = globalVolN ? globalVolSum / globalVolN : 0;
+
+    return raw
+      .map((it) => {
+        let weight = it.weight, weight_approx = false;
+        if (weight <= 0) {
+          const g = groupWeight.get(it.group);
+          weight = g?.n ? g.sum / g.n : globalWeightAvg;
+          weight_approx = weight > 0;
+        }
+        let volume_l = it.volume_l, volume_approx = false;
+        if (volume_l <= 0) {
+          const g = groupVol.get(it.group);
+          volume_l = g?.n ? g.sum / g.n : globalVolAvg;
+          volume_approx = volume_l > 0;
+        }
+        return {
+          ...it,
+          weight: Math.round(weight * 100) / 100,
+          volume_l: Math.round(volume_l * 100) / 100,
+          weight_approx, volume_approx,
+        };
+      })
       .sort((a, b) => a.name.localeCompare(b.name));
   });
 }

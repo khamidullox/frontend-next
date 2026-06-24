@@ -5,7 +5,7 @@ import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
 import {
   listRoutes, listDrivers, listDeliveries, deleteRouteApi,
-  fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings, CAP_DEFAULT_KEY,
+  fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings, CAP_DEFAULT_KEY, vehicleFamily,
   Route, UserInfo, Delivery, DeliveryStatus,
 } from '@/lib/api';
 import { fmtDateTimeYear as fmt } from '@/lib/format';
@@ -22,15 +22,6 @@ const STATUS_COLOR: Record<DeliveryStatus, string> = {
 // Локальная дата YYYY-MM-DD (для быстрых фильтров «сегодня» и т.п.).
 function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-// Семейство транспорта по подстроке в названии модели (как в /logistics) — нужно,
-// чтобы ставка КПИ для конкретной модели могла наследоваться от ставки её семейства.
-function vehicleFamily(transport: string | null | undefined): 'LABO' | 'Газель' | null {
-  const t = (transport || '').toLowerCase();
-  if (t.includes('labo')) return 'LABO';
-  if (t.includes('gaz') || t.includes('газел') || t.includes('33021')) return 'Газель';
-  return null;
 }
 
 // Ставка для вида транспорта: точная модель → семейство → «Прочие».

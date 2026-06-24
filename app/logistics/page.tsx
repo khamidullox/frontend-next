@@ -10,6 +10,7 @@ import {
   listMovements, listOrders, listTransfers, listSessions, MovementListItem, OrderListItem, TransferListItem, MOVEMENT_STATUS_LABEL,
   Delivery, DeliveryStatus, DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL, UserInfo,
   autoAssign, fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings, CAP_DEFAULT_KEY,
+  vehicleFamily, defaultCapacity,
   listRoutes, Route,
   listShops, Shop,
 } from '@/lib/api';
@@ -45,15 +46,6 @@ function vehicleCategory(transport: string | null | undefined): string {
   return t || 'Без типа';
 }
 
-// Семейство транспорта по подстроке в названии (любая модель LABO/Газели — независимо
-// от точного названия модели, например «Chevrolet LABO» или «GAZ 33021»).
-function vehicleFamily(transport: string | null | undefined): 'LABO' | 'Газель' | null {
-  const t = (transport || '').toLowerCase();
-  if (t.includes('labo')) return 'LABO';
-  if (t.includes('gaz') || t.includes('газел') || t.includes('33021')) return 'Газель';
-  return null;
-}
-
 const DEFAULT_CAP_SETTINGS: LogisticsSettings = {
   fuel_rate_per_km: 0,
   cap_by_type: {
@@ -64,22 +56,6 @@ const DEFAULT_CAP_SETTINGS: LogisticsSettings = {
   rate_by_type: {},
   point_rate_by_type: {},
 };
-
-// Дефолтная вместимость по виду транспорта (если у водителя не задана вручную).
-// Порядок поиска: точное название модели → семейство (LABO/Газель по подстроке) →
-// «Прочие» (CAP_DEFAULT_KEY). Это позволяет настроить вместимость один раз для всего
-// семейства, не вводя её отдельно для каждой точной модели машины.
-// pcs — ориентировочная вместимость в штуках (для фолбэка, когда нет веса/объёма).
-function defaultCapacity(transport: string | null | undefined, settings: LogisticsSettings): { kg: number; m3: number; pcs: number } {
-  const key = (transport || '').trim();
-  const family = vehicleFamily(key);
-  const cap = (key && settings.cap_by_type[key])
-    || (family && settings.cap_by_type[family])
-    || settings.cap_by_type[CAP_DEFAULT_KEY]
-    || { kg: 0, m3: 0 };
-  const pcs = family === 'LABO' ? 80 : family === 'Газель' ? 200 : 50;
-  return { kg: cap.kg, m3: cap.m3, pcs };
-}
 
 export default function LogisticsPage() {
   return (
@@ -795,6 +771,7 @@ function DriverCard({
   const totalWeightKg = activeDeliveries.reduce((s, d) => s + (d.total_weight || 0), 0);
   const totalVolL = activeDeliveries.reduce((s, d) => s + (d.total_volume_l || 0), 0);
   const totalQty = activeDeliveries.reduce((s, d) => s + (d.total_qty || 0), 0);
+  const dimsApprox = activeDeliveries.some((d) => d.dims_approx);
   const totalKm = activeDeliveries.reduce((s, d) => s + (d.km || 0), 0);
   const fuelCost = totalKm > 0 && fuelRate > 0 ? totalKm * 2 * fuelRate : 0;
   // Вместимость: своя (если задана в «Пользователи»), иначе общий дефолт по типу машины.
@@ -832,7 +809,7 @@ function DriverCard({
             <div className="mt-1 flex flex-col gap-0.5">
               {totalWeightKg > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-gray-400 w-20 shrink-0">⚖️ {Math.round(totalWeightKg)}/{capKg} кг</span>
+                  <span className="text-[10px] text-gray-400 w-20 shrink-0">⚖️ {dimsApprox ? '≈' : ''}{Math.round(totalWeightKg)}/{capKg} кг</span>
                   <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                     <div className={`h-full rounded-full transition-all ${loadPctKg > 90 ? 'bg-red-500' : loadPctKg > 70 ? 'bg-amber-400' : 'bg-green-400'}`}
                       style={{ width: `${loadPctKg}%` }} />
@@ -842,7 +819,7 @@ function DriverCard({
               )}
               {totalVolL > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-gray-400 w-20 shrink-0">📦 {(totalVolL / 1000).toFixed(1)}/{capM3} м³</span>
+                  <span className="text-[10px] text-gray-400 w-20 shrink-0">📦 {dimsApprox ? '≈' : ''}{(totalVolL / 1000).toFixed(1)}/{capM3} м³</span>
                   <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                     <div className={`h-full rounded-full transition-all ${loadPctM3 > 90 ? 'bg-red-500' : loadPctM3 > 70 ? 'bg-amber-400' : 'bg-blue-400'}`}
                       style={{ width: `${loadPctM3}%` }} />
@@ -1006,8 +983,8 @@ function DeliveryRow({
         {(d.total_qty > 0 || d.total_weight > 0) && (
           <span className="text-[10px] text-gray-400">
             {d.total_qty > 0 && `${d.total_qty} шт`}
-            {d.total_weight > 0 && ` · ${d.total_weight} кг`}
-            {d.total_volume_l > 0 && ` · ${(d.total_volume_l / 1000).toFixed(2)} м³`}
+            {d.total_weight > 0 && ` · ${d.dims_approx ? '≈' : ''}${d.total_weight} кг`}
+            {d.total_volume_l > 0 && ` · ${d.dims_approx ? '≈' : ''}${(d.total_volume_l / 1000).toFixed(2)} м³`}
           </span>
         )}
         {/* Загруженность машины */}
