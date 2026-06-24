@@ -1,6 +1,26 @@
 import { getDb } from './firebase';
 
+// Ключ-«заглушка» для вида транспорта без своей настройки («Прочие»). Используется
+// во всём UI и в сравнениях как есть.
 export const CAP_DEFAULT_KEY = '__default__';
+
+// ВАЖНО: Firestore запрещает имена полей, совпадающие с шаблоном __.*__ (двойное
+// подчёркивание в начале И в конце). Ключ '__default__' внутри карт cap_by_type/
+// rate_by_type/… — это имя вложенного поля, поэтому запись таких карт молча
+// ломалась, документ настроек не сохранялся, и чтение всегда откатывалось на
+// дефолты (отсюда «поменял вместимость/КПИ → после перезахода снова старое»).
+// Поэтому в Firestore храним под безопасным ключом, а на границе get/set
+// переводим туда-обратно — остальной код этого не замечает.
+const STORAGE_DEFAULT_KEY = 'DEFAULT';
+
+function mapKeys<T>(m: Record<string, T> | undefined, from: string, to: string): Record<string, T> | undefined {
+  if (!m) return m;
+  const out: Record<string, T> = {};
+  for (const [k, v] of Object.entries(m)) out[k === from ? to : k] = v;
+  return out;
+}
+const toStorage = <T>(m: Record<string, T> | undefined) => mapKeys(m, CAP_DEFAULT_KEY, STORAGE_DEFAULT_KEY);
+const fromStorage = <T>(m: Record<string, T> | undefined) => mapKeys(m, STORAGE_DEFAULT_KEY, CAP_DEFAULT_KEY);
 
 export interface LogisticsSettings {
   // Вместимость по умолчанию по виду транспорта (когда у водителя своя не задана).
@@ -37,17 +57,25 @@ export async function getLogisticsSettings(): Promise<LogisticsSettings> {
   // переносим в «Прочие», чтобы у тех, кто уже настроил топливо, цифра не пропала.
   const fuelByType = data.fuel_rate_by_type && Object.keys(data.fuel_rate_by_type).length
     ? data.fuel_rate_by_type
-    : (data.fuel_rate_per_km ? { [CAP_DEFAULT_KEY]: data.fuel_rate_per_km } : DEFAULTS.fuel_rate_by_type);
+    : (data.fuel_rate_per_km ? { [STORAGE_DEFAULT_KEY]: data.fuel_rate_per_km } : DEFAULTS.fuel_rate_by_type);
+  // Переводим storage-ключ DEFAULT обратно в CAP_DEFAULT_KEY для остального кода.
   return {
-    cap_by_type: data.cap_by_type && Object.keys(data.cap_by_type).length ? data.cap_by_type : { ...DEFAULTS.cap_by_type },
-    rate_by_type: data.rate_by_type ?? DEFAULTS.rate_by_type,
-    point_rate_by_type: data.point_rate_by_type ?? DEFAULTS.point_rate_by_type,
-    fuel_rate_by_type: fuelByType,
+    cap_by_type: fromStorage(data.cap_by_type && Object.keys(data.cap_by_type).length ? data.cap_by_type : { ...DEFAULTS.cap_by_type })!,
+    rate_by_type: fromStorage(data.rate_by_type ?? DEFAULTS.rate_by_type)!,
+    point_rate_by_type: fromStorage(data.point_rate_by_type ?? DEFAULTS.point_rate_by_type)!,
+    fuel_rate_by_type: fromStorage(fuelByType)!,
   };
 }
 
 export async function setLogisticsSettings(patch: Partial<LogisticsSettings>): Promise<void> {
-  await getDb().collection('settings').doc('logistics').set(patch, { merge: true });
+  // Переводим CAP_DEFAULT_KEY ('__default__') в безопасный для Firestore ключ —
+  // иначе запись поля молча не проходит (см. комментарий к STORAGE_DEFAULT_KEY).
+  const safe: Partial<LogisticsSettings> = {};
+  if (patch.cap_by_type) safe.cap_by_type = toStorage(patch.cap_by_type);
+  if (patch.rate_by_type) safe.rate_by_type = toStorage(patch.rate_by_type);
+  if (patch.point_rate_by_type) safe.point_rate_by_type = toStorage(patch.point_rate_by_type);
+  if (patch.fuel_rate_by_type) safe.fuel_rate_by_type = toStorage(patch.fuel_rate_by_type);
+  await getDb().collection('settings').doc('logistics').set(safe, { merge: true });
 }
 
 // Семейство транспорта по подстроке в названии (любая модель LABO/Газели — независимо
