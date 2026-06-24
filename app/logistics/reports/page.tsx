@@ -375,6 +375,16 @@ function ReportsContent() {
                                       {d.doc_number ? `№ ${d.doc_number} · ` : ''}{d.client_name || d.to_name || d.from_name || '—'}
                                     </div>
                                     {d.address && <div className="text-xs text-gray-400 truncate">📍 {d.address}</div>}
+                                    {d.lat != null && d.lng != null && (
+                                      <div className="text-xs truncate">
+                                        <a href={`https://yandex.ru/maps/?pt=${d.lng},${d.lat}&z=16&l=map`} target="_blank" rel="noopener noreferrer"
+                                          className="text-emerald-600 hover:underline">🗺️ Яндекс</a>
+                                        {' · '}
+                                        <a href={`https://www.google.com/maps?q=${d.lat},${d.lng}`} target="_blank" rel="noopener noreferrer"
+                                          className="text-emerald-600 hover:underline">Google</a>
+                                        <span className="text-gray-400"> · {d.lat.toFixed(5)}, {d.lng.toFixed(5)}</span>
+                                      </div>
+                                    )}
                                     {d.shop_name && <div className="text-xs text-gray-400 truncate">🏪 откуда: {d.shop_name}</div>}
                                     {d.client_phone && (
                                       <div className="text-xs text-gray-400 truncate">
