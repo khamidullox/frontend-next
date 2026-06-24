@@ -1,0 +1,172 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import AdminGate from '@/components/AdminGate';
+import { fetchAnalyticsSummary, AnalyticsPeriod, AnalyticsSummary } from '@/lib/api';
+import { fmtDateTime } from '@/lib/format';
+
+const PERIODS: { key: AnalyticsPeriod; label: string }[] = [
+  { key: 'today', label: 'Сегодня' },
+  { key: '7d', label: '7 дней' },
+  { key: '15d', label: '15 дней' },
+  { key: '30d', label: '30 дней' },
+];
+
+export default function AnalyticsPage() {
+  return (
+    <AdminGate min="manager">
+      <AnalyticsContent />
+    </AdminGate>
+  );
+}
+
+function AnalyticsContent() {
+  const [period, setPeriod] = useState<AnalyticsPeriod>('7d');
+  const [data, setData] = useState<AnalyticsSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setLoading(true);
+    setError('');
+    fetchAnalyticsSummary(period)
+      .then(setData)
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setLoading(false));
+  }, [period]);
+
+  return (
+    <div className="max-w-5xl mx-auto p-3 sm:p-4">
+      <h1 className="text-lg font-bold mb-3">📊 Аналитика продаж</h1>
+
+      <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1 flex-wrap w-fit">
+        {PERIODS.map((p) => (
+          <button key={p.key} onClick={() => setPeriod(p.key)}
+            className={`px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition-colors ${
+              period === p.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {error && <div className="text-red-600 text-sm mb-3">{error}</div>}
+      {loading && !data ? (
+        <div className="text-gray-500 text-sm">Загрузка…</div>
+      ) : data ? (
+        <>
+          <div className="text-[11px] text-gray-400 mb-3">Обновлено: {fmtDateTime(new Date(data.updated_ms).toISOString())}</div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
+            <div className="bg-white rounded-xl shadow-sm p-3">
+              <div className="text-[11px] text-gray-400">Продано, шт</div>
+              <div className="text-xl font-bold text-emerald-600">{Math.round(data.total_qty)}</div>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm p-3">
+              <div className="text-[11px] text-gray-400">Заказов</div>
+              <div className="text-xl font-bold">{data.total_orders}</div>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm p-3">
+              <div className="text-[11px] text-gray-400">Магазинов купило</div>
+              <div className="text-xl font-bold">{data.by_shop.length}</div>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm p-3">
+              <div className="text-[11px] text-gray-400">Не продаётся (есть остаток)</div>
+              <div className="text-xl font-bold text-amber-600">{data.slow_products.length}</div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-3 mb-4">
+            <div className="text-sm font-semibold mb-2">🏪 По магазинам</div>
+            {data.by_shop.length === 0 ? (
+              <div className="text-xs text-gray-400">Нет продаж за период</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-gray-400">
+                      <th className="py-1 pr-2">Магазин</th>
+                      <th className="py-1 pr-2 text-right">Шт</th>
+                      <th className="py-1 pr-2 text-right">Заказов</th>
+                      <th className="py-1 text-right">Позиций</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {data.by_shop.map((s) => (
+                      <tr key={s.shop}>
+                        <td className="py-1.5 pr-2">{s.shop}</td>
+                        <td className="py-1.5 pr-2 text-right font-medium">{Math.round(s.qty)}</td>
+                        <td className="py-1.5 pr-2 text-right text-gray-400">{s.orders}</td>
+                        <td className="py-1.5 text-right text-gray-400">{s.products}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-3 mb-4">
+            <div className="text-sm font-semibold mb-2">🔥 Хорошо продаётся (топ-50)</div>
+            {data.top_products.length === 0 ? (
+              <div className="text-xs text-gray-400">Нет продаж за период</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-gray-400">
+                      <th className="py-1 pr-2">Товар</th>
+                      <th className="py-1 pr-2 text-right">Продано, шт</th>
+                      <th className="py-1 pr-2 text-right">Заказов</th>
+                      <th className="py-1 text-right">Остаток</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {data.top_products.map((p) => (
+                      <tr key={p.code}>
+                        <td className="py-1.5 pr-2 max-w-xs truncate" title={p.name}>{p.name || p.code}</td>
+                        <td className="py-1.5 pr-2 text-right font-medium text-emerald-600">{Math.round(p.qty)}</td>
+                        <td className="py-1.5 pr-2 text-right text-gray-400">{p.orders}</td>
+                        <td className={`py-1.5 text-right ${p.stock <= 0 ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>
+                          {Math.round(p.stock)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-3">
+            <div className="text-sm font-semibold mb-2">🐌 Не продаётся, но есть остаток (топ-100 по остатку)</div>
+            {data.slow_products.length === 0 ? (
+              <div className="text-xs text-gray-400">Все товары с остатком продавались за период</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-gray-400">
+                      <th className="py-1 pr-2">Товар</th>
+                      <th className="py-1 pr-2">Группа</th>
+                      <th className="py-1 text-right">Остаток</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {data.slow_products.map((p) => (
+                      <tr key={p.code}>
+                        <td className="py-1.5 pr-2 max-w-xs truncate" title={p.name}>{p.name || p.code}</td>
+                        <td className="py-1.5 pr-2 text-gray-400">{p.group}</td>
+                        <td className="py-1.5 text-right font-medium text-amber-600">{Math.round(p.stock)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}

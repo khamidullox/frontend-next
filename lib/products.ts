@@ -287,6 +287,18 @@ function getCachedBalance(): Promise<SlimBalance[]> {
   return getCachedSnapshot('balance_free', fetchSlimBalance, STOCK_FRESH_MS, BALANCE_CHUNK);
 }
 
+// Суммарный остаток каждого товара по всем складам (для аналитики продаж —
+// сравнить с тем, сколько продано). Один проход по уже закэшированному снимку,
+// не дёргает Smartup отдельно на каждый товар.
+export async function getTotalStockByProduct(): Promise<Map<string, number>> {
+  const balance = await getCachedBalance();
+  const totals = new Map<string, number>();
+  for (const b of balance) {
+    totals.set(b.p, (totals.get(b.p) || 0) + b.q);
+  }
+  return totals;
+}
+
 interface WhRef {
   id: string;
   name: string;

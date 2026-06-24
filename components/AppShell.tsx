@@ -17,6 +17,7 @@ const LINKS: NavLink[] = [
   { href: '/orders', label: '🧾 Заказы', min: 'manager' },
   { href: '/history', label: '📋 История', min: 'manager' },
   { href: '/logistics', label: '🚚 Логистика', min: 'manager' },
+  { href: '/analytics', label: '📊 Аналитика', min: 'manager' },
   { href: '/transfers', label: '🔄 Перемещения', min: 'admin' },
   { href: '/receipts', label: '📥 Приёмка', min: 'admin' },
   { href: '/users', label: '👤 Пользователи', min: 'admin' },

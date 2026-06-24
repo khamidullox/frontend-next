@@ -137,6 +137,60 @@ export async function getOrderDocumentByTTN(ttn: string): Promise<CheckDocument 
   return getOrderDocument(String(match.deal_id));
 }
 
+export interface SalesAggregate {
+  total_qty: number;
+  total_orders: number;
+  by_shop: { shop: string; qty: number; orders: number; products: number }[];
+  by_product: { code: string; name: string; qty: number; orders: number }[];
+}
+
+// Продажи (заказы клиентам) за произвольный период — для аналитики. person_name —
+// это и есть магазин/клиент, которому продали (в order$export нет отдельного «магазина»,
+// заказы — это и есть факт продажи). Не кэшируется здесь (90с слишком мало для
+// аналитики за месяц) — кэш более долгий держит lib/analytics.ts поверх этой функции.
+export async function getSalesAggregate(begin: Date, end: Date): Promise<SalesAggregate> {
+  const orders = await exportOrders({
+    begin_order_date: formatSmartupDate(begin),
+    end_order_date: formatSmartupDate(end),
+  });
+
+  const shopMap = new Map<string, { qty: number; orders: number; products: Set<string> }>();
+  const productMap = new Map<string, { name: string; qty: number; orders: Set<string> }>();
+  let total_qty = 0;
+
+  for (const o of orders) {
+    const shop = o.person_name?.trim() || 'Без названия';
+    const sAgg = shopMap.get(shop) || { qty: 0, orders: 0, products: new Set<string>() };
+    sAgg.orders++;
+    for (const item of o.order_products || []) {
+      const code = normalizeCode(item.product_code);
+      if (!code) continue;
+      const qty = toNumber(item.order_quant);
+      total_qty += qty;
+      sAgg.qty += qty;
+      sAgg.products.add(code);
+
+      const pAgg = productMap.get(code) || { name: item.product_name || '', qty: 0, orders: new Set<string>() };
+      pAgg.qty += qty;
+      pAgg.orders.add(String(o.deal_id));
+      if (item.product_name) pAgg.name = item.product_name;
+      productMap.set(code, pAgg);
+    }
+    shopMap.set(shop, sAgg);
+  }
+
+  return {
+    total_qty,
+    total_orders: orders.length,
+    by_shop: [...shopMap.entries()]
+      .map(([shop, v]) => ({ shop, qty: v.qty, orders: v.orders, products: v.products.size }))
+      .sort((a, b) => b.qty - a.qty),
+    by_product: [...productMap.entries()]
+      .map(([code, v]) => ({ code, name: v.name, qty: v.qty, orders: v.orders.size }))
+      .sort((a, b) => b.qty - a.qty),
+  };
+}
+
 export interface OrderListItem {
   deal_id: string;
   doc_number: string;

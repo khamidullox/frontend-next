@@ -966,3 +966,22 @@ export class NotFoundError extends Error {
     this.name = 'NotFoundError';
   }
 }
+
+export type AnalyticsPeriod = 'today' | '7d' | '15d' | '30d';
+
+export interface AnalyticsSummary {
+  period: AnalyticsPeriod;
+  updated_ms: number;
+  total_qty: number;
+  total_orders: number;
+  by_shop: { shop: string; qty: number; orders: number; products: number }[];
+  top_products: { code: string; name: string; qty: number; orders: number; stock: number }[];
+  slow_products: { code: string; name: string; group: string; stock: number }[];
+}
+
+export async function fetchAnalyticsSummary(period: AnalyticsPeriod): Promise<AnalyticsSummary> {
+  const res = await fetch(`/api/analytics/sales?period=${period}`, { cache: 'no-store' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Не удалось загрузить аналитику');
+  return data.data as AnalyticsSummary;
+}
