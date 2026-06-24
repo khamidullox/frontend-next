@@ -46,13 +46,18 @@ async function broadcastOfferToNearbyDrivers(delivery: Delivery, pickup: [number
 }
 
 // Подбор водителя «по пути» для заявки магазина, по приоритету:
-//   1) у кого в активном маршруте уже есть остановка ровно в этом магазине;
-//   2) чей маршрут проходит ближе всего к магазину (≤ NEARBY_KM) — по координатам;
-//   3) у кого есть остановка в том же городе/направлении (грубый фолбэк без координат).
+//   1) у кого в активном маршруте уже есть остановка ровно в этом магазине (точное
+//      совпадение по shop_id — не нужны координаты, это не догадка, а тот же магазин);
+//   2) чей маршрут проходит ближе всего к точке выдачи (≤ NEARBY_KM) — нужны координаты
+//      магазина/заявки на карте.
+// Раньше был и третий, грубый фолбэк — «у кого остановка в том же направлении» (просто
+// по строке direction, без координат). Убрали: для заявок без отметки на карте это была
+// угадайка, которая могла закинуть заказ совсем не туда. Теперь без координат и без
+// точного совпадения по магазину — заявка ВСЕГДА остаётся новой и идёт в рассылку (см.
+// broadcastOfferToNearbyDrivers), а не достаётся «на угад» первому попавшемуся маршруту.
 // Каждый кандидат проверяется на вместимость (не больше 110% от capacity_kg/m3 машины) —
 // иначе все заявки из одного района валились на первого же водителя «в заходе», даже
 // если он уже полностью загружен, пока остальные машины стоят без дела.
-// Если никто не подошёл — заявка остаётся без водителя, менеджер назначит вручную.
 async function autoAssignOnTheWay(delivery: Delivery, shop: Shop): Promise<Delivery> {
   const [routes, shops, drivers, settings] = await Promise.all([
     listRoutes(), listShops(), listDrivers(), getLogisticsSettings(),
@@ -67,7 +72,6 @@ async function autoAssignOnTheWay(delivery: Delivery, shop: Shop): Promise<Deliv
     : null;
 
   let exactRoute: Route | null = null;
-  let directionRoute: Route | null = null;
   let nearestRoute: Route | null = null;
   let nearestKm = Infinity;
   const routeLoad = new Map<string, { weight: number; vol_l: number }>();
@@ -90,9 +94,6 @@ async function autoAssignOnTheWay(delivery: Delivery, shop: Shop): Promise<Deliv
         if (km < nearestKm) { nearestKm = km; nearestRoute = route; }
       }
     }
-    if (!directionRoute && shop.direction && ds.some((d) => d.direction === shop.direction)) {
-      directionRoute = route;
-    }
   }
 
   // Хватает ли месту в машине этого маршрута ещё на одну доставку (с запасом 10%).
@@ -114,7 +115,6 @@ async function autoAssignOnTheWay(delivery: Delivery, shop: Shop): Promise<Deliv
   const candidates = [
     exactRoute,
     nearestKm <= NEARBY_KM ? nearestRoute : null,
-    directionRoute,
   ].filter((r): r is Route => !!r);
   const match = candidates.find(fitsCapacity) || null;
   if (!match) {
