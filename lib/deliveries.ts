@@ -478,6 +478,12 @@ export async function listShopRequestsForShop(shopId: string): Promise<Delivery[
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
+// Полная история заявок магазина — для «Базы клиентов» (там это и нужно: видеть
+// и экспортировать всё). Намеренно без лимита — не дёргается опросом, только по
+// заходу на страницу. Для опроса/фона см. listShopRequestsForAdmin/listUnclaimedShopRequests
+// ниже — та же коллекция растёт без границ, и каждый их полный скан читает всё
+// заново, поэтому горячие пути (опрос раз в 30 сек, фоновая рассылка) этой функцией
+// больше не пользуются.
 export async function listShopRequests(): Promise<Delivery[]> {
   const snap = await getDb()
     .collection(COLLECTION)
@@ -486,6 +492,34 @@ export async function listShopRequests(): Promise<Delivery[]> {
   return snap.docs
     .map((d) => normalizeDelivery(d.data() as Delivery))
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+// Для админки «Заявки магазинов» (опрашивается раз в 30 сек) — активные не растут
+// без границ (заказ не залипает в новый/назначен/в пути надолго, уходит в
+// доставлено/возврат), завершённые ограничены последними 100. Равенство в обоих
+// where — индексируется автоматически, без ручной настройки в Firebase Console.
+export async function listShopRequestsForAdmin(): Promise<Delivery[]> {
+  const col = getDb().collection(COLLECTION);
+  const [activeSnap, doneSnap] = await Promise.all([
+    col.where('kind', '==', 'shop_to_client').where('status', 'in', ['new', 'assigned', 'on_way']).get(),
+    col.where('kind', '==', 'shop_to_client').where('status', 'in', ['delivered', 'returned']).limit(100).get(),
+  ]);
+  return [...activeSnap.docs, ...doneSnap.docs]
+    .map((d) => normalizeDelivery(d.data() as Delivery))
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+// Заявки магазина без водителя — для повторной рассылки (lib/shopOffers.ts).
+// Узкий запрос вместо скана всей истории: «новый» — это всегда небольшой,
+// актуальный «хвост», не накопленные годы доставок.
+export async function listUnclaimedShopRequests(): Promise<Delivery[]> {
+  const snap = await getDb()
+    .collection(COLLECTION)
+    .where('kind', '==', 'shop_to_client')
+    .where('status', '==', 'new')
+    .where('driver_username', '==', null)
+    .get();
+  return snap.docs.map((d) => normalizeDelivery(d.data() as Delivery));
 }
 
 // Доставки склад → магазин, идущие именно в эту точку — для раздела «Едет к нам» на
@@ -733,7 +767,14 @@ export async function autoAssignDeliveries(
   const db = getDb();
   const col = db.collection(COLLECTION);
 
-  const [snap, drivers] = await Promise.all([col.get(), listDrivers()]);
+  // Раньше тянули ВСЮ историю доставок (col.get() без фильтра) только чтобы найти
+  // непринятые «новые» и текущую загрузку водителей — обе выборки по смыслу не
+  // включают завершённые, так что фильтр на сервере сразу избавляет от старой
+  // истории, а не только filter() в памяти после скачивания всего.
+  const [snap, drivers] = await Promise.all([
+    col.where('status', 'not-in', ['delivered', 'returned']).get(),
+    listDrivers(),
+  ]);
   const all = snap.docs.map((d) => normalizeDelivery(d.data() as Delivery));
 
   // Нераспределённые с указанным направлением (раздел 1 — заявки магазинов

@@ -1,4 +1,4 @@
-import { Delivery, listShopRequests, markNotified } from './deliveries';
+import { Delivery, listUnclaimedShopRequests, markNotified } from './deliveries';
 import { listShops, Shop } from './shops';
 import { sendPushToUser } from './push';
 import { haversineKm } from './geo';
@@ -54,15 +54,15 @@ export async function notifyNearbyDrivers(delivery: Delivery, shop: Shop): Promi
 // Повторная рассылка заявок, которые никто не взял за REBROADCAST_AFTER_MS. Вызывается
 // «по случаю» из GET-эндпоинтов (когда логист или водитель открыл/обновил страницу) —
 // настоящего фонового cron нет, так что сработает только когда кто-то реально зайдёт.
-// Throttled через CHECK_INTERVAL_MS, чтобы не сканировать все заявки на каждый poll.
+// Throttled через CHECK_INTERVAL_MS, чтобы не дёргать Firestore на каждый poll. Сам
+// запрос узкий (новые и ничьи) — не сканирует всю историю заявок.
 export async function rebroadcastStaleOffers(): Promise<void> {
   const now = Date.now();
   if (now - lastCheckAt < CHECK_INTERVAL_MS) return;
   lastCheckAt = now;
 
-  const all = await listShopRequests();
-  const stale = all.filter((d) => {
-    if (d.driver_username || d.status !== 'new') return false;
+  const unclaimed = await listUnclaimedShopRequests();
+  const stale = unclaimed.filter((d) => {
     const last = d.last_notified_at ? new Date(d.last_notified_at).getTime() : new Date(d.created_at).getTime();
     return now - last >= REBROADCAST_AFTER_MS;
   });

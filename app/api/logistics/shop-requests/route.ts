@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getSession, ROLE_RANK } from '@/lib/auth';
-import { createDelivery, listShopRequests, listShopRequestsForShop } from '@/lib/deliveries';
+import { createDelivery, listShopRequestsForAdmin, listShopRequestsForShop } from '@/lib/deliveries';
 import { getShop } from '@/lib/shops';
 import { notifyNearbyDrivers, rebroadcastStaleOffers } from '@/lib/shopOffers';
 
@@ -22,7 +22,7 @@ export async function GET() {
   if (ROLE_RANK[s.role] < ROLE_RANK['manager']) {
     return Response.json({ error: 'Недостаточно прав' }, { status: 403 });
   }
-  return Response.json({ data: await listShopRequests() });
+  return Response.json({ data: await listShopRequestsForAdmin() });
 }
 
 // Магазин создаёт заявку (или менеджер/админ — от имени любого магазина).
