@@ -151,10 +151,11 @@ function LogisticsContent() {
   useEffect(() => {
     listRoutes().then((r) => setActiveRoutes(r.filter((x) => x.status === 'active'))).catch(() => {});
   }, []);
+  const [capSettingsLoaded, setCapSettingsLoaded] = useState(false);
   useEffect(() => {
     fetchLogisticsSettings().then((s: LogisticsSettings) => {
       setCapSettings(s);
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setCapSettingsLoaded(true));
   }, []);
 
   // Список видов транспорта берётся из реальных значений поля «Транспорт» у водителей.
@@ -415,7 +416,7 @@ function LogisticsContent() {
             <option key={t} value={t}>{t}</option>
           ))}
         </select>
-        <div key={effectiveCapType} className="flex items-center gap-1.5">
+        <div key={`${effectiveCapType}-${capSettingsLoaded}`} className="flex items-center gap-1.5">
           <input ref={capKgRef} type="number" min={0} step={1} defaultValue={currentCap.kg}
             onBlur={(e) => saveCapType(e.target.value, capM3Ref.current?.value ?? String(currentCap.m3))}
             className="w-20 border border-gray-200 rounded-lg px-1.5 py-1 text-xs text-right outline-none focus:border-blue-400" />
