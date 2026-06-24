@@ -11,6 +11,9 @@ export interface LogisticsSettings {
   // КПИ водителя — ставка за км по виду транспорта (для отчётов), отдельно от
   // топлива: у LABO своя ставка, у Газели своя и т.д. Тот же принцип ключей, что у cap_by_type.
   rate_by_type: Record<string, number>;
+  // КПИ за точку доставки (сумма за один заезд в магазин, независимо от числа
+  // накладных/складов) по виду транспорта. Тот же принцип ключей.
+  point_rate_by_type: Record<string, number>;
 }
 
 const DEFAULTS: LogisticsSettings = {
@@ -21,6 +24,7 @@ const DEFAULTS: LogisticsSettings = {
     [CAP_DEFAULT_KEY]: { kg: 300, m3: 2 },
   },
   rate_by_type: {},
+  point_rate_by_type: {},
 };
 
 export async function getLogisticsSettings(): Promise<LogisticsSettings> {
@@ -31,6 +35,7 @@ export async function getLogisticsSettings(): Promise<LogisticsSettings> {
     fuel_rate_per_km: data.fuel_rate_per_km ?? DEFAULTS.fuel_rate_per_km,
     cap_by_type: data.cap_by_type && Object.keys(data.cap_by_type).length ? data.cap_by_type : { ...DEFAULTS.cap_by_type },
     rate_by_type: data.rate_by_type ?? DEFAULTS.rate_by_type,
+    point_rate_by_type: data.point_rate_by_type ?? DEFAULTS.point_rate_by_type,
   };
 }
 

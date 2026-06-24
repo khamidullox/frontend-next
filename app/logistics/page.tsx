@@ -62,6 +62,7 @@ const DEFAULT_CAP_SETTINGS: LogisticsSettings = {
     [CAP_DEFAULT_KEY]: { kg: 300, m3: 2 },
   },
   rate_by_type: {},
+  point_rate_by_type: {},
 };
 
 // Дефолтная вместимость по виду транспорта (если у водителя не задана вручную).

@@ -9,6 +9,7 @@ import {
   Route, UserInfo, Delivery, DeliveryStatus,
 } from '@/lib/api';
 import { fmtDateTimeYear as fmt } from '@/lib/format';
+import { normalizeName } from '@/lib/normalize';
 
 const STATUS_LABEL: Record<DeliveryStatus, string> = {
   new: 'Новая', assigned: 'Назначено', on_way: 'В пути', delivered: 'Доставлено', returned: 'Возврат',
@@ -32,7 +33,8 @@ function vehicleFamily(transport: string | null | undefined): 'LABO' | 'Газе
   return null;
 }
 
-// Ставка КПИ (сум/км) для вида транспорта: точная модель → семейство → «Прочие».
+// Ставка для вида транспорта: точная модель → семейство → «Прочие».
+// Используется и для ставки за км, и для ставки за точку (передаётся нужная таблица).
 function rateForType(transport: string | null | undefined, rates: Record<string, number>): number {
   const key = (transport || '').trim();
   if (key && rates[key] !== undefined) return rates[key];
@@ -62,6 +64,17 @@ function tripKey(d: Delivery): string {
   if (d.route_id) return `r:${d.route_id}`;
   const driverKey = d.driver_username || d.driver_name || '—';
   return `t:${driverKey}:${completedAt(d).slice(0, 16)}`;
+}
+
+// Точка доставки = пункт назначения (магазин/клиент). Несколько накладных с разных
+// складов в один магазин — это одна точка. shop_id, иначе нормализованное имя получателя.
+function destKey(d: Delivery): string {
+  return d.shop_id || normalizeName(d.to_name || d.client_name || d.address || '') || 'no-dest';
+}
+
+// «Точка за выезд»: одна и та же точка в разных выездах считается отдельно.
+function tripStopKey(d: Delivery): string {
+  return `${tripKey(d)}::${destKey(d)}`;
 }
 
 function ReportsContent() {
@@ -119,6 +132,15 @@ function ReportsContent() {
     await saveLogisticsSettings({ fuel_rate_per_km: n }).catch(() => {});
   }
 
+  const currentPointRate = settings?.point_rate_by_type[effectiveRateType] ?? 0;
+  async function savePointRate(val: string) {
+    if (!settings) return;
+    const n = Math.max(0, Number(val) || 0);
+    const next = { ...settings.point_rate_by_type, [effectiveRateType]: n };
+    setSettings((prev) => (prev ? { ...prev, point_rate_by_type: next } : prev));
+    await saveLogisticsSettings({ point_rate_by_type: next }).catch(() => {});
+  }
+
   function applyQuick(q: typeof quick) {
     setQuick(q);
     const now = new Date();
@@ -138,28 +160,34 @@ function ReportsContent() {
     return true;
   }), [deliveries, filterFrom, filterTo]);
 
-  // Агрегация по водителю: доставки, км, выезды (уникальные tripKey).
+  // Агрегация по водителю: доставки, км, выезды (уникальные tripKey), точки доставки
+  // (уникальные tripStopKey — несколько накладных с разных складов в один магазин за
+  // один выезд считаются одной точкой; тот же магазин в другом выезде — другая точка).
   const driverStats = useMemo(() => {
-    const m = new Map<string, { username: string; name: string; car: string; transport: string; trips: Set<string>; km: number; points: number }>();
+    const m = new Map<string, { username: string; name: string; car: string; transport: string; trips: Set<string>; stops: Set<string>; km: number; points: number }>();
     for (const d of drivers) {
-      m.set(d.username, { username: d.username, name: d.name, car: d.car_number || '', transport: d.transport || '', trips: new Set(), km: 0, points: 0 });
+      m.set(d.username, { username: d.username, name: d.name, car: d.car_number || '', transport: d.transport || '', trips: new Set(), stops: new Set(), km: 0, points: 0 });
     }
     for (const d of periodDeliveries) {
       const key = d.driver_username || d.driver_name || '—';
-      const cur = m.get(key) || { username: key, name: d.driver_name || key, car: d.car_number || '', transport: d.transport || '', trips: new Set<string>(), km: 0, points: 0 };
+      const cur = m.get(key) || { username: key, name: d.driver_name || key, car: d.car_number || '', transport: d.transport || '', trips: new Set<string>(), stops: new Set<string>(), km: 0, points: 0 };
       cur.km += d.km || 0;
       cur.points += 1;
       cur.trips.add(tripKey(d));
+      cur.stops.add(tripStopKey(d));
       if (!cur.car && d.car_number) cur.car = d.car_number;
       if (!cur.transport && d.transport) cur.transport = d.transport;
       m.set(key, cur);
     }
     const rates = settings?.rate_by_type ?? {};
+    const pointRates = settings?.point_rate_by_type ?? {};
     const fuelRate = settings?.fuel_rate_per_km ?? 0;
     return [...m.values()]
       .map(d => ({
         username: d.username, name: d.name, car: d.car, km: d.km, points: d.points, trips: d.trips.size,
+        stops: d.stops.size,
         kpi: Math.round(d.km * rateForType(d.transport, rates)),
+        pointKpi: Math.round(d.stops.size * rateForType(d.transport, pointRates)),
         // Топливо — по фактически пройденному пути (туда-обратно), отсюда ×2.
         fuel: Math.round(d.km * 2 * fuelRate),
       }))
@@ -167,8 +195,9 @@ function ReportsContent() {
   }, [drivers, periodDeliveries, settings]);
 
   const totals = useMemo(() => driverStats.reduce((s, d) => ({
-    km: s.km + d.km, trips: s.trips + d.trips, points: s.points + d.points, kpi: s.kpi + d.kpi, fuel: s.fuel + d.fuel,
-  }), { km: 0, trips: 0, points: 0, kpi: 0, fuel: 0 }), [driverStats]);
+    km: s.km + d.km, trips: s.trips + d.trips, points: s.points + d.points, stops: s.stops + d.stops,
+    kpi: s.kpi + d.kpi, pointKpi: s.pointKpi + d.pointKpi, fuel: s.fuel + d.fuel,
+  }), { km: 0, trips: 0, points: 0, stops: 0, kpi: 0, pointKpi: 0, fuel: 0 }), [driverStats]);
 
   // Пустые маршруты (без привязанных доставок) — кандидаты на удаление.
   const emptyRoutes = useMemo(() => routes.filter(r => (r.delivery_ids?.length || 0) === 0), [routes]);
@@ -234,25 +263,34 @@ function ReportsContent() {
             className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-right outline-none focus:border-blue-400" />
           <span className="text-[11px] text-gray-400">сум/км</span>
           <span className="w-px h-6 bg-gray-200 mx-1" />
+          <span className="text-xs text-gray-500 whitespace-nowrap">📍 За точку:</span>
+          <input key={`pt-${effectiveRateType}`} type="number" min={0} step={500} defaultValue={currentPointRate}
+            onBlur={(e) => savePointRate(e.target.value)}
+            className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-right outline-none focus:border-blue-400" />
+          <span className="text-[11px] text-gray-400">сум/точку</span>
+          <span className="w-px h-6 bg-gray-200 mx-1" />
           <span className="text-xs text-gray-500 whitespace-nowrap">⛽ Топливо (сум/км):</span>
           <input type="number" min={0} step={100} defaultValue={settings.fuel_rate_per_km}
             onBlur={(e) => saveFuel(e.target.value)}
             className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-right outline-none focus:border-blue-400" />
           <span className="text-[11px] text-gray-400 basis-full">
-            КПИ — пройденный км (в одну сторону) × ставка транспорта. Топливо — по факту туда-обратно (км × 2 × ставка).
+            КПИ — пройденный км (в одну сторону) × ставка транспорта. За точку — число точек доставки (магазин за выезд,
+            независимо от числа накладных/складов) × ставка. Топливо — по факту туда-обратно (км × 2 × ставка).
           </span>
         </div>
       )}
 
       {/* Сводка по всем */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-2 mb-4">
         {[
           { label: 'Выездов', value: `${totals.trips}` },
+          { label: 'Точек доставки', value: `${totals.stops}` },
           { label: 'Доставок', value: `${totals.points}` },
           { label: 'Км (туда-обратно)', value: `${totals.km * 2} км` },
-          { label: 'КПИ водителям', value: `${totals.kpi.toLocaleString('ru-RU')} сум` },
+          { label: 'КПИ за км', value: `${totals.kpi.toLocaleString('ru-RU')} сум` },
+          { label: 'КПИ за точки', value: `${totals.pointKpi.toLocaleString('ru-RU')} сум` },
           { label: 'Топливо', value: `${totals.fuel.toLocaleString('ru-RU')} сум` },
-          { label: 'Итого расходы', value: `${(totals.kpi + totals.fuel).toLocaleString('ru-RU')} сум`, accent: true },
+          { label: 'Итого расходы', value: `${(totals.kpi + totals.pointKpi + totals.fuel).toLocaleString('ru-RU')} сум`, accent: true },
         ].map(({ label, value, accent }) => (
           <div key={label} className="bg-white rounded-xl shadow-sm p-3 text-center">
             <div className={`text-lg font-bold ${accent ? 'text-rose-600' : 'text-blue-600'}`}>{value}</div>
@@ -297,13 +335,15 @@ function ReportsContent() {
                     </div>
                     <div className="flex flex-wrap gap-3 mt-1">
                       <span className="text-xs text-gray-500">📦 {ds.points} доставок</span>
+                      {ds.stops > 0 && <span className="text-xs text-gray-500">📍 {ds.stops} точек</span>}
                       {ds.trips > 0 && <span className="text-xs text-gray-400">🚐 {ds.trips} выездов</span>}
                     </div>
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-base font-bold text-emerald-600">{ds.km} км</div>
                     <div className="text-[10px] text-gray-400">туда-обратно {ds.km * 2} км</div>
-                    {ds.kpi > 0 && <div className="text-[11px] font-semibold text-amber-600 mt-0.5">💰 КПИ {ds.kpi.toLocaleString('ru-RU')} сум</div>}
+                    {ds.kpi > 0 && <div className="text-[11px] font-semibold text-amber-600 mt-0.5">💰 за км {ds.kpi.toLocaleString('ru-RU')} сум</div>}
+                    {ds.pointKpi > 0 && <div className="text-[11px] font-semibold text-amber-600">📍 за точки {ds.pointKpi.toLocaleString('ru-RU')} сум</div>}
                     {ds.fuel > 0 && <div className="text-[11px] text-gray-500">⛽ {ds.fuel.toLocaleString('ru-RU')} сум</div>}
                   </div>
                   <span className="text-gray-400 text-sm shrink-0">{isOpen ? '▲' : '▼'}</span>
@@ -317,11 +357,13 @@ function ReportsContent() {
                     ) : (
                       trips.map((group, gi) => {
                         const tripKm = group.reduce((s, d) => s + (d.km || 0), 0);
+                        const stopsInTrip = new Set(group.map((d) => destKey(d))).size;
                         return (
                           <div key={tripKey(group[0])} className="rounded-lg border border-gray-100 overflow-hidden bg-white">
                             <div className="px-3 py-1.5 bg-gray-100 flex items-center gap-2 flex-wrap">
                               <span className="text-xs font-semibold text-gray-600">🚐 Выезд {gi + 1}</span>
                               <span className="text-[11px] text-gray-400">· {group.length} {group.length === 1 ? 'накладная' : 'накладных'}</span>
+                              <span className="text-[11px] text-gray-400">· {stopsInTrip} {stopsInTrip === 1 ? 'точка' : 'точек'}</span>
                               {tripKm > 0 && <span className="text-[11px] text-emerald-600">🛣️ {tripKm} км</span>}
                               <span className="text-[11px] text-gray-400 ml-auto">📅 {fmt(completedAt(group[0]))}</span>
                             </div>
