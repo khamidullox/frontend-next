@@ -21,4 +21,6 @@ export interface CheckDocument {
   client_name: string | null;
   note: string | null;
   items: DocItem[];
+  lat?: number | null;  // координаты клиента из Smartup (заказы дистрибуции), если есть
+  lng?: number | null;
 }

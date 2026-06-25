@@ -345,6 +345,10 @@ export async function createDelivery(
   // «Собрано» по умолчанию — нет, пока кто-то не подтвердит (проверкой или вручную).
   // Исключение — создаём из уже завершённой проверки: тогда сразу «собрано».
   let picked = false;
+  // Координаты клиента из Smartup (заказы дистрибуции, person_latitude/longitude) —
+  // если есть точные, используем их, не дожидаясь GPS водителя при доставке.
+  let docLat: number | null = null;
+  let docLng: number | null = null;
 
   // Из проверки (сессии сканирования).
   if (input.session_id) {
@@ -379,6 +383,8 @@ export async function createDelivery(
     fromCode = doc.from_warehouse_code;
     toCode = doc.to_warehouse_code;
     docItems = doc.items.map((it) => ({ product_code: it.product_code, quantity: it.quantity }));
+    docLat = doc.lat ?? null;
+    docLng = doc.lng ?? null;
   }
 
   // Заявки магазина (ProductPicker) не приходят из сессии/документа — товары лежат
@@ -420,8 +426,8 @@ export async function createDelivery(
     to_name,
     shop_id: input.shop_id ? str(input.shop_id) : null,
     shop_name: input.shop_name ? str(input.shop_name) : null,
-    lat: input.lat != null ? Number(input.lat) : null,
-    lng: input.lng != null ? Number(input.lng) : null,
+    lat: input.lat != null ? Number(input.lat) : docLat,
+    lng: input.lng != null ? Number(input.lng) : docLng,
     total_weight: input.weight_kg != null ? input.weight_kg : dims.weight,
     total_volume_l: input.volume_m3 != null ? input.volume_m3 * 1000 : dims.volume_l,
     total_qty: dims.qty,

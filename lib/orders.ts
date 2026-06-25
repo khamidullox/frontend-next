@@ -95,6 +95,9 @@ export async function getOrderDocument(dealId: string): Promise<CheckDocument | 
     };
   });
 
+  const lat = order.person_latitude != null && order.person_latitude !== '' ? Number(order.person_latitude) : null;
+  const lng = order.person_longitude != null && order.person_longitude !== '' ? Number(order.person_longitude) : null;
+
   return {
     doc_type: 'order',
     doc_id: String(order.deal_id),
@@ -104,6 +107,8 @@ export async function getOrderDocument(dealId: string): Promise<CheckDocument | 
     to_warehouse_code: order.room_name || null,
     client_name: order.person_name || null,
     note: order.deal_note || order.note || null,
+    lat: Number.isFinite(lat) ? lat : null,
+    lng: Number.isFinite(lng) ? lng : null,
     items,
   };
 }
