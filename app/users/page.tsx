@@ -5,13 +5,10 @@ import { listUsers, createUser, deleteUserApi, updateUser, listAllWarehouses, li
 import AdminGate from '@/components/AdminGate';
 import { loadXLSX } from '@/lib/xlsx';
 import Pager from '@/components/Pager';
+import { whCode } from '@/lib/warehouse';
 
 const PAGE_SIZE = 50;
 
-// Код склада = первый токен названия («001 Основной склад» → «001»).
-function whCode(name: string): string {
-  return String(name || '').trim().split(/\s+/)[0] || '';
-}
 function parseWarehouses(v: string): string[] {
   return String(v || '').split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
 }
@@ -27,6 +24,7 @@ async function exportUsersExcel(users: UserInfo[], shops: Shop[]) {
     'Роль': ROLE_LABEL[u.role],
     'Склады': u.warehouses.join(', '),
     'Магазин': u.shop_id ? shopName(u.shop_id) : '',
+    'Свой склад': u.home_warehouse,
     'Машина': u.car_number,
     'Транспорт': u.transport,
     'Создан': u.created_at ? new Date(u.created_at).toLocaleString('ru-RU') : '',
@@ -164,6 +162,7 @@ function UsersContent() {
   const [whList, setWhList] = useState<WarehouseSummary[]>([]);
   const [shopList, setShopList] = useState<Shop[]>([]);
   const [shopId, setShopId] = useState('');
+  const [homeWh, setHomeWh] = useState('');
   const [busy, setBusy] = useState(false);
   const [page, setPage] = useState(1);
   const [editUser, setEditUser] = useState<UserInfo | null>(null);
@@ -196,9 +195,10 @@ function UsersContent() {
         capacity_kg: role === 'driver' ? Number(capKg) || 0 : undefined,
         direction: role === 'driver' ? direction.trim() : undefined,
         shop_id: role === 'worker' ? shopId : undefined,
+        home_warehouse: role === 'worker' ? homeWh : undefined,
       });
       setUsername(''); setName(''); setPassword(''); setRole('worker'); setSelectedWh([]);
-      setCarNumber(''); setTransport(''); setCapM3(''); setCapKg(''); setDirection(''); setShopId('');
+      setCarNumber(''); setTransport(''); setCapM3(''); setCapKg(''); setDirection(''); setShopId(''); setHomeWh('');
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -375,6 +375,18 @@ function UsersContent() {
           </div>
         )}
 
+        {/* Свой склад — используется по умолчанию в «Печать ценников» и др. */}
+        {role === 'worker' && (
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">🏬 Свой склад (по умолчанию в ценниках)</label>
+            <select value={homeWh} onChange={(e) => setHomeWh(e.target.value)}
+              className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
+              <option value="">— не выбран —</option>
+              {whList.map((w) => <option key={w.warehouse_id} value={whCode(w.warehouse_name)}>{w.warehouse_name}</option>)}
+            </select>
+          </div>
+        )}
+
         {/* Прикреплённые склады */}
         {role !== 'driver' && whList.length > 0 && (
           <WarehousePicker all={whList} selected={selectedWh} onChange={setSelectedWh} />
@@ -422,6 +434,9 @@ function UsersContent() {
                       <span className="text-teal-600">
                         {u.warehouses.length ? `Склады: ${u.warehouses.join(', ')}` : 'Склады: все'}
                       </span>
+                      {u.role === 'worker' && u.home_warehouse && (
+                        <span className="text-violet-600">{' · 🏬 свой: '}{u.home_warehouse}</span>
+                      )}
                     </>
                   )}
                 </div>
@@ -466,6 +481,7 @@ function EditUserModal({
   const [password, setPassword] = useState('');
   const [wh, setWh] = useState<string[]>(user.warehouses);
   const [shopId, setShopId] = useState(user.shop_id || '');
+  const [homeWh, setHomeWh] = useState(user.home_warehouse || '');
   const [car, setCar] = useState(user.car_number);
   const [transport, setTransport] = useState(user.transport);
   const [capM3, setCapM3] = useState(String(user.capacity_m3 || ''));
@@ -488,7 +504,7 @@ function EditUserModal({
     setBusy(true);
     setErr('');
     try {
-      const patch: { name?: string; password?: string; warehouses?: string[]; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string; shop_id?: string; gps_user_id?: string } = {};
+      const patch: { name?: string; password?: string; warehouses?: string[]; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string; shop_id?: string; home_warehouse?: string; gps_user_id?: string } = {};
       if (editName.trim() && editName.trim() !== user.name) patch.name = editName.trim();
       if (password.trim()) patch.password = password.trim();
       if (isDriver) {
@@ -500,7 +516,7 @@ function EditUserModal({
         patch.gps_user_id = gpsUserId.trim();
       } else {
         patch.warehouses = wh;
-        if (isWorker) patch.shop_id = shopId;
+        if (isWorker) { patch.shop_id = shopId; patch.home_warehouse = homeWh; }
       }
       await updateUser(user.username, patch);
       onSaved();
@@ -610,6 +626,16 @@ function EditUserModal({
                     {allShops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                   {allShops.length === 0 && <p className="text-xs text-amber-500 mt-1">Нет точек — добавьте в Логистика → Точки доставки</p>}
+                </div>
+              )}
+              {isWorker && (
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">🏬 Свой склад (по умолчанию в ценниках)</label>
+                  <select value={homeWh} onChange={(e) => setHomeWh(e.target.value)}
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
+                    <option value="">— не выбран —</option>
+                    {allWh.map((w) => <option key={w.warehouse_id} value={whCode(w.warehouse_name)}>{w.warehouse_name}</option>)}
+                  </select>
                 </div>
               )}
               <div>

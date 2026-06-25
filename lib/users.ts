@@ -16,6 +16,7 @@ export interface StoredUser {
   capacity_kg?: number;  // грузоподъёмность, кг
   direction?: string;    // основное направление машины
   shop_id?: string;      // для роли «магазин» — привязка к точке (lib/shops.ts)
+  home_warehouse?: string; // для роли «магазин» — код своего склада (по умолчанию в ценниках и т.п.)
   gps_user_id?: string;  // UUID на платформе gps16888.com
 }
 
@@ -31,6 +32,7 @@ export interface UserInfo {
   capacity_kg: number;
   direction: string;
   shop_id: string;
+  home_warehouse: string;
   gps_user_id: string;
 }
 
@@ -47,6 +49,7 @@ function publicUser(u: StoredUser): UserInfo {
     capacity_kg: Number(u.capacity_kg) || 0,
     direction: u.direction ?? '',
     shop_id: u.shop_id ?? '',
+    home_warehouse: u.home_warehouse ?? '',
     gps_user_id: u.gps_user_id ?? '',
   };
 }
@@ -93,6 +96,7 @@ export async function createUser(input: {
   capacity_kg?: number;
   direction?: string;
   shop_id?: string;
+  home_warehouse?: string;
 }): Promise<{ ok: true } | { error: string }> {
   const username = normUsername(input.username);
   if (!username) return { error: 'Логин обязателен' };
@@ -120,6 +124,7 @@ export async function createUser(input: {
     capacity_kg: Math.max(0, Number(input.capacity_kg) || 0),
     direction: String(input.direction || '').trim(),
     shop_id: String(input.shop_id || '').trim(),
+    home_warehouse: String(input.home_warehouse || '').trim(),
   };
   await ref.set(user);
   return { ok: true };
@@ -162,6 +167,18 @@ export async function setWorkerShop(
   const snap = await ref.get();
   if (!snap.exists) return { error: 'Пользователь не найден' };
   await ref.set({ shop_id: String(shopId || '').trim() }, { merge: true });
+  return { ok: true };
+}
+
+// Свой склад магазина (роль «worker») — используется как умолчание в ценниках и т.п.
+export async function setWorkerHomeWarehouse(
+  username: string,
+  warehouseCode: string
+): Promise<{ ok: true } | { error: string }> {
+  const ref = getDb().collection(COLLECTION).doc(normUsername(username));
+  const snap = await ref.get();
+  if (!snap.exists) return { error: 'Пользователь не найден' };
+  await ref.set({ home_warehouse: String(warehouseCode || '').trim() }, { merge: true });
   return { ok: true };
 }
 

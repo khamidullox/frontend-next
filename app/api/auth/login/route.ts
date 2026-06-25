@@ -13,7 +13,10 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: 'Неверный логин или пароль' }, { status: 401 });
     }
     const warehouses = Array.isArray(user.warehouses) ? user.warehouses : [];
-    const session = { username: user.username, name: user.name, role: user.role, warehouses, shop_id: user.shop_id || undefined };
+    const session = {
+      username: user.username, name: user.name, role: user.role, warehouses,
+      shop_id: user.shop_id || undefined, home_warehouse: user.home_warehouse || undefined,
+    };
     await setSessionCookie(session);
     return Response.json(session);
   } catch (err) {

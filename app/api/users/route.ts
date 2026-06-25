@@ -13,7 +13,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   return withRole('admin', async () => {
-    const { username, name, role, password, warehouses, car_number, transport, shop_id } =
+    const { username, name, role, password, warehouses, car_number, transport, shop_id, home_warehouse } =
       await request.json().catch(() => ({}));
     const res = await createUser({
       username: String(username || ''),
@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
       car_number: car_number === undefined ? undefined : String(car_number),
       transport: transport === undefined ? undefined : String(transport),
       shop_id: shop_id === undefined ? undefined : String(shop_id),
+      home_warehouse: home_warehouse === undefined ? undefined : String(home_warehouse),
     });
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
     return Response.json({ ok: true });

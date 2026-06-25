@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { deleteUser, setPassword, setUserWarehouses, setDriverProfile, setWorkerShop } from '@/lib/users';
+import { deleteUser, setPassword, setUserWarehouses, setDriverProfile, setWorkerShop, setWorkerHomeWarehouse } from '@/lib/users';
 import { listDeliveriesForDriver } from '@/lib/deliveries';
 import { withRole } from '@/lib/auth';
 
@@ -52,6 +52,10 @@ export async function PATCH(
     }
     if (body.shop_id !== undefined) {
       const res = await setWorkerShop(username, body.shop_id);
+      if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
+    }
+    if (body.home_warehouse !== undefined) {
+      const res = await setWorkerHomeWarehouse(username, body.home_warehouse);
       if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
     }
     return Response.json({ ok: true });
