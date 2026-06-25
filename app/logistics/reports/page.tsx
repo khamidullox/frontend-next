@@ -64,6 +64,15 @@ function tripKey(d: Delivery): string {
 // Точка доставки = пункт назначения (магазин/клиент). Несколько накладных с разных
 // складов в один магазин — это одна точка. shop_id, иначе нормализованное имя получателя.
 function destKey(d: Delivery): string {
+  // shop_id значит разное в зависимости от kind: для warehouse_dispatch это пункт
+  // назначения (магазин) — годится для дедупа. Для shop_to_client это, наоборот,
+  // магазин-ОТПРАВИТЕЛЬ (откуда забрали товар) — у двух доставок к разным клиентам
+  // с одного магазина он совпадает, и без этой развилки они считались бы одной и
+  // той же точкой (ровно тот же баг, что чинили в lib/deliveries.ts для км).
+  if (d.kind === 'shop_to_client') {
+    if (d.lat != null && d.lng != null) return `${d.lat.toFixed(4)},${d.lng.toFixed(4)}`;
+    return normalizeName(d.address || d.client_name || '') || 'no-dest';
+  }
   return d.shop_id || normalizeName(d.to_name || d.client_name || d.address || '') || 'no-dest';
 }
 
