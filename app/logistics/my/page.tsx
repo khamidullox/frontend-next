@@ -584,7 +584,10 @@ function DeliveryCard({
           <div className="font-bold text-base mt-1">{d.client_name || 'Без названия'}</div>
           {d.address && <div className="text-sm text-gray-600 mt-0.5">📍 {d.address}</div>}
           {d.client_phone && (
-            <a href={`tel:${d.client_phone}`} className="text-sm text-blue-600 mt-0.5 inline-block hover:underline">📞 {d.client_phone}</a>
+            <a href={`tel:${d.client_phone}`}
+              className="mt-1.5 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-green-50 text-green-700 text-sm font-semibold active:bg-green-100">
+              📞 Позвонить: {d.client_phone}
+            </a>
           )}
           {d.items.length > 0 && (
             <div className="text-xs text-gray-500 mt-0.5">📦 {d.items.map((it) => `${it.name} ×${it.qty}`).join(', ')}</div>
