@@ -8,6 +8,7 @@ const TABS = [
   { href: '/logistics/shop-requests', label: '2️⃣ Заявки магазинов' },
   { href: '/logistics/map', label: '3️⃣ Карта' },
   { href: '/logistics/client-addresses', label: '4️⃣ Адреса клиентов' },
+  { href: '/logistics/mileage', label: '5️⃣ Пробег GPS' },
 ];
 
 // Навигация между тремя разделами логистики (для менеджера/админа).

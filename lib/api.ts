@@ -369,6 +369,20 @@ export async function listClientAddressStatus(): Promise<ClientAddressStatus[]> 
   return data.data || [];
 }
 
+export interface DailyMileageRow {
+  user_id: string;
+  user_name: string;
+  km: number;
+  updated_at: string;
+}
+
+export async function fetchDailyMileage(date?: string): Promise<{ data: DailyMileageRow[]; date: string }> {
+  const url = date ? `/api/logistics/mileage?date=${encodeURIComponent(date)}` : '/api/logistics/mileage';
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  return res.json();
+}
+
 export interface TransferListItem {
   transfer_id: string;
   number: string;
