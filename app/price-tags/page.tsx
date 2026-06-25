@@ -9,7 +9,6 @@ import { useAuth } from '@/components/AuthProvider';
 import { useCachedList } from '@/lib/useCachedList';
 import { loadJsBarcode, pickBarcode } from '@/lib/barcode';
 import { STORES, getStore, pickStoreByWarehouse, monthlyInstallment, INSTALLMENT, StoreBrand } from '@/lib/stores';
-import { whCode } from '@/lib/warehouse';
 
 type Tab = 'tags' | 'barcodes';
 
@@ -53,7 +52,7 @@ export default function PriceTagsPage() {
     if (whId || warehouses.length === 0) return;
     // Свой склад из профиля (см. /users → «Свой склад») — приоритетнее первого по алфавиту.
     const home = session?.home_warehouse
-      ? warehouses.find(w => whCode(w.warehouse_name) === session.home_warehouse)
+      ? warehouses.find(w => w.warehouse_id === session.home_warehouse)
       : undefined;
     setWhId((home || warehouses[0]).warehouse_id);
   }, [warehouses, whId, session]);

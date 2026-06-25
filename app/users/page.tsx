@@ -13,18 +13,19 @@ function parseWarehouses(v: string): string[] {
   return String(v || '').split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
 }
 
-async function exportUsersExcel(users: UserInfo[], shops: Shop[]) {
+async function exportUsersExcel(users: UserInfo[], shops: Shop[], whList: WarehouseSummary[]) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const XLSX: any = await loadXLSX();
   const shopName = (id: string) => shops.find((s) => s.id === id)?.name || '';
+  const whName = (id: string) => whList.find((w) => w.warehouse_id === id)?.warehouse_name || id;
   const rows = users.map((u, i) => ({
     '№': i + 1,
     'Логин': u.username,
     'Имя': u.name,
     'Роль': ROLE_LABEL[u.role],
-    'Склады': u.warehouses.join(', '),
+    'Склады': u.warehouses.map(whName).join(', '),
     'Магазин': u.shop_id ? shopName(u.shop_id) : '',
-    'Свой склад': u.home_warehouse,
+    'Свой склад': u.home_warehouse ? whName(u.home_warehouse) : '',
     'Машина': u.car_number,
     'Транспорт': u.transport,
     'Создан': u.created_at ? new Date(u.created_at).toLocaleString('ru-RU') : '',
@@ -93,8 +94,8 @@ function WarehousePicker({
     return needle ? all.filter((w) => w.warehouse_name.toLowerCase().includes(needle)) : all;
   }, [all, q]);
 
-  function toggle(code: string) {
-    onChange(selected.includes(code) ? selected.filter((c) => c !== code) : [...selected, code]);
+  function toggle(id: string) {
+    onChange(selected.includes(id) ? selected.filter((c) => c !== id) : [...selected, id]);
   }
 
   return (
@@ -123,10 +124,9 @@ function WarehousePicker({
           </div>
           <div className="flex flex-wrap gap-1.5 max-h-52 overflow-y-auto">
             {filtered.map((w) => {
-              const code = whCode(w.warehouse_name);
-              const on = selected.includes(code);
+              const on = selected.includes(w.warehouse_id);
               return (
-                <button type="button" key={w.warehouse_id} onClick={() => toggle(code)}
+                <button type="button" key={w.warehouse_id} onClick={() => toggle(w.warehouse_id)}
                   className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
                     on ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
                   }`}>
@@ -160,6 +160,7 @@ function UsersContent() {
   const [direction, setDirection] = useState('');
   const [selectedWh, setSelectedWh] = useState<string[]>([]);
   const [whList, setWhList] = useState<WarehouseSummary[]>([]);
+  const whName = useCallback((id: string) => whList.find((w) => w.warehouse_id === id)?.warehouse_name || id, [whList]);
   const [shopList, setShopList] = useState<Shop[]>([]);
   const [shopId, setShopId] = useState('');
   const [homeWh, setHomeWh] = useState('');
@@ -232,6 +233,17 @@ function UsersContent() {
           || shopList.find((s) => s.name.toLowerCase().includes(q) || q.includes(s.name.toLowerCase()));
         return byName?.id || '';
       };
+      // Коды складов из Excel («001,002» или номер из названия типа «5502») →
+      // настоящий warehouse_id (см. lib/warehouse.ts — код в названии часто не совпадает
+      // с реальным кодом Smartup у складов точек/магазинов).
+      const matchWhId = (raw: string): string => {
+        const byId = whList.find((w) => w.warehouse_id === raw);
+        if (byId) return byId.warehouse_id;
+        const byName = whList.find((w) => w.warehouse_name === raw);
+        if (byName) return byName.warehouse_id;
+        const byCode = whList.find((w) => whCode(w.warehouse_name) === raw);
+        return byCode?.warehouse_id || raw;
+      };
       // Текущие логины — для решения создать/обновить.
       const existing = new Set(users.map((u) => u.username.toLowerCase()));
       let created = 0, updated = 0;
@@ -242,7 +254,7 @@ function UsersContent() {
         if (!username && !password) continue;
         const name = pick(r, ['имя', 'name', 'фио', "ma'sul xodim", 'masul xodim']).trim();
         const role = parseRole(pick(r, ['роль', 'role']));
-        const warehouses = parseWarehouses(pick(r, ['склады', 'склад', 'warehouses', 'warehouse']));
+        const warehouses = parseWarehouses(pick(r, ['склады', 'склад', 'warehouses', 'warehouse'])).map(matchWhId);
         const car_number = pick(r, ['машина', 'номер машины', 'гос номер', 'госномер', 'номер', 'davlat raqami', 'car', 'car_number']).trim();
         const transport = pick(r, ['транспорт', 'transport', 'rusumi', 'тип транспорта', 'модель']).trim();
         const shop_id = matchShopId(pick(r, ['магазин', 'магазин (для заказы клиентам)', 'shop', 'do\'kon', 'dokon', 'магазин название']));
@@ -301,7 +313,7 @@ function UsersContent() {
             Шаблон
           </button>
           {users.length > 0 && (
-            <button onClick={() => exportUsersExcel(users, shopList).catch(e => setError((e as Error).message))}
+            <button onClick={() => exportUsersExcel(users, shopList, whList).catch(e => setError((e as Error).message))}
               className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg">
               📥 Выгрузить
             </button>
@@ -382,7 +394,7 @@ function UsersContent() {
             <select value={homeWh} onChange={(e) => setHomeWh(e.target.value)}
               className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
               <option value="">— не выбран —</option>
-              {whList.map((w) => <option key={w.warehouse_id} value={whCode(w.warehouse_name)}>{w.warehouse_name}</option>)}
+              {whList.map((w) => <option key={w.warehouse_id} value={w.warehouse_id}>{w.warehouse_name}</option>)}
             </select>
           </div>
         )}
@@ -432,10 +444,10 @@ function UsersContent() {
                     <>
                       {' · '}
                       <span className="text-teal-600">
-                        {u.warehouses.length ? `Склады: ${u.warehouses.join(', ')}` : 'Склады: все'}
+                        {u.warehouses.length ? `Склады: ${u.warehouses.map(whName).join(', ')}` : 'Склады: все'}
                       </span>
                       {u.role === 'worker' && u.home_warehouse && (
-                        <span className="text-violet-600">{' · 🏬 свой: '}{u.home_warehouse}</span>
+                        <span className="text-violet-600">{' · 🏬 свой: '}{whName(u.home_warehouse)}</span>
                       )}
                     </>
                   )}
@@ -634,7 +646,7 @@ function EditUserModal({
                   <select value={homeWh} onChange={(e) => setHomeWh(e.target.value)}
                     className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
                     <option value="">— не выбран —</option>
-                    {allWh.map((w) => <option key={w.warehouse_id} value={whCode(w.warehouse_name)}>{w.warehouse_name}</option>)}
+                    {allWh.map((w) => <option key={w.warehouse_id} value={w.warehouse_id}>{w.warehouse_name}</option>)}
                   </select>
                 </div>
               )}

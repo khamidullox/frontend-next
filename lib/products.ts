@@ -8,6 +8,7 @@ const CATALOG_TTL_MS = 30 * 60 * 1000;
 import { smartupRequest } from './smartup';
 import { cached } from './cache';
 import { getCachedList, getCachedSnapshot, refreshCachedList, getCachedListUpdatedMs } from './listCache';
+import { whCode } from './warehouse';
 
 // Остатки: снимок в Firestore обновляется фоном, если старше 10 минут
 // (1 тяжёлый запрос на всех 25 магазинов, а не на каждого).
@@ -435,11 +436,15 @@ export async function listWarehouseStock(
     a.qty += b.q;
   }
 
-  // Фильтр по НАСТОЯЩЕМУ коду склада (различает брак/осн.средства).
   // all — все склады (для менеджера/админа); иначе свои/основные.
+  // allowed теперь хранит warehouse_id (правильный, устойчивый идентификатор — настоящий
+  // код Smartup у складов точек/магазинов часто НЕ совпадает с числом в их названии,
+  // напр. «5502 Склад Kombinat...» имеет код «08»). Старые записи могли быть сохранены
+  // по коду из названия — поддерживаем и его как фолбэк, чтобы не сломать уже настроенных
+  // пользователей.
   const allow = allowed && allowed.length
     ? new Set(allowed.map((c) => String(c).trim()))
-    : new Set(MAIN_WAREHOUSE_CODES);
+    : null;
 
   return [...agg.entries()]
     .map(([whId, a]) => ({
@@ -453,7 +458,8 @@ export async function listWarehouseStock(
       const code = idCode.get(w.warehouse_id) || '';
       if (opts?.excludeMain && MAIN_WAREHOUSE_CODES.has(code)) return false;
       if (opts?.all) return true;
-      return allow.has(code);
+      if (!allow) return MAIN_WAREHOUSE_CODES.has(code);
+      return allow.has(w.warehouse_id) || allow.has(code) || allow.has(whCode(w.warehouse_name));
     })
     .sort((a, b) => a.warehouse_name.localeCompare(b.warehouse_name, 'ru'));
 }
