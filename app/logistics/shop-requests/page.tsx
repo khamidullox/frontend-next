@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AdminGate from '@/components/AdminGate';
 import LogisticsTabs from '@/components/LogisticsTabs';
 import {
@@ -80,16 +80,34 @@ function ShopRequestsContent() {
   const [editLng, setEditLng] = useState<number | undefined>(undefined);
   const [editBusy, setEditBusy] = useState(false);
 
-  const load = useCallback(async () => {
+  // Водители/маршруты/магазины меняются редко (завели нового водителя, добавили точку) —
+  // обновляем их раз в 5 минут отдельным таймером, а не на каждом тике опроса заявок:
+  // раньше всё это (плюс все доставки) перечитывалось каждые 30 сек, что на одной
+  // открытой весь день вкладке давало сотни тысяч чтений Firestore в день.
+  const loadStatic = useCallback(async () => {
     try {
-      const [reqs, drv, routes, shopList, deliveries] = await Promise.all([
-        listShopRequests(), listDrivers(), listRoutes(), listShops(), listDeliveries(),
-      ]);
-      setItems(reqs);
+      const [drv, routes, shopList] = await Promise.all([listDrivers(), listRoutes(), listShops()]);
       setDrivers(drv);
       setActiveRoutes(routes.filter((r) => r.status === 'active'));
       setShops(shopList.filter((s) => s.type !== 'warehouse'));
       setAllShops(shopList);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, []);
+
+  // Доставки — читаем инкрементально (только изменённые с прошлого опроса), как на
+  // главной странице логиста, вместо полного перечитывания до 200 штук каждый раз.
+  const deliveriesSyncedAtRef = useRef('1970-01-01T00:00:00.000Z');
+  function bumpDeliveriesSyncedAt(list: Delivery[]) {
+    for (const d of list) if (d.updated_at > deliveriesSyncedAtRef.current) deliveriesSyncedAtRef.current = d.updated_at;
+  }
+
+  const load = useCallback(async () => {
+    try {
+      const [reqs, deliveries] = await Promise.all([listShopRequests(), listDeliveries()]);
+      setItems(reqs);
+      bumpDeliveriesSyncedAt(deliveries);
       setAllDeliveries(deliveries);
     } catch (e) {
       setError((e as Error).message);
@@ -98,8 +116,29 @@ function ShopRequestsContent() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
-  useLivePoll(load, 30_000);
+  const pollDeliveries = useCallback(async () => {
+    try {
+      const changed = await listDeliveries(deliveriesSyncedAtRef.current);
+      if (!changed.length) return;
+      bumpDeliveriesSyncedAt(changed);
+      setAllDeliveries((prev) => {
+        const map = new Map(prev.map((d) => [d.id, d]));
+        for (const d of changed) map.set(d.id, d);
+        return [...map.values()];
+      });
+    } catch { /* ignore */ }
+  }, []);
+
+  const pollItems = useCallback(async () => {
+    try {
+      setItems(await listShopRequests());
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { loadStatic(); load(); }, [loadStatic, load]);
+  useLivePoll(loadStatic, 5 * 60_000);
+  useLivePoll(pollItems, 45_000);
+  useLivePoll(pollDeliveries, 45_000);
 
   // Тикает раз в минуту, чтобы «никто не взял уже N мин» обновлялось само, пока
   // страница открыта (без этого подсветка появлялась бы только послеload()).
