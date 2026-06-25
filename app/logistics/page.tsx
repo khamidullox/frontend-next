@@ -54,6 +54,7 @@ const DEFAULT_CAP_SETTINGS: LogisticsSettings = {
   },
   rate_by_type: {},
   point_rate_by_type: {},
+  point_rate_low_load_by_type: {},
   fuel_rate_by_type: {},
 };
 

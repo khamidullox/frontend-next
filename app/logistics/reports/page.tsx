@@ -5,7 +5,7 @@ import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
 import {
   listRoutes, listDrivers, listDeliveries, deleteRouteApi,
-  fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings, CAP_DEFAULT_KEY, vehicleFamily,
+  fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings, CAP_DEFAULT_KEY, vehicleFamily, defaultCapacity,
   Route, UserInfo, Delivery, DeliveryStatus,
 } from '@/lib/api';
 import { fmtDateTimeYear as fmt } from '@/lib/format';
@@ -26,6 +26,10 @@ function isoDate(d: Date): string {
 
 // Ставка для вида транспорта: точная модель → семейство → «Прочие».
 // Используется и для ставки за км, и для ставки за точку (передаётся нужная таблица).
+// Выезд считается недогруженным, если фактический вес/объём меньше этой доли
+// вместимости машины — тогда (если задана) применяется сниженная ставка за точку.
+const LOW_LOAD_THRESHOLD = 0.5;
+
 function rateForType(transport: string | null | undefined, rates: Record<string, number>): number {
   const key = (transport || '').trim();
   if (key && rates[key] !== undefined) return rates[key];
@@ -147,6 +151,22 @@ function ReportsContent() {
     }
   }
 
+  const currentLowLoadPointRate = settings?.point_rate_low_load_by_type[effectiveRateType] ?? 0;
+  async function saveLowLoadPointRate(val: string) {
+    if (!settingsRef.current) return;
+    const n = Math.max(0, Number(val) || 0);
+    const next = { ...settingsRef.current.point_rate_low_load_by_type, [effectiveRateType]: n };
+    settingsRef.current = { ...settingsRef.current, point_rate_low_load_by_type: next };
+    setSettings(settingsRef.current);
+    try {
+      const saved = await saveLogisticsSettings({ point_rate_low_load_by_type: next });
+      settingsRef.current = saved;
+      setSettings(saved);
+    } catch (e) {
+      alert(`Не удалось сохранить сниженную ставку: ${(e as Error).message}`);
+    }
+  }
+
   const currentFuelRate = settings?.fuel_rate_by_type[effectiveRateType] ?? 0;
   async function saveFuelRate(val: string) {
     if (!settingsRef.current) return;
@@ -182,13 +202,47 @@ function ReportsContent() {
     return true;
   }), [deliveries, filterFrom, filterTo]);
 
+  const driverByUsername = useMemo(() => new Map(drivers.map((d) => [d.username, d])), [drivers]);
+
+  // Загрузка каждого выезда (сумма веса/объёма всех его доставок) против вместимости
+  // машины — чтобы определить недогруженные выезды (взял с одного склада один маленький
+  // товар и довёз рядом, но без этого получал бы полную ставку «за точку», как за полный
+  // рейс). null — вместимость машины неизвестна (не настроена), скидку в этом случае не
+  // применяем, чтобы не срезать оплату водителю из-за отсутствующей настройки.
+  const tripFillRatio = useMemo(() => {
+    const load = new Map<string, { weight: number; volL: number; transport: string; username: string }>();
+    for (const d of periodDeliveries) {
+      if (d.status === 'returned') continue;
+      const tk = tripKey(d);
+      const cur = load.get(tk) || { weight: 0, volL: 0, transport: '', username: '' };
+      cur.weight += d.total_weight || 0;
+      cur.volL += d.total_volume_l || 0;
+      if (!cur.transport && d.transport) cur.transport = d.transport;
+      if (!cur.username && d.driver_username) cur.username = d.driver_username;
+      load.set(tk, cur);
+    }
+    const ratios = new Map<string, number | null>();
+    if (!settings) { for (const tk of load.keys()) ratios.set(tk, null); return ratios; }
+    for (const [tk, v] of load) {
+      const driver = driverByUsername.get(v.username);
+      const cap = driver && (driver.capacity_kg > 0 || driver.capacity_m3 > 0)
+        ? { kg: driver.capacity_kg, m3: driver.capacity_m3 }
+        : defaultCapacity(v.transport || driver?.transport, settings);
+      if (!cap.kg && !cap.m3) { ratios.set(tk, null); continue; }
+      const wRatio = cap.kg > 0 ? v.weight / cap.kg : 0;
+      const vRatio = cap.m3 > 0 ? v.volL / (cap.m3 * 1000) : 0;
+      ratios.set(tk, Math.max(wRatio, vRatio));
+    }
+    return ratios;
+  }, [periodDeliveries, driverByUsername, settings]);
+
   // Агрегация по водителю: доставки, км, выезды (уникальные tripKey), точки доставки
   // (уникальные tripStopKey — несколько накладных с разных складов в один магазин за
   // один выезд считаются одной точкой; тот же магазин в другом выезде — другая точка).
   const driverStats = useMemo(() => {
-    const m = new Map<string, { username: string; name: string; car: string; transport: string; trips: Set<string>; stops: Set<string>; km: number; points: number }>();
+    const m = new Map<string, { username: string; name: string; car: string; transport: string; trips: Set<string>; stopRatios: Map<string, number | null>; km: number; points: number }>();
     for (const d of drivers) {
-      m.set(d.username, { username: d.username, name: d.name, car: d.car_number || '', transport: d.transport || '', trips: new Set(), stops: new Set(), km: 0, points: 0 });
+      m.set(d.username, { username: d.username, name: d.name, car: d.car_number || '', transport: d.transport || '', trips: new Set(), stopRatios: new Map(), km: 0, points: 0 });
     }
     for (const d of periodDeliveries) {
       // Возврат — клиент не принял товар, реальной доставки не было: не считаем в км/точки/
@@ -196,30 +250,42 @@ function ReportsContent() {
       // (statusClass/DELIVERY_STATUS_LABEL покажут «Возврат») — просто не оплачивается.
       if (d.status === 'returned') continue;
       const key = d.driver_username || d.driver_name || '—';
-      const cur = m.get(key) || { username: key, name: d.driver_name || key, car: d.car_number || '', transport: d.transport || '', trips: new Set<string>(), stops: new Set<string>(), km: 0, points: 0 };
+      const cur = m.get(key) || { username: key, name: d.driver_name || key, car: d.car_number || '', transport: d.transport || '', trips: new Set<string>(), stopRatios: new Map<string, number | null>(), km: 0, points: 0 };
       cur.km += d.km || 0;
       cur.points += 1;
-      cur.trips.add(tripKey(d));
-      cur.stops.add(tripStopKey(d));
+      const tk = tripKey(d);
+      cur.trips.add(tk);
+      cur.stopRatios.set(tripStopKey(d), tripFillRatio.get(tk) ?? null);
       if (!cur.car && d.car_number) cur.car = d.car_number;
       if (!cur.transport && d.transport) cur.transport = d.transport;
       m.set(key, cur);
     }
     const rates = settings?.rate_by_type ?? {};
     const pointRates = settings?.point_rate_by_type ?? {};
+    const lowLoadPointRates = settings?.point_rate_low_load_by_type ?? {};
     const fuelRates = settings?.fuel_rate_by_type ?? {};
     return [...m.values()]
-      .map(d => ({
-        username: d.username, name: d.name, car: d.car, km: d.km, points: d.points, trips: d.trips.size,
-        stops: d.stops.size,
-        kpi: Math.round(d.km * rateForType(d.transport, rates)),
-        pointKpi: Math.round(d.stops.size * rateForType(d.transport, pointRates)),
-        // Топливо — по фактически пройденному пути (туда-обратно), отсюда ×2, ставка своя
-        // для каждого вида транспорта (расход у LABO и Газели разный).
-        fuel: Math.round(d.km * 2 * rateForType(d.transport, fuelRates)),
-      }))
+      .map(d => {
+        const fullPointRate = rateForType(d.transport, pointRates);
+        const lowLoadRate = rateForType(d.transport, lowLoadPointRates);
+        let pointKpi = 0;
+        let lowLoadStops = 0;
+        for (const ratio of d.stopRatios.values()) {
+          if (ratio != null && ratio < LOW_LOAD_THRESHOLD && lowLoadRate > 0) { pointKpi += lowLoadRate; lowLoadStops++; }
+          else pointKpi += fullPointRate;
+        }
+        return {
+          username: d.username, name: d.name, car: d.car, km: d.km, points: d.points, trips: d.trips.size,
+          stops: d.stopRatios.size, lowLoadStops,
+          kpi: Math.round(d.km * rateForType(d.transport, rates)),
+          pointKpi: Math.round(pointKpi),
+          // Топливо — по фактически пройденному пути (туда-обратно), отсюда ×2, ставка своя
+          // для каждого вида транспорта (расход у LABO и Газели разный).
+          fuel: Math.round(d.km * 2 * rateForType(d.transport, fuelRates)),
+        };
+      })
       .sort((a, b) => b.points - a.points || b.km - a.km || a.name.localeCompare(b.name, 'ru'));
-  }, [drivers, periodDeliveries, settings]);
+  }, [drivers, periodDeliveries, settings, tripFillRatio]);
 
   const totals = useMemo(() => driverStats.reduce((s, d) => ({
     km: s.km + d.km, trips: s.trips + d.trips, points: s.points + d.points, stops: s.stops + d.stops,
@@ -300,14 +366,21 @@ function ReportsContent() {
             className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-right outline-none focus:border-blue-400" />
           <span className="text-[11px] text-gray-400">сум/точку</span>
           <span className="w-px h-6 bg-gray-200 mx-1" />
+          <span className="text-xs text-gray-500 whitespace-nowrap">📉 За точку, если выезд &lt;50% загружен:</span>
+          <input key={`pt-low-${effectiveRateType}`} type="number" min={0} step={500} defaultValue={currentLowLoadPointRate}
+            onBlur={(e) => saveLowLoadPointRate(e.target.value)}
+            className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-right outline-none focus:border-blue-400" />
+          <span className="text-[11px] text-gray-400">сум/точку</span>
+          <span className="w-px h-6 bg-gray-200 mx-1" />
           <span className="text-xs text-gray-500 whitespace-nowrap">⛽ Топливо (сум/км):</span>
           <input key={`fuel-${effectiveRateType}`} type="number" min={0} step={100} defaultValue={currentFuelRate}
             onBlur={(e) => saveFuelRate(e.target.value)}
             className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-right outline-none focus:border-blue-400" />
           <span className="text-[11px] text-gray-400 basis-full">
             КПИ — пройденный км (в одну сторону) × ставка транспорта. За точку — число точек доставки (магазин за выезд,
-            независимо от числа накладных/складов) × ставка. Топливо — по факту туда-обратно (км × 2 × ставка), своя
-            ставка для каждого вида транспорта — выберите его в списке выше.
+            независимо от числа накладных/складов) × ставка; если за весь выезд вес/объём в машине меньше 50% её
+            вместимости — вместо обычной ставки берётся сниженная (0 — скидка не применяется). Топливо — по факту
+            туда-обратно (км × 2 × ставка), своя ставка для каждого вида транспорта — выберите его в списке выше.
           </span>
         </div>
       )}
@@ -376,6 +449,7 @@ function ReportsContent() {
                     <div className="text-[10px] text-gray-400">туда-обратно {ds.km * 2} км</div>
                     {ds.kpi > 0 && <div className="text-[11px] font-semibold text-amber-600 mt-0.5">💰 за км {ds.kpi.toLocaleString('ru-RU')} сум</div>}
                     {ds.pointKpi > 0 && <div className="text-[11px] font-semibold text-amber-600">📍 за точки {ds.pointKpi.toLocaleString('ru-RU')} сум</div>}
+                    {ds.lowLoadStops > 0 && <div className="text-[10px] text-sky-600">📉 {ds.lowLoadStops} из них недогруз &lt;50%</div>}
                     {ds.fuel > 0 && <div className="text-[11px] text-gray-500">⛽ {ds.fuel.toLocaleString('ru-RU')} сум</div>}
                   </div>
                   <span className="text-gray-400 text-sm shrink-0">{isOpen ? '▲' : '▼'}</span>

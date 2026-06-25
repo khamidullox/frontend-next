@@ -39,6 +39,8 @@ export async function PATCH(request: NextRequest) {
     if (rateClean) patch.rate_by_type = rateClean;
     const pointRateClean = cleanRateMap(body.point_rate_by_type);
     if (pointRateClean) patch.point_rate_by_type = pointRateClean;
+    const pointRateLowLoadClean = cleanRateMap(body.point_rate_low_load_by_type);
+    if (pointRateLowLoadClean) patch.point_rate_low_load_by_type = pointRateLowLoadClean;
     const fuelRateClean = cleanRateMap(body.fuel_rate_by_type);
     if (fuelRateClean) patch.fuel_rate_by_type = fuelRateClean;
     if (Object.keys(patch).length) await setLogisticsSettings(patch);

@@ -699,6 +699,9 @@ export interface LogisticsSettings {
   rate_by_type: Record<string, number>;
   // КПИ за точку доставки (сумма за заезд в магазин) по виду транспорта.
   point_rate_by_type: Record<string, number>;
+  // Сниженная ставка за точку, когда выезд недогружен (< 50% вместимости машины по
+  // весу или объёму). 0/не задано — скидка не применяется.
+  point_rate_low_load_by_type: Record<string, number>;
   // Стоимость топлива (сум/км, в одну сторону) по виду транспорта — тот же принцип ключей.
   fuel_rate_by_type: Record<string, number>;
 }
@@ -711,6 +714,7 @@ const DEFAULT_LOGISTICS_SETTINGS: LogisticsSettings = {
   },
   rate_by_type: {},
   point_rate_by_type: {},
+  point_rate_low_load_by_type: {},
   fuel_rate_by_type: {},
 };
 
@@ -728,6 +732,7 @@ export async function fetchLogisticsSettings(): Promise<LogisticsSettings> {
     cap_by_type: d?.cap_by_type && Object.keys(d.cap_by_type).length ? d.cap_by_type : DEFAULT_LOGISTICS_SETTINGS.cap_by_type,
     rate_by_type: d?.rate_by_type ?? DEFAULT_LOGISTICS_SETTINGS.rate_by_type,
     point_rate_by_type: d?.point_rate_by_type ?? DEFAULT_LOGISTICS_SETTINGS.point_rate_by_type,
+    point_rate_low_load_by_type: d?.point_rate_low_load_by_type ?? DEFAULT_LOGISTICS_SETTINGS.point_rate_low_load_by_type,
     fuel_rate_by_type: d?.fuel_rate_by_type ?? DEFAULT_LOGISTICS_SETTINGS.fuel_rate_by_type,
   };
 }

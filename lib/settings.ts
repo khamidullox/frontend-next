@@ -33,6 +33,10 @@ export interface LogisticsSettings {
   // КПИ за точку доставки (сумма за один заезд в магазин, независимо от числа
   // накладных/складов) по виду транспорта. Тот же принцип ключей.
   point_rate_by_type: Record<string, number>;
+  // Сниженная ставка за точку, когда выезд недогружен (< 50% вместимости машины по
+  // весу или объёму — например, взял с одного склада один маленький товар и довёз
+  // рядом). 0/не задано — скидка не применяется, платится обычная ставка.
+  point_rate_low_load_by_type: Record<string, number>;
   // Стоимость топлива (сум/км, в одну сторону — ×2 при подсчёте туда-обратно) по виду
   // транспорта, тот же принцип ключей — у LABO свой расход, у Газели свой и т.д.
   fuel_rate_by_type: Record<string, number>;
@@ -46,6 +50,7 @@ const DEFAULTS: LogisticsSettings = {
   },
   rate_by_type: {},
   point_rate_by_type: {},
+  point_rate_low_load_by_type: {},
   fuel_rate_by_type: {},
 };
 
@@ -63,6 +68,7 @@ export async function getLogisticsSettings(): Promise<LogisticsSettings> {
     cap_by_type: fromStorage(data.cap_by_type && Object.keys(data.cap_by_type).length ? data.cap_by_type : { ...DEFAULTS.cap_by_type })!,
     rate_by_type: fromStorage(data.rate_by_type ?? DEFAULTS.rate_by_type)!,
     point_rate_by_type: fromStorage(data.point_rate_by_type ?? DEFAULTS.point_rate_by_type)!,
+    point_rate_low_load_by_type: fromStorage(data.point_rate_low_load_by_type ?? DEFAULTS.point_rate_low_load_by_type)!,
     fuel_rate_by_type: fromStorage(fuelByType)!,
   };
 }
@@ -74,6 +80,7 @@ export async function setLogisticsSettings(patch: Partial<LogisticsSettings>): P
   if (patch.cap_by_type) safe.cap_by_type = toStorage(patch.cap_by_type);
   if (patch.rate_by_type) safe.rate_by_type = toStorage(patch.rate_by_type);
   if (patch.point_rate_by_type) safe.point_rate_by_type = toStorage(patch.point_rate_by_type);
+  if (patch.point_rate_low_load_by_type) safe.point_rate_low_load_by_type = toStorage(patch.point_rate_low_load_by_type);
   if (patch.fuel_rate_by_type) safe.fuel_rate_by_type = toStorage(patch.fuel_rate_by_type);
   await getDb().collection('settings').doc('logistics').set(safe, { merge: true });
 }
