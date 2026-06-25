@@ -240,6 +240,9 @@ export interface Delivery {
   // независимо от цепочки маршрута (km выше может быть короче/0, если эта точка не
   // первая в цепочке после такой же остановки). Справочное — не используется в КПИ.
   shop_distance_km?: number | null;
+  // Причина возврата — комментарий водителя при статусе «returned» (обязателен,
+  // см. setDeliveryStatus). Показывается менеджеру в отчётах/списке заявок.
+  return_note?: string | null;
 
   // Привязка к маршруту водителя (заход за один раз, см. lib/routes.ts).
   route_id: string | null;
@@ -708,9 +711,13 @@ export async function setDeliveryStatus(
   id: string,
   status: DeliveryStatus,
   by: string,
-  role?: string
+  role?: string,
+  returnNote?: string
 ): Promise<{ delivery: Delivery } | { error: string }> {
   if (!DELIVERY_STATUS_LABEL[status]) return { error: 'Неверный статус' };
+  if (status === 'returned' && !str(returnNote)) {
+    return { error: 'Укажите причину возврата' };
+  }
   const db = getDb();
   const ref = db.collection(COLLECTION).doc(str(id));
   const snap = await ref.get();
@@ -720,6 +727,7 @@ export async function setDeliveryStatus(
   const now = new Date().toISOString();
   delivery.status = status;
   delivery.updated_at = now;
+  if (status === 'returned') delivery.return_note = str(returnNote);
   delivery.history = [...(delivery.history || []), { at: now, status, by: str(by), role: role ? str(role) : undefined }].slice(-50);
 
   // Считаем км по координатам при выезде/доставке, если ещё не заполнен. Доставка без
@@ -736,6 +744,36 @@ export async function setDeliveryStatus(
 
   await ref.set(delivery);
   return { delivery };
+}
+
+// После возврата заявки магазина (kind=shop_to_client) — клиент не принял товар,
+// создаём новую заявку с тем же составом/адресом, чтобы она снова попала в очередь
+// «без водителя» и её можно было назначить другому водителю. Сама возвращённая
+// заявка остаётся как есть (история, КПИ не считается — см. отчёты).
+export async function requeueReturnedDelivery(d: Delivery): Promise<Delivery | null> {
+  if (d.kind !== 'shop_to_client') return null;
+  const now = new Date().toISOString();
+  const note = d.return_note ? `Повтор после возврата: ${d.return_note}` : 'Повтор после возврата';
+  const delivery: Delivery = {
+    ...d,
+    id: crypto.randomUUID(),
+    created_at: now,
+    updated_at: now,
+    note: [note, d.note].filter(Boolean).join(' · '),
+    driver_username: null,
+    driver_name: null,
+    car_number: null,
+    transport: null,
+    route_id: null,
+    status: 'new',
+    picked: false,
+    return_note: null,
+    last_notified_at: null,
+    km_auto: true,
+    history: [{ at: now, status: 'new', by: 'system: после возврата' }],
+  };
+  await getDb().collection(COLLECTION).doc(delivery.id).set(delivery);
+  return delivery;
 }
 
 // Правка текстовых полей (адрес/клиент/примечание) — для менеджера.

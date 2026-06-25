@@ -115,11 +115,11 @@ export default function MyDeliveriesPage() {
   // поэтому опрос реже и только пока вкладка видима — бережёт квоту Firestore.
   useLivePoll(refresh, 60_000);
 
-  async function setStatus(id: string, status: DeliveryStatus) {
+  async function setStatus(id: string, status: DeliveryStatus, returnNote?: string) {
     setBusyId(id);
     setError('');
     try {
-      const updated = await updateDelivery(id, { status });
+      const updated = await updateDelivery(id, { status, return_note: returnNote });
       setItems((prev) => prev.map((d) => (d.id === id ? updated : d)));
     } catch (err) {
       setError((err as Error).message);
@@ -543,7 +543,7 @@ function DeliveryCard({
 }: {
   d: Delivery;
   busy: boolean;
-  onSet: (id: string, s: DeliveryStatus) => void;
+  onSet: (id: string, s: DeliveryStatus, returnNote?: string) => void;
   shops: Shop[];
 }) {
   const actions = nextActions(d.status);
@@ -601,7 +601,15 @@ function DeliveryCard({
       {actions.length > 0 && (
         <div className="flex gap-2 flex-wrap pt-1">
           {actions.map((a) => (
-            <button key={a.status} disabled={busy} onClick={() => onSet(d.id, a.status)}
+            <button key={a.status} disabled={busy}
+              onClick={() => {
+                if (a.status !== 'returned') { onSet(d.id, a.status); return; }
+                // Причина возврата обязательна — без неё менеджер не поймёт, что
+                // произошло, а заявка магазина (если это она) уйдёт обратно в очередь.
+                const reason = window.prompt('Укажите причину возврата (обязательно):');
+                if (!reason || !reason.trim()) return;
+                onSet(d.id, a.status, reason.trim());
+              }}
               className={`flex-1 min-w-[130px] py-3 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors ${a.cls}`}>
               {busy ? '⏳…' : a.label}
             </button>

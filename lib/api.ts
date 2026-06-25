@@ -558,6 +558,7 @@ export interface Delivery {
   direction: string;
   km: number;
   shop_distance_km?: number | null;
+  return_note?: string | null;
   driver_username: string | null;
   driver_name: string | null;
   car_number: string | null;
@@ -644,6 +645,7 @@ export async function updateDelivery(
     status?: DeliveryStatus; driver_username?: string | null; client_name?: string; client_phone?: string;
     address?: string; note?: string; direction?: string; km?: number; total_weight?: number; picked?: boolean;
     items?: DeliveryItem[]; lat?: number | null; lng?: number | null; defer_until?: string | null;
+    return_note?: string;
   }
 ): Promise<Delivery> {
   const res = await fetch(`/api/deliveries/${encodeURIComponent(id)}`, {

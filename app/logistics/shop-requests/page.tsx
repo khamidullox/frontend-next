@@ -620,6 +620,9 @@ function ShopRequestsContent() {
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-semibold truncate">🏪 {d.shop_name} · {d.client_name}</div>
                     {d.address && <div className="text-xs text-gray-400 mt-0.5 truncate">📍 {d.address}</div>}
+                    {d.status === 'returned' && d.return_note && (
+                      <div className="text-xs text-red-600 mt-0.5">↩️ Причина: {d.return_note}</div>
+                    )}
                   </div>
                   <div className="flex flex-col items-end gap-0.5 shrink-0">
                     <span className={`text-xs font-semibold px-2 py-1 rounded-full ${statusClass(d.status)}`}>

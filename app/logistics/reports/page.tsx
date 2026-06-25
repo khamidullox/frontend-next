@@ -419,6 +419,9 @@ function ReportsContent() {
                                       </div>
                                     )}
                                     {d.shop_name && <div className="text-xs text-gray-400 truncate">🏪 откуда: {d.shop_name}</div>}
+                                    {d.status === 'returned' && d.return_note && (
+                                      <div className="text-xs text-red-600 mt-0.5">↩️ Причина возврата: {d.return_note}</div>
+                                    )}
                                     {d.client_phone && (
                                       <div className="text-xs text-gray-400 truncate">
                                         📞 <a href={`tel:${d.client_phone}`} className="text-sky-600">{d.client_phone}</a>

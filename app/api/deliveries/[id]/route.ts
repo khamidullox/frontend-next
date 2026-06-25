@@ -8,12 +8,26 @@ import {
   updateDeliveryFields,
   deleteDelivery,
   recomputeRouteKm,
+  requeueReturnedDelivery,
+  Delivery,
   DeliveryStatus,
 } from '@/lib/deliveries';
 import { notifyDriverAssigned } from '@/lib/push';
+import { getShop } from '@/lib/shops';
+import { notifyNearbyDrivers } from '@/lib/shopOffers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// После «Возврат» у заявки магазина — создаём новую заявку (та же точка/состав) и
+// сразу рассылаем её свободным водителям рядом, как при создании заявки впервые.
+async function requeueIfReturned(delivery: Delivery) {
+  if (delivery.status !== 'returned' || delivery.kind !== 'shop_to_client') return;
+  const fresh = await requeueReturnedDelivery(delivery);
+  if (!fresh) return;
+  const shop = fresh.shop_id ? await getShop(fresh.shop_id) : null;
+  if (shop) await notifyNearbyDrivers(fresh, shop).catch(() => {});
+}
 
 // PATCH: смена статуса / назначение водителя / правка полей.
 // - Водитель может менять только статус СВОЕЙ доставки.
@@ -49,8 +63,9 @@ export async function PATCH(
     if (typeof body.status !== 'string') {
       return Response.json({ error: 'Можно изменить только статус' }, { status: 400 });
     }
-    const res = await setDeliveryStatus(id, body.status as DeliveryStatus, s.name || s.username, s.role);
+    const res = await setDeliveryStatus(id, body.status as DeliveryStatus, s.name || s.username, s.role, body.return_note);
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
+    await requeueIfReturned(res.delivery).catch(() => {});
     if (res.delivery.route_id && ['on_way', 'delivered'].includes(body.status)) {
       await recomputeRouteKm(res.delivery.route_id).catch(() => {});
       const fresh = await getDelivery(id);
@@ -72,8 +87,9 @@ export async function PATCH(
     }
   }
   if (typeof body.status === 'string') {
-    const res = await setDeliveryStatus(id, body.status as DeliveryStatus, s.name || s.username, s.role);
+    const res = await setDeliveryStatus(id, body.status as DeliveryStatus, s.name || s.username, s.role, body.return_note);
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
+    await requeueIfReturned(res.delivery).catch(() => {});
     if (res.delivery.route_id && ['on_way', 'delivered'].includes(body.status)) {
       await recomputeRouteKm(res.delivery.route_id).catch(() => {});
     }
