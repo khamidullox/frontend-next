@@ -249,6 +249,10 @@ async function getWholesalePriceMap(): Promise<Map<string, number>> {
 // коды (003B, 5505-2…), поэтому сюда не попадают.
 const MAIN_WAREHOUSE_CODES = new Set(['001', '002', '003', '005', '006', '008', '7776']);
 
+// «Asosiy vositalar» (основные средства) — служебные склады для учёта оборудования/мебели,
+// не товарные. Не должны попадать ни в один список выбора склада ни для кого.
+const FIXED_ASSETS_RE = /vositalar/i;
+
 function todaySmartup(): string {
   const d = new Date();
   return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
@@ -454,6 +458,7 @@ export async function listWarehouseStock(
       total_quantity: a.qty,
     }))
     .filter((w) => w.total_quantity !== 0)
+    .filter((w) => !FIXED_ASSETS_RE.test(w.warehouse_name))
     .filter((w) => {
       const code = idCode.get(w.warehouse_id) || '';
       if (opts?.excludeMain && MAIN_WAREHOUSE_CODES.has(code)) return false;
