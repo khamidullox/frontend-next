@@ -33,8 +33,13 @@ interface RawOrder {
   delivery_date?: string;
   delivery_number?: string;
   invoice_number?: string;
+  person_id?: string;
   person_name?: string;
   person_code?: string;
+  person_latitude?: string | number | null;
+  person_longitude?: string | number | null;
+  delivery_address_full?: string | null;
+  delivery_address_short?: string | null;
   room_name?: string;
   note?: string | null;
   deal_note?: string | null;
@@ -189,6 +194,53 @@ export async function getSalesAggregate(begin: Date, end: Date): Promise<SalesAg
       .map(([code, v]) => ({ code, name: v.name, qty: v.qty, orders: v.orders.size }))
       .sort((a, b) => b.qty - a.qty),
   };
+}
+
+export interface ClientAddressStatus {
+  person_id: string;
+  person_name: string;
+  has_address: boolean;   // координаты (lat/lng) или текстовый адрес есть хотя бы в одном заказе
+  address: string;        // последний известный непустой адрес (full || short)
+  lat: number | null;
+  lng: number | null;
+  orders_count: number;
+  last_order_date: string;
+}
+
+// По каждому клиенту (person_id, из заказов за последние 6 дней — тот же охват, что
+// у listOrders) смотрим, есть ли у него адрес/координаты доставки в Smartup. Берём
+// самые свежие непустые значения, если в разных заказах они отличаются.
+export async function listClientAddressStatus(): Promise<ClientAddressStatus[]> {
+  const orders = await getAllOrders();
+  const byClient = new Map<string, ClientAddressStatus>();
+
+  for (const o of orders) {
+    const id = normalizeCode(o.person_id) || normalizeCode(o.person_name);
+    if (!id) continue;
+    const lat = o.person_latitude != null && o.person_latitude !== '' ? Number(o.person_latitude) : null;
+    const lng = o.person_longitude != null && o.person_longitude !== '' ? Number(o.person_longitude) : null;
+    const address = normalizeCode(o.delivery_address_full) || normalizeCode(o.delivery_address_short);
+    const date = o.delivery_date || o.deal_time || '';
+
+    const cur = byClient.get(id) || {
+      person_id: id,
+      person_name: o.person_name || id,
+      has_address: false,
+      address: '',
+      lat: null,
+      lng: null,
+      orders_count: 0,
+      last_order_date: '',
+    };
+    cur.orders_count++;
+    if (date > cur.last_order_date) cur.last_order_date = date;
+    if (Number.isFinite(lat) && Number.isFinite(lng)) { cur.lat = lat; cur.lng = lng; }
+    if (address) cur.address = address;
+    if ((Number.isFinite(lat) && Number.isFinite(lng)) || address) cur.has_address = true;
+    byClient.set(id, cur);
+  }
+
+  return [...byClient.values()].sort((a, b) => a.person_name.localeCompare(b.person_name, 'ru'));
 }
 
 export interface OrderListItem {

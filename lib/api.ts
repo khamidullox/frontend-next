@@ -351,6 +351,24 @@ export async function listOrders(): Promise<OrderListItem[]> {
   return data.data || [];
 }
 
+export interface ClientAddressStatus {
+  person_id: string;
+  person_name: string;
+  has_address: boolean;
+  address: string;
+  lat: number | null;
+  lng: number | null;
+  orders_count: number;
+  last_order_date: string;
+}
+
+export async function listClientAddressStatus(): Promise<ClientAddressStatus[]> {
+  const res = await fetch('/api/orders/client-addresses', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
 export interface TransferListItem {
   transfer_id: string;
   number: string;
