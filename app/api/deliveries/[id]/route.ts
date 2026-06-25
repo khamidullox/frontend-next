@@ -63,7 +63,11 @@ export async function PATCH(
     if (typeof body.status !== 'string') {
       return Response.json({ error: 'Можно изменить только статус' }, { status: 400 });
     }
-    const res = await setDeliveryStatus(id, body.status as DeliveryStatus, s.name || s.username, s.role, body.return_note);
+    const res = await setDeliveryStatus(
+      id, body.status as DeliveryStatus, s.name || s.username, s.role, body.return_note,
+      typeof body.lat === 'number' ? body.lat : undefined,
+      typeof body.lng === 'number' ? body.lng : undefined
+    );
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
     await requeueIfReturned(res.delivery).catch(() => {});
     if (res.delivery.route_id && ['on_way', 'delivered'].includes(body.status)) {

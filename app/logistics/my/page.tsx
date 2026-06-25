@@ -32,6 +32,20 @@ function buildYandexSinglePointUrl(lat: number, lng: number): string {
   return `https://yandex.ru/maps/?rtext=~${lat},${lng}&rtt=auto`;
 }
 
+// Текущая геопозиция водителя — фолбэк точки клиента для заявок магазина без своей
+// отметки на карте (магазин не всегда её ставит при создании). null при отказе/таймауте —
+// в этом случае просто не передаём координаты, как и раньше.
+function getCurrentPosition(): Promise<{ lat: number; lng: number } | null> {
+  return new Promise((resolve) => {
+    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve(null),
+      { timeout: 8000, maximumAge: 30_000 }
+    );
+  });
+}
+
 function statusClass(s: DeliveryStatus): string {
   switch (s) {
     case 'delivered': return 'bg-green-100 text-green-700';
@@ -115,11 +129,14 @@ export default function MyDeliveriesPage() {
   // поэтому опрос реже и только пока вкладка видима — бережёт квоту Firestore.
   useLivePoll(refresh, 60_000);
 
-  async function setStatus(id: string, status: DeliveryStatus, returnNote?: string) {
+  async function setStatus(id: string, status: DeliveryStatus, returnNote?: string, pos?: { lat: number; lng: number } | null) {
     setBusyId(id);
     setError('');
     try {
-      const updated = await updateDelivery(id, { status, return_note: returnNote });
+      const updated = await updateDelivery(id, {
+        status, return_note: returnNote,
+        ...(pos ? { lat: pos.lat, lng: pos.lng } : {}),
+      });
       setItems((prev) => prev.map((d) => (d.id === id ? updated : d)));
     } catch (err) {
       setError((err as Error).message);
@@ -543,7 +560,7 @@ function DeliveryCard({
 }: {
   d: Delivery;
   busy: boolean;
-  onSet: (id: string, s: DeliveryStatus, returnNote?: string) => void;
+  onSet: (id: string, s: DeliveryStatus, returnNote?: string, pos?: { lat: number; lng: number } | null) => void;
   shops: Shop[];
 }) {
   const actions = nextActions(d.status);
@@ -602,13 +619,23 @@ function DeliveryCard({
         <div className="flex gap-2 flex-wrap pt-1">
           {actions.map((a) => (
             <button key={a.status} disabled={busy}
-              onClick={() => {
-                if (a.status !== 'returned') { onSet(d.id, a.status); return; }
-                // Причина возврата обязательна — без неё менеджер не поймёт, что
-                // произошло, а заявка магазина (если это она) уйдёт обратно в очередь.
-                const reason = window.prompt('Укажите причину возврата (обязательно):');
-                if (!reason || !reason.trim()) return;
-                onSet(d.id, a.status, reason.trim());
+              onClick={async () => {
+                if (a.status === 'returned') {
+                  // Причина возврата обязательна — без неё менеджер не поймёт, что
+                  // произошло, а заявка магазина (если это она) уйдёт обратно в очередь.
+                  const reason = window.prompt('Укажите причину возврата (обязательно):');
+                  if (!reason || !reason.trim()) return;
+                  onSet(d.id, a.status, reason.trim());
+                  return;
+                }
+                // Заявка магазина без своей точки на карте — берём геопозицию водителя
+                // в момент «Доставлено» как точку клиента, чтобы км считались не от нуля.
+                if (a.status === 'delivered' && d.kind === 'shop_to_client' && d.lat == null && d.lng == null) {
+                  const pos = await getCurrentPosition();
+                  onSet(d.id, a.status, undefined, pos);
+                  return;
+                }
+                onSet(d.id, a.status);
               }}
               className={`flex-1 min-w-[130px] py-3 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors ${a.cls}`}>
               {busy ? '⏳…' : a.label}

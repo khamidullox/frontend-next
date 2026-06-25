@@ -712,7 +712,12 @@ export async function setDeliveryStatus(
   status: DeliveryStatus,
   by: string,
   role?: string,
-  returnNote?: string
+  returnNote?: string,
+  // Геопозиция водителя в момент нажатия (с телефона) — фолбэк точки клиента, когда
+  // магазин не отметил её на карте при создании заявки. Используем ТОЛЬКО если своих
+  // координат у заявки ещё нет — не перезатираем то, что уже было указано вручную.
+  driverLat?: number,
+  driverLng?: number
 ): Promise<{ delivery: Delivery } | { error: string }> {
   if (!DELIVERY_STATUS_LABEL[status]) return { error: 'Неверный статус' };
   if (status === 'returned' && !str(returnNote)) {
@@ -730,6 +735,15 @@ export async function setDeliveryStatus(
   if (status === 'returned') delivery.return_note = str(returnNote);
   delivery.history = [...(delivery.history || []), { at: now, status, by: str(by), role: role ? str(role) : undefined }].slice(-50);
 
+  if (
+    status === 'delivered' && delivery.kind === 'shop_to_client' &&
+    delivery.lat == null && delivery.lng == null &&
+    typeof driverLat === 'number' && typeof driverLng === 'number'
+  ) {
+    delivery.lat = driverLat;
+    delivery.lng = driverLng;
+  }
+
   // Считаем км по координатам при выезде/доставке, если ещё не заполнен. Доставка без
   // маршрута считается по одному плечу склад→точка; если есть маршрут — км для всего
   // маршрута (с дедупликацией одинаковых точек и цепочкой остановок) пересчитывает
@@ -739,6 +753,7 @@ export async function setDeliveryStatus(
       const shops = await listShops();
       const km = computeDeliveryKm(delivery, shops);
       if (km && km > 0) { delivery.km = km; delivery.km_auto = true; }
+      if (delivery.kind === 'shop_to_client') delivery.shop_distance_km = km && km > 0 ? km : delivery.shop_distance_km;
     } catch { /* ignore */ }
   }
 

@@ -159,7 +159,9 @@ function ShopRequestContent() {
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold truncate">{d.client_name || '—'}</div>
                 {d.address && <div className="text-xs text-gray-400 mt-0.5 truncate">📍 {d.address}</div>}
-                {d.client_phone && <div className="text-xs text-gray-400 mt-0.5">📞 {d.client_phone}</div>}
+                {d.client_phone && (
+                  <a href={`tel:${d.client_phone}`} className="text-xs text-blue-600 mt-0.5 inline-block hover:underline">📞 {d.client_phone}</a>
+                )}
                 {d.items.length > 0 && (
                   <div className="text-xs text-gray-400 mt-0.5 truncate">
                     📦 {d.items.map((it) => `${it.name} ×${it.qty}`).join(', ')}
