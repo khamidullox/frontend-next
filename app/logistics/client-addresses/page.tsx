@@ -5,6 +5,7 @@ import AdminGate from '@/components/AdminGate';
 import LogisticsTabs from '@/components/LogisticsTabs';
 import { listClientAddressStatus } from '@/lib/api';
 import { useCachedList } from '@/lib/useCachedList';
+import { loadXLSX } from '@/lib/xlsx';
 
 export default function ClientAddressesPage() {
   return (
@@ -22,6 +23,8 @@ function ClientAddressesContent() {
   );
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<'with' | 'without'>('without');
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -32,6 +35,32 @@ function ClientAddressesContent() {
 
   const withCount = clients.filter((c) => c.has_address).length;
   const withoutCount = clients.length - withCount;
+
+  async function exportExcel() {
+    setExporting(true);
+    setExportError('');
+    try {
+      const XLSX = await loadXLSX();
+      const rows = filtered.map((c) => ({
+        'Клиент': c.person_name,
+        'Есть адрес': c.has_address ? 'Да' : 'Нет',
+        'Адрес': c.address || '',
+        'Широта': c.lat ?? '',
+        'Долгота': c.lng ?? '',
+        'Заказов': c.orders_count,
+        'Последний заказ': c.last_order_date || '',
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Адреса клиентов');
+      const suffix = tab === 'with' ? 's_adresom' : 'bez_adresa';
+      XLSX.writeFile(wb, `klienty_${suffix}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (e) {
+      setExportError((e as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <div className="max-w-3xl mx-auto p-4">
@@ -68,12 +97,22 @@ function ClientAddressesContent() {
             </button>
           </div>
 
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Поиск по клиенту…"
-            className="w-full border rounded-lg px-3 py-2 text-sm mb-3"
-          />
+          <div className="flex gap-2 mb-3">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Поиск по клиенту…"
+              className="flex-1 border rounded-lg px-3 py-2 text-sm"
+            />
+            <button
+              onClick={exportExcel}
+              disabled={exporting || filtered.length === 0}
+              className="px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 text-sm font-semibold whitespace-nowrap disabled:opacity-50"
+            >
+              {exporting ? '⏳…' : '📊 Excel'}
+            </button>
+          </div>
+          {exportError && <p className="text-red-600 text-xs mb-2">{exportError}</p>}
 
           <div className="flex flex-col gap-2">
             {filtered.map((c) => (
