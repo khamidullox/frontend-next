@@ -275,7 +275,13 @@ function MapContent() {
       for (const delivery of onWay) {
         const dest = await resolveDest(delivery);
         if (!dest) continue;
-        const key = delivery.shop_id || `${dest[0].toFixed(3)},${dest[1].toFixed(3)}`;
+        // shop_id для shop_to_client — это магазин-ОТПРАВИТЕЛЬ, не точка назначения:
+        // у двух доставок с разными клиентами с одного магазина он совпадает, и без
+        // этой развилки вторая точка на карте просто не появлялась бы (тот же баг,
+        // что чинили для км и для отчётов).
+        const key = delivery.kind !== 'shop_to_client' && delivery.shop_id
+          ? delivery.shop_id
+          : `${dest[0].toFixed(3)},${dest[1].toFixed(3)}`;
         if (!stopsMap.has(key)) {
           stopsMap.set(key, { coords: dest, label: delivery.to_name || delivery.shop_name || delivery.client_name || '' });
         }

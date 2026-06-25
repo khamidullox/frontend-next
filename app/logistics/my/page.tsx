@@ -255,7 +255,12 @@ export default function MyDeliveriesPage() {
     for (const d of sorted) {
       const pt = resolveDeliveryPoint(d, shops);
       if (!pt) continue;
-      const key = d.shop_id || `${pt.lat.toFixed(3)},${pt.lng.toFixed(3)}`;
+      // То же самое: shop_id для shop_to_client — это магазин, откуда забрали товар,
+      // а не куда везут. Иначе вторая доставка к другому клиенту с того же магазина
+      // пропадала бы с карты водителя совсем (объединялась с первой).
+      const key = d.kind !== 'shop_to_client' && d.shop_id
+        ? d.shop_id
+        : `${pt.lat.toFixed(3)},${pt.lng.toFixed(3)}`;
       let g = groups.get(key);
       if (!g) { g = { ...pt, names: [], done: true }; groups.set(key, g); order.push(key); }
       g.names.push(d.client_name || d.to_name || d.address || '—');
