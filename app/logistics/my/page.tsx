@@ -85,6 +85,7 @@ export default function MyDeliveriesPage() {
   const [shops, setShops] = useState<Shop[]>([]);
   const [myPos, setMyPos] = useState<{ lat: number; lng: number } | null>(null);
   const [showMap, setShowMap] = useState(true);
+  const [showDone, setShowDone] = useState(false);
   const [offers, setOffers] = useState<ShopOffer[]>([]);
   const [claimingId, setClaimingId] = useState<string | null>(null);
 
@@ -433,67 +434,52 @@ export default function MyDeliveriesPage() {
         </div>
       )}
 
-      {/* Маршрут (заход) */}
-      <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
-        {route ? (
-          <>
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <div>
-                <div className="font-semibold text-sm">🧭 Маршрут в пути · начат {fmtDateTime(route.started_at)}</div>
-                <div className="text-xs text-gray-400 mt-0.5">
-                  {routeDeliveries.length} доставок{routeKm > 0 ? ` · 🛣️ ${routeKm} км` : ''}
+      {/* Маршрут (заход) — закреплён сверху и сделан компактным, чтобы не перекрывать
+          список заказов под собой; подробности (км/загрузка/геолокация) под кнопкой,
+          мелким шрифтом, а не в большом блоке как раньше. */}
+      <div className="sticky top-14 z-20 -mx-4 px-4 pt-2 pb-2 mb-3 bg-gray-50/95 backdrop-blur-sm">
+        <div className="bg-white rounded-xl shadow-sm px-3 py-2">
+          {route ? (
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-semibold text-xs truncate">🧭 В пути · {routeDeliveries.length} доставок{routeKm > 0 ? ` · ${routeKm} км` : ''}</div>
                 </div>
-                {(activeWeight > 0 || activeVolL > 0) && (
-                  <div className="text-xs text-gray-400 mt-0.5">
-                    🚐 Осталось развезти: {activeWeight > 0 && `${Math.round(activeWeight)} кг`}
-                    {activeWeight > 0 && activeVolL > 0 && ' · '}
-                    {activeVolL > 0 && `${(activeVolL / 1000).toFixed(1)} м³`}
-                  </div>
-                )}
+                <button onClick={handleFinishRoute} disabled={routeBusy}
+                  className="shrink-0 px-2.5 py-1.5 bg-red-500 hover:bg-red-600 disabled:bg-gray-200 text-white text-xs font-semibold rounded-lg whitespace-nowrap">
+                  {routeBusy ? '⏳…' : '🏁 Закончить'}
+                </button>
               </div>
-              <button onClick={handleFinishRoute} disabled={routeBusy}
-                className="px-3 py-2 bg-red-500 hover:bg-red-600 disabled:bg-gray-200 text-white text-xs font-semibold rounded-lg whitespace-nowrap">
-                {routeBusy ? '⏳…' : '🏁 Закончить маршрут'}
-              </button>
-            </div>
-            {geoError ? (
-              <p className="text-xs text-amber-600">⚠️ Геолокация: {geoError}. Разрешите доступ, чтобы быть видимым на карте.</p>
-            ) : (
-              <p className="text-xs text-emerald-600">📡 Местоположение передаётся логисту</p>
-            )}
-            <p className="text-xs text-amber-600 mt-1">
-              {wakeLockOn
-                ? '🔓 Экран не будет блокироваться сам, пока маршрут открыт.'
-                : '⚠️ Не блокируйте телефон и не закрывайте вкладку — иначе передача местоположения остановится.'}
-            </p>
-            {unassignedToRoute.length > 0 && (
-              <p className="text-xs text-gray-400 mt-1">
-                Добавляю {unassignedToRoute.length} новых доставок в этот заход…
-              </p>
-            )}
-          </>
-        ) : (
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <div className="text-sm text-gray-500">
+              <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-400 flex-wrap">
+                {geoError ? (
+                  <span className="text-amber-600">⚠️ {geoError}</span>
+                ) : (
+                  <span className="text-emerald-600">📡 передаётся логисту</span>
+                )}
+                {(activeWeight > 0 || activeVolL > 0) && (
+                  <span>🚐 осталось: {activeWeight > 0 && `${Math.round(activeWeight)} кг`}{activeWeight > 0 && activeVolL > 0 && ' · '}{activeVolL > 0 && `${(activeVolL / 1000).toFixed(1)} м³`}</span>
+                )}
+                {!wakeLockOn && <span className="text-amber-600">⚠️ не блокируйте телефон</span>}
+                {unassignedToRoute.length > 0 && <span>+{unassignedToRoute.length} новых добавляются…</span>}
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0 text-xs text-gray-500 truncate">
                 {unassignedToRoute.length > 0
                   ? `Готовы к выезду: ${unassignedToRoute.length} доставок`
-                  : 'Нет назначенных доставок для выезда'}
+                  : 'Нет назначенных доставок'}
+                {(activeWeight > 0 || activeVolL > 0) && (
+                  <span className="text-gray-400"> · 🚐 {activeWeight > 0 && `${Math.round(activeWeight)} кг`}{activeWeight > 0 && activeVolL > 0 && ' · '}{activeVolL > 0 && `${(activeVolL / 1000).toFixed(1)} м³`}</span>
+                )}
               </div>
-              {(activeWeight > 0 || activeVolL > 0) && (
-                <div className="text-xs text-gray-400 mt-0.5">
-                  🚐 Всего к загрузке: {activeWeight > 0 && `${Math.round(activeWeight)} кг`}
-                  {activeWeight > 0 && activeVolL > 0 && ' · '}
-                  {activeVolL > 0 && `${(activeVolL / 1000).toFixed(1)} м³`}
-                </div>
-              )}
+              <button onClick={handleStartRoute} disabled={routeBusy}
+                className="shrink-0 px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-200 text-white text-xs font-semibold rounded-lg whitespace-nowrap">
+                {routeBusy ? '⏳…' : '🚀 Начать маршрут'}
+              </button>
             </div>
-            <button onClick={handleStartRoute} disabled={routeBusy}
-              className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-200 text-white text-xs font-semibold rounded-lg whitespace-nowrap">
-              {routeBusy ? '⏳…' : '🚀 Начать маршрут'}
-            </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Карта маршрута: остановки по порядку + моё текущее местоположение */}
@@ -544,17 +530,23 @@ export default function MyDeliveriesPage() {
       )}
 
       {done.length > 0 && (
-        <>
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Завершённые ({done.length})</div>
-            {doneKm > 0 && <div className="text-xs font-semibold text-emerald-600">🛣️ всего {doneKm} км</div>}
-          </div>
-          <div className="flex flex-col gap-2 opacity-70">
-            {done.map((d) => (
-              <DeliveryCard key={d.id} d={d} busy={busyId === d.id} onSet={setStatus} shops={shops} />
-            ))}
-          </div>
-        </>
+        <div className="bg-white rounded-xl shadow-sm p-3">
+          <button onClick={() => setShowDone((v) => !v)}
+            className="w-full flex items-center justify-between">
+            <span className="text-xs text-gray-500 font-semibold uppercase tracking-wide">Завершённые ({done.length})</span>
+            <span className="flex items-center gap-2">
+              {doneKm > 0 && <span className="text-xs font-semibold text-emerald-600">🛣️ {doneKm} км</span>}
+              <span className="text-gray-400 text-xs">{showDone ? '▲' : '▼'}</span>
+            </span>
+          </button>
+          {showDone && (
+            <div className="flex flex-col gap-2 opacity-70 mt-3">
+              {done.map((d) => (
+                <DeliveryCard key={d.id} d={d} busy={busyId === d.id} onSet={setStatus} shops={shops} />
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
