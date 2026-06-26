@@ -1,9 +1,24 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { fetchShopTurnover, AnalyticsPeriod, ShopTurnoverRow, ShopTurnoverSummary } from '@/lib/api';
+import { fetchShopTurnover, ShopTurnoverRow, ShopTurnoverSummary } from '@/lib/api';
 import { loadXLSX } from '@/lib/xlsx';
 import { fmtDateTime } from '@/lib/format';
+
+function isoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function daysAgo(n: number): string {
+  const d = new Date(); d.setDate(d.getDate() - n);
+  return isoDate(d);
+}
+// Быстрые периоды → диапазон дат (включительно по сегодня).
+const QUICK: { key: string; label: string; from: () => string }[] = [
+  { key: 'today', label: 'Сегодня', from: () => isoDate(new Date()) },
+  { key: '7d', label: '7 дней', from: () => daysAgo(6) },
+  { key: '15d', label: '15 дней', from: () => daysAgo(14) },
+  { key: '30d', label: '30 дней', from: () => daysAgo(29) },
+];
 
 // Категория по оборачиваемости и настраиваемым порогам — как в наманганском файле.
 // (нов.)-варианты пропущены: в лёгкой версии нет данных о новых приходах.
@@ -30,9 +45,11 @@ function isNeeded(row: ShopTurnoverRow): boolean {
   return row.sold_qty > 0 && row.stock <= 0;
 }
 
-export default function ShopTurnoverSection({ period }: { period: AnalyticsPeriod }) {
+export default function ShopTurnoverSection() {
   const [shops, setShops] = useState<ShopTurnoverSummary[]>([]);
   const [shop, setShop] = useState('');
+  const [from, setFrom] = useState(() => daysAgo(6));
+  const [to, setTo] = useState(() => isoDate(new Date()));
   const [rows, setRows] = useState<ShopTurnoverRow[]>([]);
   const [updatedMs, setUpdatedMs] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -46,10 +63,12 @@ export default function ShopTurnoverSection({ period }: { period: AnalyticsPerio
   const [catFilter, setCatFilter] = useState('');
   const [onlyNeeded, setOnlyNeeded] = useState(false);
 
+  const activeQuick = QUICK.find((q) => q.from() === from && to === isoDate(new Date()))?.key || '';
+
   useEffect(() => {
     setLoading(true);
     setError('');
-    fetchShopTurnover(period, shop)
+    fetchShopTurnover(from, to, shop)
       .then((d) => {
         setShops(d.shops);
         setRows(d.rows);
@@ -58,7 +77,7 @@ export default function ShopTurnoverSection({ period }: { period: AnalyticsPerio
       })
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
-  }, [period, shop]);
+  }, [from, to, shop]);
 
   const groups = useMemo(() => [...new Set(rows.map((r) => r.group).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru')), [rows]);
   const brands = useMemo(() => [...new Set(rows.map((r) => r.brand).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru')), [rows]);
@@ -118,6 +137,24 @@ export default function ShopTurnoverSection({ period }: { period: AnalyticsPerio
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Период: быстрые кнопки + произвольный диапазон дат */}
+      <div className="bg-white rounded-xl shadow-sm p-3 flex flex-wrap items-center gap-2">
+        {QUICK.map((q) => (
+          <button key={q.key} onClick={() => { setFrom(q.from()); setTo(isoDate(new Date())); }}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg ${
+              activeQuick === q.key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}>
+            {q.label}
+          </button>
+        ))}
+        <span className="w-px h-6 bg-gray-200 mx-1" />
+        <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)}
+          className="border-2 border-gray-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-blue-400" />
+        <span className="text-gray-400 text-xs">—</span>
+        <input type="date" value={to} min={from} max={isoDate(new Date())} onChange={(e) => setTo(e.target.value)}
+          className="border-2 border-gray-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-blue-400" />
+      </div>
+
       <div className="bg-white rounded-xl shadow-sm p-3 flex flex-wrap items-center gap-3">
         <select value={shop} onChange={(e) => setShop(e.target.value)}
           className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:border-blue-400 max-w-[260px]">

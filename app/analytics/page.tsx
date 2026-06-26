@@ -22,6 +22,10 @@ const SECTIONS: { key: Section; label: string }[] = [
   { key: 'slow', label: '🐌 Не продаётся' },
   { key: 'turnover', label: '🏬 Оборачиваемость по магазину' },
 ];
+// Сводные разделы (Итоги/По магазинам/…) пока скрыты по просьбе — оставлен только
+// анализ оборачиваемости. Поставить true, чтобы вернуть остальные вкладки.
+const SHOW_SUMMARY_TABS = false;
+const VISIBLE_SECTIONS = SHOW_SUMMARY_TABS ? SECTIONS : SECTIONS.filter((s) => s.key === 'turnover');
 
 export default function AnalyticsPage() {
   return (
@@ -33,37 +37,41 @@ export default function AnalyticsPage() {
 
 function AnalyticsContent() {
   const [period, setPeriod] = useState<AnalyticsPeriod>('7d');
-  const [section, setSection] = useState<Section>('totals');
+  const [section, setSection] = useState<Section>(SHOW_SUMMARY_TABS ? 'totals' : 'turnover');
   const [data, setData] = useState<AnalyticsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    // Сводные разделы скрыты — не дёргаем тяжёлый order$export, пока он не нужен.
+    if (section === 'turnover') { setLoading(false); return; }
     setLoading(true);
     setError('');
     fetchAnalyticsSummary(period)
       .then(setData)
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
-  }, [period]);
+  }, [period, section]);
 
   return (
     <div className="max-w-5xl mx-auto p-3 sm:p-4">
       <h1 className="text-lg font-bold mb-3">📊 Аналитика продаж</h1>
 
-      <div className="flex gap-1 mb-3 bg-gray-100 rounded-xl p-1 flex-wrap w-fit">
-        {PERIODS.map((p) => (
-          <button key={p.key} onClick={() => setPeriod(p.key)}
-            className={`px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition-colors ${
-              period === p.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}>
-            {p.label}
-          </button>
-        ))}
-      </div>
+      {SHOW_SUMMARY_TABS && (
+        <div className="flex gap-1 mb-3 bg-gray-100 rounded-xl p-1 flex-wrap w-fit">
+          {PERIODS.map((p) => (
+            <button key={p.key} onClick={() => setPeriod(p.key)}
+              className={`px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition-colors ${
+                period === p.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flex gap-1 mb-4 border-b border-gray-200 flex-wrap">
-        {SECTIONS.map((s) => (
+        {VISIBLE_SECTIONS.map((s) => (
           <button key={s.key} onClick={() => setSection(s.key)}
             className={`px-3 py-2 text-xs sm:text-sm font-semibold whitespace-nowrap border-b-2 transition-colors ${
               section === s.key ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -73,7 +81,7 @@ function AnalyticsContent() {
         ))}
       </div>
 
-      {section === 'turnover' && <ShopTurnoverSection period={period} />}
+      {section === 'turnover' && <ShopTurnoverSection />}
 
       {section !== 'turnover' && error && <div className="text-red-600 text-sm mb-3">{error}</div>}
       {section !== 'turnover' && (loading && !data ? (

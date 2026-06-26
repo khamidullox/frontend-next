@@ -1076,14 +1076,16 @@ export interface ShopTurnoverSummary {
 }
 
 export interface ShopTurnoverResult {
-  period: AnalyticsPeriod;
+  from: string;
+  to: string;
   updated_ms: number;
   shops: ShopTurnoverSummary[];
   rows: ShopTurnoverRow[];
 }
 
-export async function fetchShopTurnover(period: AnalyticsPeriod, shop?: string): Promise<ShopTurnoverResult> {
-  const qs = `period=${period}${shop ? `&shop=${encodeURIComponent(shop)}` : ''}`;
+// from/to — даты YYYY-MM-DD (включительно). shop — код выбранного магазина.
+export async function fetchShopTurnover(from: string, to: string, shop?: string): Promise<ShopTurnoverResult> {
+  const qs = `from=${from}&to=${to}${shop ? `&shop=${encodeURIComponent(shop)}` : ''}`;
   const res = await fetch(`/api/analytics/shop-turnover?${qs}`, { cache: 'no-store' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((data as { error?: string }).error || 'Не удалось загрузить анализ по магазину');

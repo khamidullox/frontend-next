@@ -2,7 +2,6 @@ import { getShopProductSales } from './orders';
 import { getStockByWarehouseCode, getCachedCatalog } from './products';
 import { shopForWarehouseCode, SHOP_LIST } from './shopWarehouseMap';
 import { getCachedSnapshot, getCachedListUpdatedMs } from './listCache';
-import { Period } from './analytics';
 
 // Одна строка анализа: товар × магазин за период. Категория (Активно/Пассивно/…) тут
 // НЕ хранится — она зависит от настраиваемых порогов и считается на клиенте по turnover,
@@ -29,35 +28,38 @@ export interface ShopTurnoverSummary {
 }
 
 export interface ShopTurnoverData {
-  period: Period;
+  from: string;             // YYYY-MM-DD
+  to: string;               // YYYY-MM-DD
   updated_ms: number;
   shops: ShopTurnoverSummary[];
   rows: ShopTurnoverRow[];   // по всем магазинам; API отдаёт только выбранный
 }
 
-const PERIOD_DAYS_BACK: Record<Period, number> = { today: 0, '7d': 6, '15d': 14, '30d': 29 };
-const PERIOD_TTL_MS: Record<Period, number> = {
-  today: 15 * 60_000, '7d': 30 * 60_000, '15d': 60 * 60_000, '30d': 2 * 60 * 60_000,
-};
 // Кэшируем плоским массивом строк (товар×магазин), порезанным на чанки — один документ
 // Firestore ограничен 1 МБ, а весь датасет по 24 магазинам это несколько МБ, поэтому
 // НЕЛЬЗЯ хранить его одним элементом. 400 строк на чанк с запасом влезают в лимит.
 const ROW_CHUNK = 400;
-const CACHE_KEY = (period: Period) => `shop_turnover_v2_${period}`;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const CACHE_KEY = (from: string, to: string) => `shop_turnover_v3_${from}_${to}`;
 
-function periodRange(period: Period): { begin: Date; end: Date } {
-  const end = new Date();
-  const begin = new Date(end);
-  begin.setDate(begin.getDate() - PERIOD_DAYS_BACK[period]);
-  return { begin, end };
+// Диапазон, заканчивающийся сегодня, ещё «живой» (данные за сегодня дополняются) —
+// держим кэш недолго. Полностью прошлый диапазон не меняется — кэшируем надолго.
+function ttlFor(toISO: string): number {
+  const today = new Date().toISOString().slice(0, 10);
+  return toISO >= today ? 30 * 60_000 : 6 * 60 * 60_000;
+}
+
+function parseISO(d: string): Date {
+  // Локально-безопасно: YYYY-MM-DD → полночь по местному, без сдвига часового пояса.
+  const [y, m, day] = d.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, day || 1);
 }
 
 interface Acc { name: string; order: number; ret: number; sold: number; stock: number }
 
 // Собирает плоский массив строк по ВСЕМ магазинам (тяжёлый запрос к Smartup) —
-// кэшируется в Firestore, поэтому order$export выполняется один раз на период.
-async function buildRows(period: Period): Promise<ShopTurnoverRow[]> {
-  const { begin, end } = periodRange(period);
+// кэшируется в Firestore, поэтому order$export выполняется один раз на диапазон.
+async function buildRows(begin: Date, end: Date): Promise<ShopTurnoverRow[]> {
   const [sales, stockByCode, catalog] = await Promise.all([
     getShopProductSales(begin, end),
     getStockByWarehouseCode(),
@@ -120,9 +122,13 @@ async function buildRows(period: Period): Promise<ShopTurnoverRow[]> {
   return rows;
 }
 
-export async function getShopTurnover(period: Period): Promise<ShopTurnoverData> {
-  const key = CACHE_KEY(period);
-  const rows = await getCachedSnapshot<ShopTurnoverRow>(key, () => buildRows(period), PERIOD_TTL_MS[period], ROW_CHUNK);
+// Анализ за произвольный диапазон дат (YYYY-MM-DD, включительно). Кэшируется по
+// (from,to), так что повторные открытия того же диапазона не дёргают Smartup.
+export async function getShopTurnover(fromISO: string, toISO: string): Promise<ShopTurnoverData> {
+  const key = CACHE_KEY(fromISO, toISO);
+  const begin = parseISO(fromISO);
+  const end = new Date(parseISO(toISO).getTime() + DAY_MS - 1); // включительно до конца дня «по»
+  const rows = await getCachedSnapshot<ShopTurnoverRow>(key, () => buildRows(begin, end), ttlFor(toISO), ROW_CHUNK);
   const updated_ms = (await getCachedListUpdatedMs(key)) ?? Date.now();
 
   // Сводка по магазинам — из строк, чтобы в списке выбора были все 24 точки (даже с 0
@@ -140,5 +146,5 @@ export async function getShopTurnover(period: Period): Promise<ShopTurnoverData>
     sold: agg.get(s.code)?.sold || 0,
   }));
 
-  return { period, updated_ms, shops, rows };
+  return { from: fromISO, to: toISO, updated_ms, shops, rows };
 }
