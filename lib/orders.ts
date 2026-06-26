@@ -277,6 +277,50 @@ export async function getShopProductSales(begin: Date, end: Date): Promise<ShopP
   return [...map.values()];
 }
 
+export interface DatedShopSale {
+  date: string;            // YYYY-MM-DD (по deal_time заказа)
+  warehouse_code: string;
+  product_code: string;
+  product_name: string;
+  order_qty: number;
+  return_qty: number;
+  sold_qty: number;
+}
+
+// То же, что getShopProductSales, но С РАЗБИВКОЙ по дате заказа (deal_time). Один
+// широкий запрос Smartup возвращает своё окно (~16 дней) разом — раскладываем по дням,
+// чтобы накопить историю по дням за одну выгрузку, а не дёргать каждый день отдельно
+// (одиночный запрос за старый день Smartup уже отдаёт пусто).
+export async function getShopProductSalesByDay(begin: Date, end: Date): Promise<DatedShopSale[]> {
+  const orders = await exportOrders({
+    begin_deal_date: formatSmartupDate(begin),
+    end_deal_date: formatSmartupDate(end),
+  });
+
+  const map = new Map<string, DatedShopSale>();
+  for (const o of orders) {
+    const m = (o.deal_time || '').match(/^(\d{2})\.(\d{2})\.(\d{4})/);
+    if (!m) continue;
+    const date = `${m[3]}-${m[2]}-${m[1]}`;
+    for (const item of o.order_products || []) {
+      const wh = normalizeCode(item.warehouse_code);
+      const code = normalizeCode(item.product_code);
+      if (!wh || !code) continue;
+      const key = `${date}|${wh}|${code}`;
+      const row = map.get(key) || {
+        date, warehouse_code: wh, product_code: code, product_name: item.product_name || '',
+        order_qty: 0, return_qty: 0, sold_qty: 0,
+      };
+      row.order_qty += toNumber(item.order_quant);
+      row.return_qty += toNumber(item.return_quant);
+      row.sold_qty += item.sold_quant != null ? toNumber(item.sold_quant) : (toNumber(item.order_quant) - toNumber(item.return_quant));
+      if (item.product_name) row.product_name = item.product_name;
+      map.set(key, row);
+    }
+  }
+  return [...map.values()];
+}
+
 export interface ClientAddressStatus {
   person_id: string;
   person_name: string;

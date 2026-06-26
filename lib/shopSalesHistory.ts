@@ -1,5 +1,5 @@
 import { getDb } from './firebase';
-import { getShopProductSales } from './orders';
+import { getShopProductSales, getShopProductSalesByDay } from './orders';
 import { shopForWarehouseCode } from './shopWarehouseMap';
 
 // Накопление истории продаж по дням в нашей базе — потому что Smartup order$export
@@ -19,33 +19,36 @@ function parseISO(s: string): Date {
   return new Date(y, (m || 1) - 1, dd || 1);
 }
 
-// Агрегирует продажи за один день по (магазин, товар) и перезаписывает документ дня.
-export async function recordDailySales(dateISO: string): Promise<{ rows: number }> {
-  const day = parseISO(dateISO);
-  const sales = await getShopProductSales(day, day);
-  const map = new Map<string, DailyRow>();
-  for (const r of sales) {
+// Накапливает историю за окно [сегодня−n .. вчера] ОДНИМ широким запросом Smartup:
+// раскладываем заказы по их дате (deal_time) и перезаписываем документ каждого дня,
+// который реально пришёл в выгрузке. Дни, которых в ответе нет (выпали из ~16-дневного
+// окна Smartup), НЕ трогаем — уже накопленная история за них сохраняется. Сегодня не
+// пишем (оно всегда берётся живьём в getCombinedSales, иначе двойной счёт).
+export async function recordRecentDays(n: number): Promise<Record<string, number>> {
+  const today = isoDate(new Date());
+  const begin = new Date(); begin.setDate(begin.getDate() - n);
+  const end = new Date();
+  const dated = await getShopProductSalesByDay(begin, end);
+
+  const byDate = new Map<string, Map<string, DailyRow>>();
+  for (const r of dated) {
+    if (r.date >= today) continue; // сегодня — живьём, в историю не пишем
     const shop = shopForWarehouseCode(r.warehouse_code);
     if (!shop) continue;
+    let m = byDate.get(r.date);
+    if (!m) { m = new Map(); byDate.set(r.date, m); }
     const key = `${shop.code}|${r.product_code}`;
-    const cur = map.get(key) || { s: shop.code, p: r.product_code, o: 0, r: 0, d: 0 };
+    const cur = m.get(key) || { s: shop.code, p: r.product_code, o: 0, r: 0, d: 0 };
     cur.o += r.order_qty; cur.r += r.return_qty; cur.d += r.sold_qty;
-    map.set(key, cur);
+    m.set(key, cur);
   }
-  const rows = [...map.values()];
-  await getDb().collection(COLLECTION).doc(dateISO).set({ date: dateISO, rows, updated_at: new Date().toISOString() } satisfies DailyDoc);
-  return { rows: rows.length };
-}
 
-// Записать последние N завершённых дней (день 1 = вчера). Идём по одному дню — узкий
-// deal_date даёт маленький ответ Smartup, не упираемся в лимиты. Бэкфилл при старте
-// (Smartup ещё отдаёт ~16 дней) — вызвать с n=16.
-export async function recordRecentDays(n: number): Promise<Record<string, number>> {
+  const db = getDb();
   const out: Record<string, number> = {};
-  for (let i = 1; i <= n; i++) {
-    const d = new Date(); d.setDate(d.getDate() - i);
-    const iso = isoDate(d);
-    try { out[iso] = (await recordDailySales(iso)).rows; } catch { out[iso] = -1; }
+  for (const [date, m] of byDate) {
+    const rows = [...m.values()];
+    await db.collection(COLLECTION).doc(date).set({ date, rows, updated_at: new Date().toISOString() } satisfies DailyDoc);
+    out[date] = rows.length;
   }
   return out;
 }
