@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import AdminGate from '@/components/AdminGate';
 import { fetchAnalyticsSummary, AnalyticsPeriod, AnalyticsSummary } from '@/lib/api';
 import { fmtDateTime } from '@/lib/format';
+import ShopTurnoverSection from '@/components/ShopTurnoverSection';
 
 const PERIODS: { key: AnalyticsPeriod; label: string }[] = [
   { key: 'today', label: 'Сегодня' },
@@ -12,13 +13,14 @@ const PERIODS: { key: AnalyticsPeriod; label: string }[] = [
   { key: '30d', label: '30 дней' },
 ];
 
-type Section = 'totals' | 'shops' | 'brands' | 'top' | 'slow';
+type Section = 'totals' | 'shops' | 'brands' | 'top' | 'slow' | 'turnover';
 const SECTIONS: { key: Section; label: string }[] = [
   { key: 'totals', label: '📋 Итоги' },
   { key: 'shops', label: '🏪 По магазинам' },
   { key: 'brands', label: '🏷️ По брендам' },
   { key: 'top', label: '🔥 Топ продаж' },
   { key: 'slow', label: '🐌 Не продаётся' },
+  { key: 'turnover', label: '🏬 Оборачиваемость по магазину' },
 ];
 
 export default function AnalyticsPage() {
@@ -71,8 +73,10 @@ function AnalyticsContent() {
         ))}
       </div>
 
-      {error && <div className="text-red-600 text-sm mb-3">{error}</div>}
-      {loading && !data ? (
+      {section === 'turnover' && <ShopTurnoverSection period={period} />}
+
+      {section !== 'turnover' && error && <div className="text-red-600 text-sm mb-3">{error}</div>}
+      {section !== 'turnover' && (loading && !data ? (
         <div className="text-gray-500 text-sm">Загрузка…</div>
       ) : data ? (
         <>
@@ -232,7 +236,7 @@ function AnalyticsContent() {
             </div>
           )}
         </>
-      ) : null}
+      ) : null)}
     </div>
   );
 }

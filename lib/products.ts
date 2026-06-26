@@ -350,6 +350,22 @@ export function getCachedCatalog(): Promise<CatalogItem[]> {
   return getCachedList('catalog_v4', getProductCatalog, REF_TTL_MS);
 }
 
+// Остаток по (настоящий код склада → код товара → доступное кол-во). В балансе склад
+// хранится как warehouse_id, а в позициях заказа — как warehouse_code, поэтому
+// переводим id→code, чтобы можно было сопоставить остаток с продажами по магазину.
+export async function getStockByWarehouseCode(): Promise<Map<string, Map<string, number>>> {
+  const [balance, idCode] = await Promise.all([getCachedBalance(), getWarehouseIdCodeMap()]);
+  const out = new Map<string, Map<string, number>>();
+  for (const b of balance) {
+    const code = idCode.get(b.w);
+    if (!code) continue;
+    let m = out.get(code);
+    if (!m) { m = new Map<string, number>(); out.set(code, m); }
+    m.set(b.p, (m.get(b.p) || 0) + b.q);
+  }
+  return out;
+}
+
 // Когда снимок остатков последний раз обновлялся (для подписи «обновлено …»).
 export function getStockUpdatedMs(): Promise<number | null> {
   return getCachedListUpdatedMs('balance_free');

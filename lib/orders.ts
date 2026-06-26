@@ -23,7 +23,10 @@ interface RawOrderProduct {
   product_code?: string;
   product_name?: string;
   product_barcode?: string;
-  order_quant?: string | number;
+  warehouse_code?: string;          // склад, с которого отгружали — привязка к магазину
+  order_quant?: string | number;    // заказано
+  return_quant?: string | number;   // возвращено
+  sold_quant?: string | number;     // продано (заказано − возвраты)
 }
 
 interface RawOrder {
@@ -221,6 +224,47 @@ export async function getSalesAggregate(
       .map(([brand, v]) => ({ brand, qty: v.qty, orders: v.orders.size, products: v.products.size }))
       .sort((a, b) => b.qty - a.qty),
   };
+}
+
+export interface ShopProductSalesRow {
+  warehouse_code: string;  // код склада-источника (= привязка к магазину, см. shopWarehouseMap)
+  product_code: string;
+  product_name: string;
+  order_qty: number;       // заказано
+  return_qty: number;      // возвращено
+  sold_qty: number;        // продано (заказано − возвраты)
+}
+
+// Продажи по (склад-источник × товар) за период — для анализа оборачиваемости по
+// магазинам. Группируем позиции заказов по warehouse_code: для розничных точек это
+// и есть код их склада (5501, 7703, 08, 29 …) из ручной таблицы соответствия. brandMap
+// и т.п. сюда не тащим — этим занимается слой lib/shopAnalytics.ts поверх каталога.
+export async function getShopProductSales(begin: Date, end: Date): Promise<ShopProductSalesRow[]> {
+  const orders = await exportOrders({
+    begin_order_date: formatSmartupDate(begin),
+    end_order_date: formatSmartupDate(end),
+  });
+
+  const map = new Map<string, ShopProductSalesRow>();
+  for (const o of orders) {
+    for (const item of o.order_products || []) {
+      const wh = normalizeCode(item.warehouse_code);
+      const code = normalizeCode(item.product_code);
+      if (!wh || !code) continue;
+      const key = `${wh}|${code}`;
+      const row = map.get(key) || {
+        warehouse_code: wh, product_code: code, product_name: item.product_name || '',
+        order_qty: 0, return_qty: 0, sold_qty: 0,
+      };
+      row.order_qty += toNumber(item.order_quant);
+      row.return_qty += toNumber(item.return_quant);
+      // sold_quant в Smartup = заказано − возвраты; если поля нет, считаем сами.
+      row.sold_qty += item.sold_quant != null ? toNumber(item.sold_quant) : (toNumber(item.order_quant) - toNumber(item.return_quant));
+      if (item.product_name) row.product_name = item.product_name;
+      map.set(key, row);
+    }
+  }
+  return [...map.values()];
 }
 
 export interface ClientAddressStatus {

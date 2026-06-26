@@ -1053,3 +1053,39 @@ export async function fetchAnalyticsSummary(period: AnalyticsPeriod): Promise<An
   if (!res.ok) throw new Error((data as { error?: string }).error || 'Не удалось загрузить аналитику');
   return data.data as AnalyticsSummary;
 }
+
+export interface ShopTurnoverRow {
+  shop_code: string;
+  product_code: string;
+  product_name: string;
+  brand: string;
+  group: string;
+  order_qty: number;
+  return_qty: number;
+  sold_qty: number;
+  stock: number;
+  base: number;
+  turnover: number;
+}
+
+export interface ShopTurnoverSummary {
+  code: string;
+  name: string;
+  products: number;
+  sold: number;
+}
+
+export interface ShopTurnoverResult {
+  period: AnalyticsPeriod;
+  updated_ms: number;
+  shops: ShopTurnoverSummary[];
+  rows: ShopTurnoverRow[];
+}
+
+export async function fetchShopTurnover(period: AnalyticsPeriod, shop?: string): Promise<ShopTurnoverResult> {
+  const qs = `period=${period}${shop ? `&shop=${encodeURIComponent(shop)}` : ''}`;
+  const res = await fetch(`/api/analytics/shop-turnover?${qs}`, { cache: 'no-store' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Не удалось загрузить анализ по магазину');
+  return data.data as ShopTurnoverResult;
+}
