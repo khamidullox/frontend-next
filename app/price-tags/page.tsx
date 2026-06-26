@@ -246,6 +246,14 @@ export default function PriceTagsPage() {
   const visibleItems = printItems.slice(safePreviewPage * PREVIEW_PAGE, safePreviewPage * PREVIEW_PAGE + PREVIEW_PAGE);
   useEffect(() => { setPreviewPage(0); }, [printItems.length, tab]);
 
+  // «Печать всех»: выделяем весь текущий (отфильтрованный) список и печатаем — выбор и
+  // печать запускаются в одном обработчике, React батчит оба setState, так что к моменту
+  // срабатывания эффекта DOM уже отражает полное выделение.
+  const [printAllToken, setPrintAllToken] = useState(0);
+  useEffect(() => {
+    if (printAllToken > 0) window.print();
+  }, [printAllToken]);
+
   // Сброс выделения при смене склада
   useEffect(() => { setPicked({}); lastIndexRef.current = null; }, [whId]);
 
@@ -590,6 +598,12 @@ export default function PriceTagsPage() {
             >
               🖨️ Печать {previewPages > 1 ? `этой порции (${visibleItems.length} шт.)` : `(${printItems.length} шт.)`}
             </button>
+            <button
+              onClick={() => { setRows(orderedList, true); setPrintAllToken(t => t + 1); }}
+              className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-xl transition-colors mb-1"
+            >
+              🖨️ Печать всех ({orderedList.length} шт. в списке)
+            </button>
             {previewPages > 1 && (
               <p className="text-[11px] text-gray-400 text-center mb-4">
                 Печатается текущая страница. Всего {printItems.length} шт. — печатайте по порциям, листая «Вперёд».
@@ -616,7 +630,7 @@ export default function PriceTagsPage() {
             >
               {/* Капсула с названием */}
               <div className="flex" style={{ flex: '0 0 24%', minHeight: 0 }}>
-                <div className="flex-1 border border-gray-700 rounded-lg px-1 flex items-center justify-center text-center font-bold text-[9px] leading-tight overflow-hidden">
+                <div className="flex-1 px-1 flex items-center justify-center text-center font-extrabold text-[12px] leading-tight overflow-hidden">
                   <span className="line-clamp-2 break-words">{it.product_name || it.product_code}</span>
                 </div>
               </div>
