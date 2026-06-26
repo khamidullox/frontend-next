@@ -23,11 +23,13 @@ async function run(request: NextRequest) {
   }
   try {
     const result = await refreshStockCache();
-    // Заодно копим историю продаж по магазинам: Smartup отдаёт только ~16 дней, поэтому
-    // ежедневно дописываем последние 3 завершённых дня (повтор ловит поздние возвраты).
+    // Заодно копим историю продаж по магазинам: order$export надёжно отдаёт только
+    // последние ~7 дней, поэтому ежедневно перезахватываем весь этот недельный диапазон
+    // (одним запросом, с разбивкой по дням) — заодно ловим поздние возвраты. История
+    // растёт вперёд; старые дни сохраняются (их в выгрузке уже нет — не перезаписываем).
     // Не должно ломать прогрев остатков, поэтому в своём try/catch.
     let sales_days: Record<string, number> | null = null;
-    try { sales_days = await recordRecentDays(3); } catch { sales_days = null; }
+    try { sales_days = await recordRecentDays(7); } catch { sales_days = null; }
     return Response.json({ ok: true, ...result, sales_days });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 500 });
