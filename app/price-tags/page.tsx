@@ -246,13 +246,20 @@ export default function PriceTagsPage() {
   const visibleItems = printItems.slice(safePreviewPage * PREVIEW_PAGE, safePreviewPage * PREVIEW_PAGE + PREVIEW_PAGE);
   useEffect(() => { setPreviewPage(0); }, [printItems.length, tab]);
 
-  // «Печать всех»: выделяем весь текущий (отфильтрованный) список и печатаем — выбор и
-  // печать запускаются в одном обработчике, React батчит оба setState, так что к моменту
-  // срабатывания эффекта DOM уже отражает полное выделение.
-  const [printAllToken, setPrintAllToken] = useState(0);
+  // «Печать всех»: раньше печать всегда брала visibleItems (срез текущей страницы
+  // превью, максимум PREVIEW_PAGE), поэтому реально печаталась только одна страница
+  // (а не весь выбор) — выбор товаров при этом был верный. Теперь в этом режиме зона
+  // печати рендерит ПОЛНЫЙ printItems, минуя постраничный лимит; после печати возвращаемся
+  // к обычному постраничному просмотру через afterprint.
+  const [printAllMode, setPrintAllMode] = useState(false);
+  const printAreaItems = printAllMode ? printItems : visibleItems;
   useEffect(() => {
-    if (printAllToken > 0) window.print();
-  }, [printAllToken]);
+    if (!printAllMode) return;
+    window.print();
+    const onAfter = () => setPrintAllMode(false);
+    window.addEventListener('afterprint', onAfter);
+    return () => window.removeEventListener('afterprint', onAfter);
+  }, [printAllMode]);
 
   // Сброс выделения при смене склада
   useEffect(() => { setPicked({}); lastIndexRef.current = null; }, [whId]);
@@ -599,7 +606,7 @@ export default function PriceTagsPage() {
               🖨️ Печать {previewPages > 1 ? `этой порции (${visibleItems.length} шт.)` : `(${printItems.length} шт.)`}
             </button>
             <button
-              onClick={() => { setRows(orderedList, true); setPrintAllToken(t => t + 1); }}
+              onClick={() => { setRows(orderedList, true); setPrintAllMode(true); }}
               className="w-full px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors mb-1"
             >
               🖨️ Печать всех ({orderedList.length} шт. в списке)
@@ -616,13 +623,13 @@ export default function PriceTagsPage() {
       {/* ── Область печати ── */}
       {printItems.length > 0 && tab === 'tags' && (
         <div className="tag-print-wrap flex flex-col items-center gap-2">
-          {visibleItems.map((it, idx) => <PriceTag key={idx} item={it} store={store} pct={installmentPct} />)}
+          {printAreaItems.map((it, idx) => <PriceTag key={idx} item={it} store={store} pct={installmentPct} />)}
         </div>
       )}
 
       {printItems.length > 0 && tab === 'barcodes' && (
         <div className="bc-sheet flex flex-col items-center gap-2">
-          {visibleItems.map((it, idx) => (
+          {printAreaItems.map((it, idx) => (
             <div
               key={idx}
               className="bclabel border border-gray-300 rounded-lg flex flex-col gap-1 p-1.5 overflow-hidden box-border"
