@@ -40,7 +40,9 @@ export interface ShopTurnoverData {
 // НЕЛЬЗЯ хранить его одним элементом. 400 строк на чанк с запасом влезают в лимит.
 const ROW_CHUNK = 400;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const CACHE_KEY = (from: string, to: string) => `shop_turnover_v3_${from}_${to}`;
+// v4 — после фикса фильтра дат в order$export (begin_deal_date вместо игнорируемого
+// begin_order_date); старый кэш v3 держал данные с неработавшим фильтром.
+const CACHE_KEY = (from: string, to: string) => `shop_turnover_v4_${from}_${to}`;
 
 // Диапазон, заканчивающийся сегодня, ещё «живой» (данные за сегодня дополняются) —
 // держим кэш недолго. Полностью прошлый диапазон не меняется — кэшируем надолго.

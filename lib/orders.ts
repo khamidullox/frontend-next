@@ -125,10 +125,14 @@ async function getAllOrders(): Promise<RawOrder[]> {
   return cached('orders:all', LIST_TTL_MS, () => {
     const end = new Date();
     const begin = new Date(end);
-    begin.setDate(begin.getDate() - 6);
+    // 16 дней: раньше дат-фильтр игнорировался и Smartup сам отдавал ~16-дневное окно;
+    // теперь, когда фильтр работает (begin_deal_date), берём столько же явно, чтобы
+    // список заказов и поиск по ТТН охватывали тот же период, что и прежде.
+    begin.setDate(begin.getDate() - 16);
     return exportOrders({
-      begin_order_date: formatSmartupDate(begin),
-      end_order_date: formatSmartupDate(end),
+      // см. примечание ниже: фильтрующие параметры — begin_deal_date/end_deal_date.
+      begin_deal_date: formatSmartupDate(begin),
+      end_deal_date: formatSmartupDate(end),
     });
   });
 }
@@ -172,8 +176,11 @@ export async function getSalesAggregate(
   brandByCode?: Map<string, string>
 ): Promise<SalesAggregate> {
   const orders = await exportOrders({
-    begin_order_date: formatSmartupDate(begin),
-    end_order_date: formatSmartupDate(end),
+    // ВАЖНО: order$export фильтрует по begin_deal_date/end_deal_date (поле deal_time).
+    // begin_order_date/end_order_date он МОЛЧА игнорирует и отдаёт фиксированное окно
+    // ~16 дней — из-за этого аналитика за разные периоды показывала одно и то же.
+    begin_deal_date: formatSmartupDate(begin),
+    end_deal_date: formatSmartupDate(end),
   });
 
   const shopMap = new Map<string, { qty: number; orders: number; products: Set<string> }>();
@@ -241,8 +248,11 @@ export interface ShopProductSalesRow {
 // и т.п. сюда не тащим — этим занимается слой lib/shopAnalytics.ts поверх каталога.
 export async function getShopProductSales(begin: Date, end: Date): Promise<ShopProductSalesRow[]> {
   const orders = await exportOrders({
-    begin_order_date: formatSmartupDate(begin),
-    end_order_date: formatSmartupDate(end),
+    // ВАЖНО: order$export фильтрует по begin_deal_date/end_deal_date (поле deal_time).
+    // begin_order_date/end_order_date он МОЛЧА игнорирует и отдаёт фиксированное окно
+    // ~16 дней — из-за этого аналитика за разные периоды показывала одно и то же.
+    begin_deal_date: formatSmartupDate(begin),
+    end_deal_date: formatSmartupDate(end),
   });
 
   const map = new Map<string, ShopProductSalesRow>();
