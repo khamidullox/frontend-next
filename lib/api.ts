@@ -720,6 +720,16 @@ export interface LogisticsSettings {
   point_rate_low_load_by_type: Record<string, number>;
   // Стоимость топлива (сум/км, в одну сторону) по виду транспорта — тот же принцип ключей.
   fuel_rate_by_type: Record<string, number>;
+  // Тарифная сетка по загрузке выезда, своя для каждого вида транспорта. Если для
+  // типа задана непустая сетка — она заменяет rate_by_type/point_rate_by_type/
+  // point_rate_low_load_by_type для этого типа.
+  load_rate_tiers_by_type: Record<string, LoadRateTier[]>;
+}
+
+export interface LoadRateTier {
+  max_ratio: number | null;
+  km_rate: number;
+  point_rate: number;
 }
 
 const DEFAULT_LOGISTICS_SETTINGS: LogisticsSettings = {
@@ -732,6 +742,7 @@ const DEFAULT_LOGISTICS_SETTINGS: LogisticsSettings = {
   point_rate_by_type: {},
   point_rate_low_load_by_type: {},
   fuel_rate_by_type: {},
+  load_rate_tiers_by_type: {},
 };
 
 export async function fetchLogisticsSettings(): Promise<LogisticsSettings> {
@@ -750,6 +761,7 @@ export async function fetchLogisticsSettings(): Promise<LogisticsSettings> {
     point_rate_by_type: d?.point_rate_by_type ?? DEFAULT_LOGISTICS_SETTINGS.point_rate_by_type,
     point_rate_low_load_by_type: d?.point_rate_low_load_by_type ?? DEFAULT_LOGISTICS_SETTINGS.point_rate_low_load_by_type,
     fuel_rate_by_type: d?.fuel_rate_by_type ?? DEFAULT_LOGISTICS_SETTINGS.fuel_rate_by_type,
+    load_rate_tiers_by_type: d?.load_rate_tiers_by_type ?? DEFAULT_LOGISTICS_SETTINGS.load_rate_tiers_by_type,
   };
 }
 

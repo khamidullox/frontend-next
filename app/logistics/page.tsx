@@ -56,6 +56,7 @@ const DEFAULT_CAP_SETTINGS: LogisticsSettings = {
   point_rate_by_type: {},
   point_rate_low_load_by_type: {},
   fuel_rate_by_type: {},
+  load_rate_tiers_by_type: {},
 };
 
 export default function LogisticsPage() {

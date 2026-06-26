@@ -40,6 +40,20 @@ export interface LogisticsSettings {
   // Стоимость топлива (сум/км, в одну сторону — ×2 при подсчёте туда-обратно) по виду
   // транспорта, тот же принцип ключей — у LABO свой расход, у Газели свой и т.д.
   fuel_rate_by_type: Record<string, number>;
+  // Тарифная сетка по загрузке выезда (своя для каждого вида транспорта — тот же
+  // принцип ключей, что у cap_by_type). Если для типа задана непустая сетка — она
+  // ЗАМЕНЯЕТ rate_by_type/point_rate_by_type/point_rate_low_load_by_type для этого
+  // типа: ставка за км и за точку берётся из тарифа, в который попадает фактическая
+  // загрузка выезда. max_ratio — верхняя граница доли загрузки (0..1, не включая),
+  // null — открытый верхний тариф (для самой высокой загрузки). Тарифы должны идти
+  // по возрастанию max_ratio.
+  load_rate_tiers_by_type: Record<string, LoadRateTier[]>;
+}
+
+export interface LoadRateTier {
+  max_ratio: number | null;
+  km_rate: number;
+  point_rate: number;
 }
 
 const DEFAULTS: LogisticsSettings = {
@@ -52,6 +66,7 @@ const DEFAULTS: LogisticsSettings = {
   point_rate_by_type: {},
   point_rate_low_load_by_type: {},
   fuel_rate_by_type: {},
+  load_rate_tiers_by_type: {},
 };
 
 export async function getLogisticsSettings(): Promise<LogisticsSettings> {
@@ -70,6 +85,7 @@ export async function getLogisticsSettings(): Promise<LogisticsSettings> {
     point_rate_by_type: fromStorage(data.point_rate_by_type ?? DEFAULTS.point_rate_by_type)!,
     point_rate_low_load_by_type: fromStorage(data.point_rate_low_load_by_type ?? DEFAULTS.point_rate_low_load_by_type)!,
     fuel_rate_by_type: fromStorage(fuelByType)!,
+    load_rate_tiers_by_type: fromStorage(data.load_rate_tiers_by_type ?? DEFAULTS.load_rate_tiers_by_type)!,
   };
 }
 
@@ -82,6 +98,7 @@ export async function setLogisticsSettings(patch: Partial<LogisticsSettings>): P
   if (patch.point_rate_by_type) safe.point_rate_by_type = toStorage(patch.point_rate_by_type);
   if (patch.point_rate_low_load_by_type) safe.point_rate_low_load_by_type = toStorage(patch.point_rate_low_load_by_type);
   if (patch.fuel_rate_by_type) safe.fuel_rate_by_type = toStorage(patch.fuel_rate_by_type);
+  if (patch.load_rate_tiers_by_type) safe.load_rate_tiers_by_type = toStorage(patch.load_rate_tiers_by_type);
   await getDb().collection('settings').doc('logistics').set(safe, { merge: true });
 }
 

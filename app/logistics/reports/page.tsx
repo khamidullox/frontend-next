@@ -5,7 +5,7 @@ import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
 import {
   listRoutes, listDrivers, listDeliveries, deleteRouteApi,
-  fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings, CAP_DEFAULT_KEY, vehicleFamily, defaultCapacity,
+  fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings, LoadRateTier, CAP_DEFAULT_KEY, vehicleFamily, defaultCapacity,
   Route, UserInfo, Delivery, DeliveryStatus,
 } from '@/lib/api';
 import { fmtDateTimeYear as fmt } from '@/lib/format';
@@ -36,6 +36,27 @@ function rateForType(transport: string | null | undefined, rates: Record<string,
   const family = vehicleFamily(key);
   if (family && rates[family] !== undefined) return rates[family];
   return rates[CAP_DEFAULT_KEY] ?? 0;
+}
+
+// Сетка тарифов для вида транспорта: точная модель → семейство → «Прочие» (тот же
+// принцип, что и rateForType). Пустой массив — сетка не настроена для этого типа.
+function tiersForType(transport: string | null | undefined, tiersByType: Record<string, LoadRateTier[]>): LoadRateTier[] {
+  const key = (transport || '').trim();
+  if (key && tiersByType[key]?.length) return tiersByType[key];
+  const family = vehicleFamily(key);
+  if (family && tiersByType[family]?.length) return tiersByType[family];
+  return tiersByType[CAP_DEFAULT_KEY] || [];
+}
+
+// Первый тариф (по возрастанию max_ratio), в который попадает загрузка; null —
+// открытый верхний тариф, подходит любой загрузке выше предыдущих границ.
+function pickTier(ratio: number, tiers: LoadRateTier[]): LoadRateTier | null {
+  if (!tiers.length) return null;
+  const sorted = [...tiers].sort((a, b) => (a.max_ratio ?? Infinity) - (b.max_ratio ?? Infinity));
+  for (const t of sorted) {
+    if (t.max_ratio == null || ratio < t.max_ratio) return t;
+  }
+  return sorted[sorted.length - 1];
 }
 
 export default function LogisticsReportsPage() {
@@ -196,6 +217,50 @@ function ReportsContent() {
     }
   }
 
+  // Тарифная сетка по загрузке — отдельная локальная форма (строки редактируются
+  // свободно, сохраняем явной кнопкой, а не по onBlur каждой ячейки, чтобы не уйти
+  // на сервер с незаконченной строкой посередине правки).
+  interface TierRow { max_ratio: string; km_rate: string; point_rate: string }
+  const [tierRows, setTierRows] = useState<TierRow[]>([]);
+  useEffect(() => {
+    const tiers = settings?.load_rate_tiers_by_type[effectiveRateType] ?? [];
+    setTierRows(tiers.map((t) => ({
+      max_ratio: t.max_ratio == null ? '' : String(Math.round(t.max_ratio * 100)),
+      km_rate: String(t.km_rate),
+      point_rate: String(t.point_rate),
+    })));
+  }, [effectiveRateType, settings]);
+
+  function addTierRow() {
+    setTierRows((prev) => [...prev, { max_ratio: '', km_rate: '0', point_rate: '0' }]);
+  }
+  function removeTierRow(i: number) {
+    setTierRows((prev) => prev.filter((_, idx) => idx !== i));
+  }
+  function updateTierRow(i: number, field: keyof TierRow, val: string) {
+    setTierRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: val } : r)));
+  }
+  async function saveTiers() {
+    if (!settingsRef.current) return;
+    const tiers: LoadRateTier[] = tierRows
+      .map((r) => ({
+        max_ratio: r.max_ratio.trim() === '' ? null : Math.max(0, Number(r.max_ratio) || 0) / 100,
+        km_rate: Math.max(0, Number(r.km_rate) || 0),
+        point_rate: Math.max(0, Number(r.point_rate) || 0),
+      }))
+      .sort((a, b) => (a.max_ratio ?? Infinity) - (b.max_ratio ?? Infinity));
+    const next = { ...settingsRef.current.load_rate_tiers_by_type, [effectiveRateType]: tiers };
+    settingsRef.current = { ...settingsRef.current, load_rate_tiers_by_type: next };
+    setSettings(settingsRef.current);
+    try {
+      const saved = await saveLogisticsSettings({ load_rate_tiers_by_type: next });
+      settingsRef.current = saved;
+      setSettings(saved);
+    } catch (e) {
+      alert(`Не удалось сохранить тарифную сетку: ${(e as Error).message}`);
+    }
+  }
+
   function applyQuick(q: typeof quick) {
     setQuick(q);
     const now = new Date();
@@ -217,26 +282,38 @@ function ReportsContent() {
 
   const driverByUsername = useMemo(() => new Map(drivers.map((d) => [d.username, d])), [drivers]);
 
-  // Загрузка каждого выезда (сумма веса/объёма всех его доставок) против вместимости
-  // машины — чтобы определить недогруженные выезды (взял с одного склада один маленький
-  // товар и довёз рядом, но без этого получал бы полную ставку «за точку», как за полный
-  // рейс). null — вместимость машины неизвестна (не настроена), скидку в этом случае не
-  // применяем, чтобы не срезать оплату водителю из-за отсутствующей настройки.
-  const tripFillRatio = useMemo(() => {
-    const load = new Map<string, { weight: number; volL: number; transport: string; username: string }>();
+  // Один проход по доставкам периода — группируем по выезду (tripKey): км, точки,
+  // вес/объём (для загрузки), вид транспорта, водитель. Дальше и доля загрузки
+  // выезда, и КПИ за км/точку считаются на основе этой единой агрегации по выезду.
+  const tripAggs = useMemo(() => {
+    const m = new Map<string, { km: number; stopKeys: Set<string>; weight: number; volL: number; transport: string; username: string; driverKey: string }>();
     for (const d of periodDeliveries) {
       if (d.status === 'returned') continue;
       const tk = tripKey(d);
-      const cur = load.get(tk) || { weight: 0, volL: 0, transport: '', username: '' };
+      const cur = m.get(tk) || {
+        km: 0, stopKeys: new Set<string>(), weight: 0, volL: 0,
+        transport: '', username: '', driverKey: d.driver_username || d.driver_name || '—',
+      };
+      cur.km += d.km || 0;
+      cur.stopKeys.add(tripStopKey(d));
       cur.weight += d.total_weight || 0;
       cur.volL += d.total_volume_l || 0;
       if (!cur.transport && d.transport) cur.transport = d.transport;
       if (!cur.username && d.driver_username) cur.username = d.driver_username;
-      load.set(tk, cur);
+      m.set(tk, cur);
     }
+    return m;
+  }, [periodDeliveries]);
+
+  // Загрузка каждого выезда (вес/объём против вместимости машины) — нужна и для
+  // сниженной ставки за точку (старый режим без тарифной сетки), и для выбора тарифа
+  // в сетке (новый режим). null — вместимость машины неизвестна (не настроена),
+  // скидку/тариф в этом случае не применяем, чтобы не срезать оплату водителю из-за
+  // отсутствующей настройки, а не реальной недогрузки.
+  const tripFillRatio = useMemo(() => {
     const ratios = new Map<string, number | null>();
-    if (!settings) { for (const tk of load.keys()) ratios.set(tk, null); return ratios; }
-    for (const [tk, v] of load) {
+    if (!settings) { for (const tk of tripAggs.keys()) ratios.set(tk, null); return ratios; }
+    for (const [tk, v] of tripAggs) {
       const driver = driverByUsername.get(v.username);
       const cap = driver && (driver.capacity_kg > 0 || driver.capacity_m3 > 0)
         ? { kg: driver.capacity_kg, m3: driver.capacity_m3 }
@@ -247,58 +324,67 @@ function ReportsContent() {
       ratios.set(tk, Math.max(wRatio, vRatio));
     }
     return ratios;
-  }, [periodDeliveries, driverByUsername, settings]);
+  }, [tripAggs, driverByUsername, settings]);
 
-  // Агрегация по водителю: доставки, км, выезды (уникальные tripKey), точки доставки
-  // (уникальные tripStopKey — несколько накладных с разных складов в один магазин за
-  // один выезд считаются одной точкой; тот же магазин в другом выезде — другая точка).
+  // Агрегация по водителю: суммируем выезды (tripAggs). Если для вида транспорта
+  // настроена тарифная сетка по загрузке — ставка за км/точку берётся из тарифа,
+  // в который попала загрузка ЭТОГО выезда; иначе — обычная ставка (с учётом
+  // прежней сниженной ставки за недогруз < 50%, если она настроена).
   const driverStats = useMemo(() => {
-    const m = new Map<string, { username: string; name: string; car: string; transport: string; trips: Set<string>; stopRatios: Map<string, number | null>; km: number; points: number }>();
-    for (const d of drivers) {
-      m.set(d.username, { username: d.username, name: d.name, car: d.car_number || '', transport: d.transport || '', trips: new Set(), stopRatios: new Map(), km: 0, points: 0 });
-    }
-    for (const d of periodDeliveries) {
-      // Возврат — клиент не принял товар, реальной доставки не было: не считаем в км/точки/
-      // выезды и, соответственно, в КПИ. Сама заявка всё равно видна в списке выезда ниже
-      // (statusClass/DELIVERY_STATUS_LABEL покажут «Возврат») — просто не оплачивается.
-      if (d.status === 'returned') continue;
-      const key = d.driver_username || d.driver_name || '—';
-      const cur = m.get(key) || { username: key, name: d.driver_name || key, car: d.car_number || '', transport: d.transport || '', trips: new Set<string>(), stopRatios: new Map<string, number | null>(), km: 0, points: 0 };
-      cur.km += d.km || 0;
-      cur.points += 1;
-      const tk = tripKey(d);
-      cur.trips.add(tk);
-      cur.stopRatios.set(tripStopKey(d), tripFillRatio.get(tk) ?? null);
-      if (!cur.car && d.car_number) cur.car = d.car_number;
-      if (!cur.transport && d.transport) cur.transport = d.transport;
-      m.set(key, cur);
-    }
     const rates = settings?.rate_by_type ?? {};
     const pointRates = settings?.point_rate_by_type ?? {};
     const lowLoadPointRates = settings?.point_rate_low_load_by_type ?? {};
     const fuelRates = settings?.fuel_rate_by_type ?? {};
-    return [...m.values()]
-      .map(d => {
-        const fullPointRate = rateForType(d.transport, pointRates);
-        const lowLoadRate = rateForType(d.transport, lowLoadPointRates);
-        let pointKpi = 0;
-        let lowLoadStops = 0;
-        for (const ratio of d.stopRatios.values()) {
-          if (ratio != null && ratio < LOW_LOAD_THRESHOLD && lowLoadRate > 0) { pointKpi += lowLoadRate; lowLoadStops++; }
-          else pointKpi += fullPointRate;
-        }
-        return {
-          username: d.username, name: d.name, car: d.car, km: d.km, points: d.points, trips: d.trips.size,
-          stops: d.stopRatios.size, lowLoadStops,
-          kpi: Math.round(d.km * rateForType(d.transport, rates)),
-          pointKpi: Math.round(pointKpi),
-          // Топливо — по фактически пройденному пути (туда-обратно), отсюда ×2, ставка своя
-          // для каждого вида транспорта (расход у LABO и Газели разный).
-          fuel: Math.round(d.km * 2 * rateForType(d.transport, fuelRates)),
-        };
-      })
-      .sort((a, b) => b.points - a.points || b.km - a.km || a.name.localeCompare(b.name, 'ru'));
-  }, [drivers, periodDeliveries, settings, tripFillRatio]);
+    const tiersByType = settings?.load_rate_tiers_by_type ?? {};
+
+    const m = new Map<string, { username: string; name: string; car: string; transport: string; trips: number; stops: number; km: number; points: number; kpi: number; pointKpi: number; fuel: number }>();
+    for (const d of drivers) {
+      m.set(d.username, { username: d.username, name: d.name, car: d.car_number || '', transport: d.transport || '', trips: 0, stops: 0, km: 0, points: 0, kpi: 0, pointKpi: 0, fuel: 0 });
+    }
+
+    for (const [tk, agg] of tripAggs) {
+      const key = agg.driverKey;
+      const cur = m.get(key) || { username: key, name: key, car: '', transport: agg.transport, trips: 0, stops: 0, km: 0, points: 0, kpi: 0, pointKpi: 0, fuel: 0 };
+      const ratio = tripFillRatio.get(tk) ?? null;
+      const tiers = tiersForType(agg.transport, tiersByType);
+      const tier = ratio != null ? pickTier(ratio, tiers) : null;
+
+      let kmRate: number;
+      let pointRate: number;
+      if (tier) {
+        kmRate = tier.km_rate;
+        pointRate = tier.point_rate;
+      } else {
+        kmRate = rateForType(agg.transport, rates);
+        const fullPointRate = rateForType(agg.transport, pointRates);
+        const lowLoadRate = rateForType(agg.transport, lowLoadPointRates);
+        pointRate = (ratio != null && ratio < LOW_LOAD_THRESHOLD && lowLoadRate > 0) ? lowLoadRate : fullPointRate;
+      }
+
+      cur.trips += 1;
+      cur.stops += agg.stopKeys.size;
+      cur.km += agg.km;
+      cur.kpi += Math.round(agg.km * kmRate);
+      cur.pointKpi += Math.round(agg.stopKeys.size * pointRate);
+      // Топливо — по фактически пройденному пути (туда-обратно), отсюда ×2; тарифная
+      // сетка на топливо не влияет, своя ставка по виду транспорта, как и раньше.
+      cur.fuel += Math.round(agg.km * 2 * rateForType(agg.transport, fuelRates));
+      if (!cur.transport && agg.transport) cur.transport = agg.transport;
+      m.set(key, cur);
+    }
+
+    // points (число накладных, не точек) и номер машины — из исходных доставок периода.
+    for (const d of periodDeliveries) {
+      if (d.status === 'returned') continue;
+      const key = d.driver_username || d.driver_name || '—';
+      const cur = m.get(key);
+      if (!cur) continue;
+      cur.points += 1;
+      if (!cur.car && d.car_number) cur.car = d.car_number;
+    }
+
+    return [...m.values()].sort((a, b) => b.points - a.points || b.km - a.km || a.name.localeCompare(b.name, 'ru'));
+  }, [drivers, periodDeliveries, tripAggs, tripFillRatio, settings]);
 
   const totals = useMemo(() => driverStats.reduce((s, d) => ({
     km: s.km + d.km, trips: s.trips + d.trips, points: s.points + d.points, stops: s.stops + d.stops,
@@ -398,6 +484,59 @@ function ReportsContent() {
         </div>
       )}
 
+      {/* Тарифная сетка по загрузке — своя для каждого вида транспорта (выбран выше) */}
+      {settings && (
+        <div className="bg-white rounded-xl shadow-sm p-3 mb-4">
+          <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+            <span className="text-xs text-gray-500">
+              🪜 Тарифная сетка по загрузке для «{effectiveRateType === CAP_DEFAULT_KEY ? 'Прочие' : effectiveRateType}»
+              — если задана, заменяет обычные ставки за км/точку выше для этого типа:
+            </span>
+            <button onClick={addTierRow}
+              className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 whitespace-nowrap">
+              + тариф
+            </button>
+          </div>
+
+          {tierRows.length === 0 && (
+            <p className="text-xs text-gray-400 mb-2">Сетка не настроена — используются обычные ставки выше.</p>
+          )}
+
+          {tierRows.map((r, i) => (
+            <div key={i} className="flex items-center gap-2 mb-1.5 flex-wrap">
+              <span className="text-xs text-gray-500 whitespace-nowrap">загрузка до</span>
+              <input type="number" min={0} max={100} value={r.max_ratio} placeholder="100 и выше"
+                onChange={(e) => updateTierRow(i, 'max_ratio', e.target.value)}
+                className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-xs text-right outline-none focus:border-blue-400" />
+              <span className="text-xs text-gray-400">%</span>
+              <span className="text-xs text-gray-500 whitespace-nowrap ml-2">км</span>
+              <input type="number" min={0} value={r.km_rate}
+                onChange={(e) => updateTierRow(i, 'km_rate', e.target.value)}
+                className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-xs text-right outline-none focus:border-blue-400" />
+              <span className="text-xs text-gray-500 whitespace-nowrap ml-2">точка</span>
+              <input type="number" min={0} value={r.point_rate}
+                onChange={(e) => updateTierRow(i, 'point_rate', e.target.value)}
+                className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-xs text-right outline-none focus:border-blue-400" />
+              <button onClick={() => removeTierRow(i)} className="text-sm text-red-500 hover:text-red-700 ml-1">✕</button>
+            </div>
+          ))}
+
+          {tierRows.length > 0 && (
+            <button onClick={saveTiers}
+              className="mt-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100">
+              💾 Сохранить сетку
+            </button>
+          )}
+
+          <p className="text-[11px] text-gray-400 mt-2">
+            «Загрузка до» — верхняя граница доли вместимости машины (вес или объём, что больше), при которой действует
+            этот тариф. Пустое поле в последней строке — открытый тариф для самой высокой загрузки. Строки сортируются
+            по возрастанию автоматически при сохранении. Загрузка считается по выезду целиком (все доставки одного
+            рейса), не по отдельной точке.
+          </p>
+        </div>
+      )}
+
       {/* Сводка по всем */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-2 mb-4">
         {[
@@ -462,7 +601,6 @@ function ReportsContent() {
                     <div className="text-[10px] text-gray-400">туда-обратно {ds.km * 2} км</div>
                     {ds.kpi > 0 && <div className="text-[11px] font-semibold text-amber-600 mt-0.5">💰 за км {ds.kpi.toLocaleString('ru-RU')} сум</div>}
                     {ds.pointKpi > 0 && <div className="text-[11px] font-semibold text-amber-600">📍 за точки {ds.pointKpi.toLocaleString('ru-RU')} сум</div>}
-                    {ds.lowLoadStops > 0 && <div className="text-[10px] text-sky-600">📉 {ds.lowLoadStops} из них недогруз &lt;50%</div>}
                     {ds.fuel > 0 && <div className="text-[11px] text-gray-500">⛽ {ds.fuel.toLocaleString('ru-RU')} сум</div>}
                   </div>
                   <span className="text-gray-400 text-sm shrink-0">{isOpen ? '▲' : '▼'}</span>
