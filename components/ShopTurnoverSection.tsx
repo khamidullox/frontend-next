@@ -23,6 +23,13 @@ const CAT_CLASS: Record<string, string> = {
   'Нет в наличии': 'text-gray-400',
 };
 
+const CATEGORIES = ['Активно', 'Пассивно', 'Мало продаётся', 'Не продаётся', 'Нет в наличии'];
+
+// «Требуется» (значок Т): товар продавался, но сейчас в остатке 0 — нужно завезти.
+function isNeeded(row: ShopTurnoverRow): boolean {
+  return row.sold_qty > 0 && row.stock <= 0;
+}
+
 export default function ShopTurnoverSection({ period }: { period: AnalyticsPeriod }) {
   const [shops, setShops] = useState<ShopTurnoverSummary[]>([]);
   const [shop, setShop] = useState('');
@@ -34,6 +41,10 @@ export default function ShopTurnoverSection({ period }: { period: AnalyticsPerio
   const [t2, setT2] = useState(0.6);
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [groupFilter, setGroupFilter] = useState('');
+  const [brandFilter, setBrandFilter] = useState('');
+  const [catFilter, setCatFilter] = useState('');
+  const [onlyNeeded, setOnlyNeeded] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -49,17 +60,30 @@ export default function ShopTurnoverSection({ period }: { period: AnalyticsPerio
       .finally(() => setLoading(false));
   }, [period, shop]);
 
+  const groups = useMemo(() => [...new Set(rows.map((r) => r.group).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru')), [rows]);
+  const brands = useMemo(() => [...new Set(rows.map((r) => r.brand).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru')), [rows]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const list = q
-      ? rows.filter((r) => r.product_name.toLowerCase().includes(q) || r.product_code.includes(q) || r.brand.toLowerCase().includes(q))
-      : rows;
-    return [...list].sort((a, b) => b.turnover - a.turnover || b.sold_qty - a.sold_qty);
-  }, [rows, search]);
+    const list = rows.filter((r) => {
+      if (groupFilter && r.group !== groupFilter) return false;
+      if (brandFilter && r.brand !== brandFilter) return false;
+      if (catFilter && category(r, t1, t2) !== catFilter) return false;
+      if (onlyNeeded && !isNeeded(r)) return false;
+      if (q && !(r.product_name.toLowerCase().includes(q) || r.product_code.includes(q) || r.brand.toLowerCase().includes(q))) return false;
+      return true;
+    });
+    return list.sort((a, b) => b.turnover - a.turnover || b.sold_qty - a.sold_qty);
+  }, [rows, search, groupFilter, brandFilter, catFilter, onlyNeeded, t1, t2]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
-    for (const r of rows) { const cat = category(r, t1, t2); c[cat] = (c[cat] || 0) + 1; }
+    let needed = 0;
+    for (const r of rows) {
+      c[category(r, t1, t2)] = (c[category(r, t1, t2)] || 0) + 1;
+      if (isNeeded(r)) needed++;
+    }
+    c['_needed'] = needed;
     return c;
   }, [rows, t1, t2]);
 
@@ -79,6 +103,7 @@ export default function ShopTurnoverSection({ period }: { period: AnalyticsPerio
         'База': r.base,
         'Оборачиваемость': Math.round(r.turnover * 1000) / 1000,
         'Категория': category(r, t1, t2),
+        'Требуется': isNeeded(r) ? 'Т' : '',
       }));
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
@@ -117,6 +142,38 @@ export default function ShopTurnoverSection({ period }: { period: AnalyticsPerio
       {updatedMs > 0 && <div className="text-[11px] text-gray-400">Обновлено: {fmtDateTime(new Date(updatedMs).toISOString())}</div>}
       {error && <div className="text-red-600 text-sm">{error}</div>}
 
+      {/* Фильтры: группа, бренд, категория, только «требуется» */}
+      <div className="bg-white rounded-xl shadow-sm p-3 flex flex-wrap items-center gap-2">
+        <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}
+          className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:border-blue-400 max-w-[180px]">
+          <option value="">Все группы</option>
+          {groups.map((g) => <option key={g} value={g}>{g}</option>)}
+        </select>
+        <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)}
+          className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:border-blue-400 max-w-[180px]">
+          <option value="">Все бренды</option>
+          {brands.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
+        <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)}
+          className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:border-blue-400 max-w-[180px]">
+          <option value="">Все категории</option>
+          {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <button onClick={() => setOnlyNeeded((v) => !v)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+            onlyNeeded ? 'bg-red-600 text-white border-red-600' : 'bg-red-50 text-red-700 border-red-200'
+          }`}>
+          🔴 Т — требуется ({counts['_needed'] || 0})
+        </button>
+        {(groupFilter || brandFilter || catFilter || onlyNeeded) && (
+          <button onClick={() => { setGroupFilter(''); setBrandFilter(''); setCatFilter(''); setOnlyNeeded(false); }}
+            className="px-2.5 py-1.5 rounded-lg text-xs text-gray-500 hover:bg-gray-100">
+            ✕ сбросить
+          </button>
+        )}
+        <span className="text-[11px] text-gray-400 ml-auto">Показано: {filtered.length}</span>
+      </div>
+
       <div className="flex flex-wrap gap-2">
         {['Активно', 'Пассивно', 'Мало продаётся', 'Не продаётся'].map((cat) => (
           <span key={cat} className={`text-xs font-semibold ${CAT_CLASS[cat]}`}>
@@ -148,13 +205,20 @@ export default function ShopTurnoverSection({ period }: { period: AnalyticsPerio
             <tbody className="divide-y divide-gray-100">
               {filtered.map((r) => {
                 const cat = category(r, t1, t2);
+                const needed = isNeeded(r);
                 return (
-                  <tr key={r.product_code}>
-                    <td className="py-1.5 pr-2 max-w-xs truncate" title={r.product_name}>{r.product_name || r.product_code}</td>
+                  <tr key={r.product_code} className={needed ? 'bg-red-50' : ''}>
+                    <td className="py-1.5 pr-2 max-w-xs truncate" title={r.product_name}>
+                      {needed && (
+                        <span title="Требуется: продаётся, но в остатке 0 — нужно завезти"
+                          className="inline-block mr-1 px-1.5 rounded bg-red-600 text-white text-[10px] font-bold align-middle">Т</span>
+                      )}
+                      {r.product_name || r.product_code}
+                    </td>
                     <td className="py-1.5 pr-2 text-right text-gray-400">{Math.round(r.order_qty)}</td>
                     <td className="py-1.5 pr-2 text-right text-gray-400">{Math.round(r.return_qty)}</td>
                     <td className="py-1.5 pr-2 text-right font-medium text-emerald-600">{Math.round(r.sold_qty)}</td>
-                    <td className="py-1.5 pr-2 text-right">{Math.round(r.stock)}</td>
+                    <td className={`py-1.5 pr-2 text-right ${needed ? 'text-red-600 font-semibold' : ''}`}>{Math.round(r.stock)}</td>
                     <td className="py-1.5 pr-2 text-right text-gray-400">{Math.round(r.base)}</td>
                     <td className="py-1.5 pr-2 text-right">{Math.round(r.turnover * 100)}%</td>
                     <td className={`py-1.5 text-right font-semibold ${CAT_CLASS[cat]}`}>{cat}</td>
@@ -172,7 +236,8 @@ export default function ShopTurnoverSection({ period }: { period: AnalyticsPerio
       <p className="text-[11px] text-gray-400">
         Лёгкая версия: продажи/заказы/возвраты — из заказов Smartup (точно), остаток — текущий доступный.
         «База» = остаток + продажи (приближение к «остаток на начало + приходы»), оборачиваемость = продажи / база.
-        Категории пересчитываются сразу при изменении порогов выше.
+        Категории пересчитываются сразу при изменении порогов выше. Значок <span className="px-1 rounded bg-red-600 text-white font-bold">Т</span> —
+        «требуется»: товар продавался, но в остатке 0, нужно завезти.
       </p>
     </div>
   );
