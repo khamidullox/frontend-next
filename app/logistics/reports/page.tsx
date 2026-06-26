@@ -71,7 +71,11 @@ function destKey(d: Delivery): string {
   // той же точкой (ровно тот же баг, что чинили в lib/deliveries.ts для км).
   if (d.kind === 'shop_to_client') {
     if (d.lat != null && d.lng != null) return `${d.lat.toFixed(4)},${d.lng.toFixed(4)}`;
-    return normalizeName(d.address || d.client_name || '') || 'no-dest';
+    // Без пина координат адрес — вольный текст со слов магазина: разные клиенты в
+    // одном кишлаке/районе нередко получают одинаковое слово («Joydam», «Markaz» и
+    // т.п.), хотя это разные люди и разные точки. Телефон клиента — надёжный
+    // идентификатор получателя, поэтому в приоритете перед текстом адреса.
+    return normalizeName(d.client_phone || d.client_name || d.address || '') || 'no-dest';
   }
   return d.shop_id || normalizeName(d.to_name || d.client_name || d.address || '') || 'no-dest';
 }
