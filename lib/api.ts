@@ -1041,6 +1041,7 @@ export interface AnalyticsSummary {
   total_qty: number;
   total_orders: number;
   by_shop: { shop: string; qty: number; orders: number; products: number }[];
+  by_brand: { brand: string; qty: number; orders: number; products: number }[];
   top_products: { code: string; name: string; qty: number; orders: number; stock: number }[];
   slow_products: { code: string; name: string; group: string; stock: number }[];
   slow_products_total: number;

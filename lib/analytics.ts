@@ -29,6 +29,9 @@ export interface AnalyticsSummary {
   total_qty: number;
   total_orders: number;
   by_shop: { shop: string; qty: number; orders: number; products: number }[];
+  // По торговым маркам (бренд из карточки товара, Smartup PRDGR:5) — товары без
+  // указанного бренда попадают в «Без бренда».
+  by_brand: { brand: string; qty: number; orders: number; products: number }[];
   // Топ продаж — с текущим остатком рядом, чтобы видно «продаётся, но скоро кончится».
   top_products: { code: string; name: string; qty: number; orders: number; stock: number }[];
   // Есть остаток, но за период не продано ни штуки — залежавшийся товар. Список обрезан
@@ -45,11 +48,12 @@ export async function getAnalyticsSummary(period: Period): Promise<AnalyticsSumm
     `analytics_${period}`,
     async () => {
       const { begin, end } = periodRange(period);
-      const [sales, stock, catalog] = await Promise.all([
-        getSalesAggregate(begin, end),
+      const [stock, catalog] = await Promise.all([
         getTotalStockByProduct(),
         getCachedCatalog(),
       ]);
+      const brandByCode = new Map(catalog.map((c) => [c.code, c.producer || 'Без бренда']));
+      const sales = await getSalesAggregate(begin, end, brandByCode);
 
       const soldCodes = new Set(sales.by_product.map((p) => p.code));
 
@@ -69,6 +73,7 @@ export async function getAnalyticsSummary(period: Period): Promise<AnalyticsSumm
         total_qty: sales.total_qty,
         total_orders: sales.total_orders,
         by_shop: sales.by_shop,
+        by_brand: sales.by_brand,
         top_products,
         slow_products: slowAll.slice(0, 100),
         slow_products_total: slowAll.length,

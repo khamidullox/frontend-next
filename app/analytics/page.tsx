@@ -12,10 +12,11 @@ const PERIODS: { key: AnalyticsPeriod; label: string }[] = [
   { key: '30d', label: '30 дней' },
 ];
 
-type Section = 'totals' | 'shops' | 'top' | 'slow';
+type Section = 'totals' | 'shops' | 'brands' | 'top' | 'slow';
 const SECTIONS: { key: Section; label: string }[] = [
   { key: 'totals', label: '📋 Итоги' },
   { key: 'shops', label: '🏪 По магазинам' },
+  { key: 'brands', label: '🏷️ По брендам' },
   { key: 'top', label: '🔥 Топ продаж' },
   { key: 'slow', label: '🐌 Не продаётся' },
 ];
@@ -121,6 +122,38 @@ function AnalyticsContent() {
                           <td className="py-1.5 pr-2 text-right font-medium">{Math.round(s.qty)}</td>
                           <td className="py-1.5 pr-2 text-right text-gray-400">{s.orders}</td>
                           <td className="py-1.5 text-right text-gray-400">{s.products}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {section === 'brands' && (
+            <div className="bg-white rounded-xl shadow-sm p-3">
+              <div className="text-sm font-semibold mb-2">🏷️ По торговым маркам</div>
+              {data.by_brand.length === 0 ? (
+                <div className="text-xs text-gray-400">Нет продаж за период</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-left text-gray-400">
+                        <th className="py-1 pr-2">Бренд</th>
+                        <th className="py-1 pr-2 text-right">Шт</th>
+                        <th className="py-1 pr-2 text-right">Заказов</th>
+                        <th className="py-1 text-right">Товаров</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {data.by_brand.map((b) => (
+                        <tr key={b.brand}>
+                          <td className="py-1.5 pr-2">{b.brand}</td>
+                          <td className="py-1.5 pr-2 text-right font-medium">{Math.round(b.qty)}</td>
+                          <td className="py-1.5 pr-2 text-right text-gray-400">{b.orders}</td>
+                          <td className="py-1.5 text-right text-gray-400">{b.products}</td>
                         </tr>
                       ))}
                     </tbody>

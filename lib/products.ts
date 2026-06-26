@@ -69,7 +69,7 @@ export interface CatalogItem {
   code: string;
   product_id: string; // внутренний ID Smartup (для получения фото через inventory_view:model)
   name: string;
-  producer: string;   // бренд (producer_code; названия за стеной прав Smartup)
+  producer: string;   // бренд / торговая марка (настоящее название, см. groupTypeName ниже)
   group: string;      // продуктовая группа (первый group_code, без префикса PRDGR:)
   barcodes: string[];
   price: number;      // оптовая цена продажи

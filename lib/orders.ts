@@ -2,6 +2,7 @@ import { smartupRequest } from './smartup';
 import { getProductInfos } from './products';
 import { CheckDocument, DocItem } from './document';
 import { cached } from './cache';
+import { canonicalShopName } from './shopNameMap';
 
 const ORDER_EXPORT_ENDPOINT = '/b/trade/txs/tdeal/order$export';
 const TRADE_PROJECT = 'trade';
@@ -152,13 +153,21 @@ export interface SalesAggregate {
   total_orders: number;
   by_shop: { shop: string; qty: number; orders: number; products: number }[];
   by_product: { code: string; name: string; qty: number; orders: number }[];
+  by_brand: { brand: string; qty: number; orders: number; products: number }[];
 }
 
 // Продажи (заказы клиентам) за произвольный период — для аналитики. person_name —
 // это и есть магазин/клиент, которому продали (в order$export нет отдельного «магазина»,
 // заказы — это и есть факт продажи). Не кэшируется здесь (90с слишком мало для
 // аналитики за месяц) — кэш более долгий держит lib/analytics.ts поверх этой функции.
-export async function getSalesAggregate(begin: Date, end: Date): Promise<SalesAggregate> {
+// brandByCode — бренд (торговая марка) по коду товара, из каталога (lib/products.ts);
+// без него by_brand будет пустым — передаётся отдельно, чтобы не тащить сюда зависимость
+// от Smartup-каталога, который и так уже грузится в lib/analytics.ts.
+export async function getSalesAggregate(
+  begin: Date,
+  end: Date,
+  brandByCode?: Map<string, string>
+): Promise<SalesAggregate> {
   const orders = await exportOrders({
     begin_order_date: formatSmartupDate(begin),
     end_order_date: formatSmartupDate(end),
@@ -166,10 +175,11 @@ export async function getSalesAggregate(begin: Date, end: Date): Promise<SalesAg
 
   const shopMap = new Map<string, { qty: number; orders: number; products: Set<string> }>();
   const productMap = new Map<string, { name: string; qty: number; orders: Set<string> }>();
+  const brandMap = new Map<string, { qty: number; orders: Set<string>; products: Set<string> }>();
   let total_qty = 0;
 
   for (const o of orders) {
-    const shop = o.person_name?.trim() || 'Без названия';
+    const shop = canonicalShopName(o.person_name?.trim() || 'Без названия');
     const sAgg = shopMap.get(shop) || { qty: 0, orders: 0, products: new Set<string>() };
     sAgg.orders++;
     for (const item of o.order_products || []) {
@@ -185,6 +195,15 @@ export async function getSalesAggregate(begin: Date, end: Date): Promise<SalesAg
       pAgg.orders.add(String(o.deal_id));
       if (item.product_name) pAgg.name = item.product_name;
       productMap.set(code, pAgg);
+
+      if (brandByCode) {
+        const brand = brandByCode.get(code) || 'Без бренда';
+        const bAgg = brandMap.get(brand) || { qty: 0, orders: new Set<string>(), products: new Set<string>() };
+        bAgg.qty += qty;
+        bAgg.orders.add(String(o.deal_id));
+        bAgg.products.add(code);
+        brandMap.set(brand, bAgg);
+      }
     }
     shopMap.set(shop, sAgg);
   }
@@ -197,6 +216,9 @@ export async function getSalesAggregate(begin: Date, end: Date): Promise<SalesAg
       .sort((a, b) => b.qty - a.qty),
     by_product: [...productMap.entries()]
       .map(([code, v]) => ({ code, name: v.name, qty: v.qty, orders: v.orders.size }))
+      .sort((a, b) => b.qty - a.qty),
+    by_brand: [...brandMap.entries()]
+      .map(([brand, v]) => ({ brand, qty: v.qty, orders: v.orders.size, products: v.products.size }))
       .sort((a, b) => b.qty - a.qty),
   };
 }
