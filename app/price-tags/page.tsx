@@ -600,7 +600,7 @@ export default function PriceTagsPage() {
             </button>
             <button
               onClick={() => { setRows(orderedList, true); setPrintAllToken(t => t + 1); }}
-              className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-xl transition-colors mb-1"
+              className="w-full px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors mb-1"
             >
               🖨️ Печать всех ({orderedList.length} шт. в списке)
             </button>
