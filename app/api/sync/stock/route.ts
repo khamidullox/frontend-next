@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { refreshStockCache } from '@/lib/products';
+import { recordRecentDays } from '@/lib/shopSalesHistory';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,7 +23,12 @@ async function run(request: NextRequest) {
   }
   try {
     const result = await refreshStockCache();
-    return Response.json({ ok: true, ...result });
+    // Заодно копим историю продаж по магазинам: Smartup отдаёт только ~16 дней, поэтому
+    // ежедневно дописываем последние 3 завершённых дня (повтор ловит поздние возвраты).
+    // Не должно ломать прогрев остатков, поэтому в своём try/catch.
+    let sales_days: Record<string, number> | null = null;
+    try { sales_days = await recordRecentDays(3); } catch { sales_days = null; }
+    return Response.json({ ok: true, ...result, sales_days });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 500 });
   }

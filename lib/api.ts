@@ -1079,6 +1079,7 @@ export interface ShopTurnoverResult {
   from: string;
   to: string;
   updated_ms: number;
+  history_from: string | null;
   shops: ShopTurnoverSummary[];
   rows: ShopTurnoverRow[];
 }

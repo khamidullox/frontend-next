@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
   try {
     const data = await getShopTurnover(from, to);
     const rows = shop ? data.rows.filter((r) => r.shop_code === shop) : [];
-    return Response.json({ data: { from: data.from, to: data.to, updated_ms: data.updated_ms, shops: data.shops, rows } });
+    return Response.json({ data: { from: data.from, to: data.to, updated_ms: data.updated_ms, history_from: data.history_from, shops: data.shops, rows } });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 500 });
   }

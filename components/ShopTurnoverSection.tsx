@@ -52,6 +52,7 @@ export default function ShopTurnoverSection() {
   const [to, setTo] = useState(() => isoDate(new Date()));
   const [rows, setRows] = useState<ShopTurnoverRow[]>([]);
   const [updatedMs, setUpdatedMs] = useState(0);
+  const [historyFrom, setHistoryFrom] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [t1, setT1] = useState(0.2);
@@ -73,6 +74,7 @@ export default function ShopTurnoverSection() {
         setShops(d.shops);
         setRows(d.rows);
         setUpdatedMs(d.updated_ms);
+        setHistoryFrom(d.history_from);
         if (!shop && d.shops.length) setShop(d.shops[0].code);
       })
       .catch((e) => setError((e as Error).message))
@@ -177,6 +179,12 @@ export default function ShopTurnoverSection() {
       </div>
 
       {updatedMs > 0 && <div className="text-[11px] text-gray-400">Обновлено: {fmtDateTime(new Date(updatedMs).toISOString())}</div>}
+      {historyFrom && from < historyFrom && (
+        <div className="text-[11px] text-amber-600 bg-amber-50 rounded-lg px-3 py-1.5">
+          ⚠️ История продаж накоплена только с {historyFrom.split('-').reverse().join('.')} — за более ранние даты в выбранном диапазоне данных пока нет
+          (Smartup отдаёт только последние ~16 дней, остальное накапливается у нас день за днём).
+        </div>
+      )}
       {error && <div className="text-red-600 text-sm">{error}</div>}
 
       {/* Фильтры: группа, бренд, категория, только «требуется» */}
