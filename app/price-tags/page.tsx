@@ -635,10 +635,12 @@ export default function PriceTagsPage() {
               className="bclabel border border-gray-300 rounded-lg flex flex-col gap-1 p-1.5 overflow-hidden box-border"
               style={{ width: bcLabel.w, height: bcLabel.h }}
             >
-              {/* Капсула с названием */}
-              <div className="flex" style={{ flex: '0 0 24%', minHeight: 0 }}>
-                <div className="flex-1 px-1 flex items-center justify-center text-center font-extrabold text-[12px] leading-tight overflow-hidden">
-                  <span className="line-clamp-2 break-words">{it.product_name || it.product_code}</span>
+              {/* Капсула с названием — без обрезания текста (раньше line-clamp-2 срезал
+                  длинные названия «…»); название теперь полностью оборачивается на
+                  сколько строк нужно, под него выделено больше места на этикетке. */}
+              <div className="flex" style={{ flex: '0 0 38%', minHeight: 0 }}>
+                <div className="flex-1 px-1 flex items-center justify-center text-center font-extrabold text-[12px] leading-tight">
+                  <span className="break-words">{it.product_name || it.product_code}</span>
                 </div>
               </div>
               {/* Штрихкод — те же пропорции, что и на ценнике (он сканируется): фикс. высота + ширина авто */}
@@ -647,7 +649,7 @@ export default function PriceTagsPage() {
                 <span className="font-mono text-[8px] text-gray-700 leading-none">{it.barcode}</span>
               </div>
               {/* Капсула с кодом товара */}
-              <div className="flex" style={{ flex: '0 0 24%', minHeight: 0 }}>
+              <div className="flex" style={{ flex: '0 0 20%', minHeight: 0 }}>
                 <div className="flex-1 border border-gray-700 rounded-lg px-1 flex items-center justify-center text-center font-bold text-[14px] leading-none overflow-hidden">
                   Код {it.product_code}
                 </div>
