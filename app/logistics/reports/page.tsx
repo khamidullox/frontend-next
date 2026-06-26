@@ -326,6 +326,29 @@ function ReportsContent() {
     return ratios;
   }, [tripAggs, driverByUsername, settings]);
 
+  // Ставка за ОДНУ точку для каждого выезда (та же логика выбора тарифа/сниженной
+  // ставки, что и в driverStats ниже) — нужна отдельно, чтобы показать сумму за
+  // конкретную точку доставки в списке, а не только итог по водителю.
+  const tripPointRate = useMemo(() => {
+    const pointRates = settings?.point_rate_by_type ?? {};
+    const lowLoadPointRates = settings?.point_rate_low_load_by_type ?? {};
+    const tiersByType = settings?.load_rate_tiers_by_type ?? {};
+    const m = new Map<string, number>();
+    for (const [tk, agg] of tripAggs) {
+      const ratio = tripFillRatio.get(tk) ?? null;
+      const tiers = tiersForType(agg.transport, tiersByType);
+      const tier = ratio != null ? pickTier(ratio, tiers) : null;
+      if (tier) {
+        m.set(tk, tier.point_rate);
+        continue;
+      }
+      const fullPointRate = rateForType(agg.transport, pointRates);
+      const lowLoadRate = rateForType(agg.transport, lowLoadPointRates);
+      m.set(tk, (ratio != null && ratio < LOW_LOAD_THRESHOLD && lowLoadRate > 0) ? lowLoadRate : fullPointRate);
+    }
+    return m;
+  }, [tripAggs, tripFillRatio, settings]);
+
   // Агрегация по водителю: суммируем выезды (tripAggs). Если для вида транспорта
   // настроена тарифная сетка по загрузке — ставка за км/точку берётся из тарифа,
   // в который попала загрузка ЭТОГО выезда; иначе — обычная ставка (с учётом
@@ -615,6 +638,10 @@ function ReportsContent() {
                       trips.map((group, gi) => {
                         const tripKm = group.reduce((s, d) => s + (d.km || 0), 0);
                         const stopsInTrip = new Set(group.map((d) => destKey(d))).size;
+                        const pointRate = tripPointRate.get(tripKey(group[0])) || 0;
+                        // Платят за ТОЧКУ, а не за накладную — если в выезде несколько
+                        // накладных в одну точку, сумму показываем только на первой из них.
+                        const billedStops = new Set<string>();
                         return (
                           <div key={tripKey(group[0])} className="rounded-lg border border-gray-100 overflow-hidden bg-white">
                             <div className="px-3 py-1.5 bg-gray-100 flex items-center gap-2 flex-wrap">
@@ -625,7 +652,11 @@ function ReportsContent() {
                               <span className="text-[11px] text-gray-400 ml-auto">📅 {fmt(completedAt(group[0]))}</span>
                             </div>
                             <div className="flex flex-col divide-y divide-gray-100">
-                              {group.map((d, i) => (
+                              {group.map((d, i) => {
+                                const dk = destKey(d);
+                                const showPay = d.status === 'delivered' && pointRate > 0 && !billedStops.has(dk);
+                                if (showPay) billedStops.add(dk);
+                                return (
                                 <div key={d.id} className="px-3 py-2 flex items-start gap-2">
                                   <span className="text-xs text-gray-300 w-5 shrink-0">{i + 1}</span>
                                   <div className="flex-1 min-w-0">
@@ -662,11 +693,19 @@ function ReportsContent() {
                                       {d.direction && <span className="text-xs text-sky-500">{d.direction}</span>}
                                     </div>
                                   </div>
-                                  <span className={`text-xs font-medium shrink-0 ${STATUS_COLOR[d.status]}`}>
-                                    {STATUS_LABEL[d.status]}
-                                  </span>
+                                  <div className="flex flex-col items-end shrink-0 gap-0.5">
+                                    <span className={`text-xs font-medium ${STATUS_COLOR[d.status]}`}>
+                                      {STATUS_LABEL[d.status]}
+                                    </span>
+                                    {showPay && (
+                                      <span className="text-[11px] font-semibold text-amber-600 whitespace-nowrap">
+                                        💰 {pointRate.toLocaleString('ru-RU')} сум
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         );
