@@ -18,47 +18,11 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* ─── Тёмная тема (по системной настройке телефона/ПК) ─── */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0f172a;   /* фон страницы (slate-900) */
-    --foreground: #e2e8f0;   /* основной текст (светлый) */
-    color-scheme: dark;
-  }
-
-  /* фон страницы и закреплённый верх */
-  .bg-gray-100, .bg-gray-100\/95 { background-color: #0f172a !important; }
-  /* карточки */
-  .bg-white { background-color: #1e293b !important; }
-  /* серые кнопки/поля */
-  .bg-gray-50, .bg-gray-200, .bg-gray-300 { background-color: #334155 !important; }
-  .hover\:bg-gray-100:hover,
-  .hover\:bg-gray-200:hover,
-  .hover\:bg-gray-300:hover { background-color: #475569 !important; }
-
-  /* границы */
-  .border-gray-100, .border-gray-200, .border-gray-300 { border-color: #334155 !important; }
-
-  /* текст — поднимаем контраст на тёмном */
-  .text-slate-900 { color: #e2e8f0 !important; }
-  .text-gray-700, .text-gray-600 { color: #cbd5e1 !important; }
-  .text-gray-500, .text-gray-400 { color: #94a3b8 !important; }
-  .text-gray-300 { color: #64748b !important; }
-
-  /* поля ввода (кроме тёмного сканера — у него свой класс) */
-  input:not([class*="bg-slate"]),
-  textarea, select {
-    background-color: #1e293b;
-    color: #e2e8f0;
-  }
-  input::placeholder { color: #64748b; }
-
-  /* журнал сканов: тёмные тинты вместо светлых */
-  .bg-red-50 { background-color: #3a1f29 !important; }
-  .bg-green-50 { background-color: #16302a !important; }
-  .border-red-100 { border-color: #7f1d1d !important; }
-  .border-green-100 { border-color: #14532d !important; }
-  .bg-white\/70 { background-color: #0f172a !important; }
+/* Тёмная тема по системной настройке устройства отключена намеренно —
+   приложение всегда показывается в светлой теме, независимо от настроек
+   телефона/ПК пользователя. */
+:root {
+  color-scheme: light;
 }
 
 /* Печать: узкие поля и компактная таблица — чтобы влезало на один лист */

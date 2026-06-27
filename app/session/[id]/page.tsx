@@ -606,7 +606,7 @@ export default function SessionPage() {
                 placeholder="Сканер: поднесите к штрихкоду..."
                 onKeyDown={handleScan}
                 onClick={refocusScan}
-                className="flex-1 bg-slate-900 text-white placeholder-slate-500 rounded-lg px-3 py-2
+                className="flex-1 min-w-0 bg-slate-900 text-white placeholder-slate-500 rounded-lg px-3 py-2
                            border-2 border-blue-500 focus:border-green-400 outline-none text-base"
               />
               {isCameraScanSupported() && (
