@@ -6,7 +6,7 @@ import {
   DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL, DocType,
   listRoutes, startRoute, finishRoute, sendTrackPoint, addDeliveriesToRoute, Route,
   listShops, Shop, resolveDeliveryPoint, resolvePickupPoint,
-  listAvailableOffers, claimOffer, ShopOffer, listAvailableDocs,
+  listAvailableOffers, claimOffer, ShopOffer, listAvailableDocs, getMyCapacity, MyCapacity,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 import PushSubscribe from '@/components/PushSubscribe';
@@ -89,6 +89,7 @@ export default function MyDeliveriesPage() {
   const [offers, setOffers] = useState<ShopOffer[]>([]);
   const [availableDocs, setAvailableDocs] = useState<Delivery[]>([]);
   const [claimingId, setClaimingId] = useState<string | null>(null);
+  const [myCap, setMyCap] = useState<MyCapacity | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -101,6 +102,8 @@ export default function MyDeliveriesPage() {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => { getMyCapacity().then(setMyCap).catch(() => {}); }, []);
 
   const loadRoute = useCallback(async () => {
     try {
@@ -411,23 +414,51 @@ export default function MyDeliveriesPage() {
 
       {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
 
+      {/* Моя текущая загрузка — сколько уже взял с собой относительно вместимости
+          своей машины, чтобы было понятно, есть ли место под новый заказ ниже. */}
+      {myCap && (activeWeight > 0 || activeVolL > 0) && (() => {
+        const pctKg = myCap.capacity_kg > 0 ? Math.min(100, Math.round((activeWeight / myCap.capacity_kg) * 100)) : null;
+        const pctM3 = myCap.capacity_m3 > 0 ? Math.min(100, Math.round((activeVolL / 1000 / myCap.capacity_m3) * 100)) : null;
+        const pct = Math.max(pctKg ?? 0, pctM3 ?? 0);
+        const barColor = pct >= 90 ? 'bg-red-500' : pct >= 60 ? 'bg-amber-500' : 'bg-emerald-500';
+        return (
+          <div className="mb-3 bg-white border border-gray-200 rounded-xl p-3">
+            <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+              <span>🚐 Моя загрузка</span>
+              <span>
+                {Math.round(activeWeight)}/{myCap.capacity_kg} кг
+                {myCap.capacity_m3 > 0 && ` · ${(activeVolL / 1000).toFixed(1)}/${myCap.capacity_m3} м³`}
+              </span>
+            </div>
+            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className={`h-full ${barColor}`} style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Заказы из рассылки рядом — водитель берёт сам */}
       {nearbyOffers.length > 0 && (
         <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3">
-          <div className="text-sm font-bold text-amber-700 mb-2">📢 Заказы рядом ({nearbyOffers.length})</div>
+          <div className="text-xs font-bold text-amber-700 mb-2">📢 Заказы рядом ({nearbyOffers.length})</div>
           <div className="flex flex-col gap-2">
             {nearbyOffers.map(({ o, dist }) => (
               <div key={o.id} className="bg-white rounded-lg p-3 flex items-start gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold truncate">🏪 {o.shop_name || 'Магазин'} → {o.client_name || 'клиент'}</div>
-                  {o.address && <div className="text-xs text-gray-400 mt-0.5 truncate">📍 {o.address}</div>}
+                  <div className="text-xs font-semibold break-words">🏪 {o.shop_name || 'Магазин'} → {o.client_name || 'клиент'}</div>
+                  {o.address && <div className="text-xs text-gray-400 mt-0.5 break-words">📍 {o.address}</div>}
                   {o.items.length > 0 && (
                     <div className="text-xs text-gray-400 mt-0.5 truncate">📦 {o.items.map((it) => `${it.name} ×${it.qty}`).join(', ')}</div>
                   )}
+                  {(o.total_weight || o.total_volume_l) ? (
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      ⚖️ {o.total_weight ? `${Math.round(o.total_weight)} кг` : ''}{o.total_weight && o.total_volume_l ? ' · ' : ''}{o.total_volume_l ? `${(o.total_volume_l / 1000).toFixed(2)} м³` : ''}
+                    </div>
+                  ) : null}
                   {dist != null && <div className="text-xs text-amber-600 mt-0.5">~{Math.round(dist)} км до места выдачи</div>}
                 </div>
                 <button onClick={() => claim(o.id)} disabled={claimingId === o.id}
-                  className="shrink-0 px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white text-sm font-semibold rounded-lg whitespace-nowrap">
+                  className="shrink-0 px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white text-xs font-semibold rounded-lg whitespace-nowrap">
                   {claimingId === o.id ? '⏳…' : '✋ Взять'}
                 </button>
               </div>
@@ -440,23 +471,28 @@ export default function MyDeliveriesPage() {
           отличие от заявок магазина выше), поэтому без расстояния, просто список. */}
       {availableDocs.length > 0 && (
         <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
-          <div className="text-sm font-bold text-emerald-700 mb-2">📦 Собранные, ждут водителя ({availableDocs.length})</div>
+          <div className="text-xs font-bold text-emerald-700 mb-2">📦 Собранные, ждут водителя ({availableDocs.length})</div>
           <div className="flex flex-col gap-2">
             {availableDocs.map((d) => (
               <div key={d.id} className="bg-white rounded-lg p-3 flex items-start gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold truncate">
+                  <div className="text-xs font-semibold break-words">
                     {(d.doc_type && DOC_TYPE_LABEL[d.doc_type as DocType]) || d.doc_type || 'Документ'} {d.doc_number ? `№${d.doc_number}` : ''}
                   </div>
-                  <div className="text-xs text-gray-400 mt-0.5 truncate">
+                  <div className="text-xs text-gray-400 mt-0.5 break-words">
                     {d.from_name || '—'} → {d.to_name || d.client_name || '—'}
                   </div>
                   {d.items.length > 0 && (
                     <div className="text-xs text-gray-400 mt-0.5 truncate">📦 {d.items.map((it) => `${it.name} ×${it.qty}`).join(', ')}</div>
                   )}
+                  {(d.total_weight || d.total_volume_l) ? (
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      ⚖️ {d.total_weight ? `${Math.round(d.total_weight)} кг` : ''}{d.total_weight && d.total_volume_l ? ' · ' : ''}{d.total_volume_l ? `${(d.total_volume_l / 1000).toFixed(2)} м³` : ''}
+                    </div>
+                  ) : null}
                 </div>
                 <button onClick={() => claim(d.id)} disabled={claimingId === d.id}
-                  className="shrink-0 px-3 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white text-sm font-semibold rounded-lg whitespace-nowrap">
+                  className="shrink-0 px-3 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white text-xs font-semibold rounded-lg whitespace-nowrap">
                   {claimingId === d.id ? '⏳…' : '✋ Взять'}
                 </button>
               </div>

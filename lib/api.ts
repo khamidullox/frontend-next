@@ -1015,6 +1015,16 @@ export async function listAvailableOffers(): Promise<ShopOffer[]> {
   return data.data || [];
 }
 
+export interface MyCapacity { capacity_kg: number; capacity_m3: number; transport: string | null }
+
+// Своя вместимость — для строки «насколько я загружен» на /logistics/my.
+export async function getMyCapacity(): Promise<MyCapacity | null> {
+  const res = await fetch('/api/me/capacity', { cache: 'no-store' });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.data || null;
+}
+
 // Собранные накладные/заказы/перемещения без водителя — водитель видит и может взять
 // сам (claimOffer ниже — он общий, не привязан к типу доставки).
 export async function listAvailableDocs(): Promise<Delivery[]> {
