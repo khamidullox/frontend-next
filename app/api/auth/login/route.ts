@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
     const session = {
       username: user.username, name: user.name, role: user.role, warehouses,
       shop_id: user.shop_id || undefined, home_warehouse: user.home_warehouse || undefined,
+      language: user.language === 'uz' ? ('uz' as const) : ('ru' as const),
     };
     await setSessionCookie(session);
     return Response.json(session);

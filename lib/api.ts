@@ -10,6 +10,8 @@ export const ROLE_LABEL: Record<Role, string> = {
   driver: 'Водитель', worker: 'Магазин', manager: 'Менеджер', admin: 'Админ',
 };
 
+export type Language = 'ru' | 'uz';
+
 export interface UserSession {
   username: string;
   name: string;
@@ -17,6 +19,19 @@ export interface UserSession {
   warehouses: string[];
   shop_id?: string;
   home_warehouse?: string;
+  language?: Language;
+}
+
+// Смена языка интерфейса (своего) — любой авторизованный пользователь.
+export async function setMyLanguage(language: Language): Promise<void> {
+  const res = await fetch('/api/me/language', {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ language }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data as { error?: string }).error || 'Не удалось сохранить язык');
+  }
 }
 
 export interface MeResult {

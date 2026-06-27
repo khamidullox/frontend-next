@@ -3,6 +3,7 @@ import { Fjalla_One } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/AppShell";
 import AuthProvider from "@/components/AuthProvider";
+import LanguageProvider from "@/lib/i18n";
 
 // Шрифт для цены на ценниках.
 const fjalla = Fjalla_One({ weight: "400", subsets: ["latin"], variable: "--font-fjalla" });
@@ -33,7 +34,9 @@ export default function RootLayout({
     <html lang="ru" className={`h-full ${fjalla.variable}`}>
       <body className="min-h-full bg-gray-100 antialiased">
         <AuthProvider>
-          <AppShell>{children}</AppShell>
+          <LanguageProvider>
+            <AppShell>{children}</AppShell>
+          </LanguageProvider>
         </AuthProvider>
       </body>
     </html>

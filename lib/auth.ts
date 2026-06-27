@@ -13,6 +13,8 @@ export const ROLE_LABEL: Record<Role, string> = {
   admin: 'Админ',
 };
 
+export type Language = 'ru' | 'uz';
+
 export interface Session {
   username: string;
   name: string;
@@ -20,6 +22,7 @@ export interface Session {
   warehouses: string[]; // коды прикреплённых складов (пусто = все)
   shop_id?: string;      // для роли «магазин» — привязка к точке (lib/shops.ts)
   home_warehouse?: string; // для роли «магазин» — код своего склада (по умолчанию в ценниках и т.п.)
+  language?: Language;  // язык интерфейса, выбирается самим пользователем в /profile
 }
 
 const COOKIE = 'auth';

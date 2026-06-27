@@ -3,35 +3,36 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { ROLE_RANK, ROLE_LABEL, Role, logout } from '@/lib/api';
+import { ROLE_RANK, Role, logout } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
+import { useLang, TKey } from '@/lib/i18n';
 
-interface NavLink { href: string; label: string; min: Role }
+interface NavLink { href: string; key: TKey; min: Role }
 
 const LINKS: NavLink[] = [
-  { href: '/', label: '📦 Проверка', min: 'worker' },
-  { href: '/products', label: '📚 Справочник', min: 'worker' },
-  { href: '/warehouses', label: '🏬 Остатки', min: 'worker' },
-  { href: '/price-tags', label: '🏷️ Ценники', min: 'worker' },
-  { href: '/movements', label: '🗂️ Накладные', min: 'manager' },
-  { href: '/orders', label: '🧾 Заказы', min: 'manager' },
-  { href: '/history', label: '📋 История', min: 'manager' },
-  { href: '/logistics', label: '🚚 Логистика', min: 'manager' },
-  { href: '/analytics', label: '📊 Аналитика', min: 'manager' },
-  { href: '/transfers', label: '🔄 Перемещения', min: 'admin' },
-  { href: '/receipts', label: '📥 Приёмка', min: 'admin' },
-  { href: '/users', label: '👤 Пользователи', min: 'admin' },
+  { href: '/', key: 'nav_check', min: 'worker' },
+  { href: '/products', key: 'nav_catalog', min: 'worker' },
+  { href: '/warehouses', key: 'nav_stock', min: 'worker' },
+  { href: '/price-tags', key: 'nav_pricetags', min: 'worker' },
+  { href: '/movements', key: 'nav_movements', min: 'manager' },
+  { href: '/orders', key: 'nav_orders', min: 'manager' },
+  { href: '/history', key: 'nav_history', min: 'manager' },
+  { href: '/logistics', key: 'nav_logistics', min: 'manager' },
+  { href: '/analytics', key: 'nav_analytics', min: 'manager' },
+  { href: '/transfers', key: 'nav_transfers', min: 'admin' },
+  { href: '/receipts', key: 'nav_receipts', min: 'admin' },
+  { href: '/users', key: 'nav_users', min: 'admin' },
 ];
 
 // Водитель — особая роль: видит только свои доставки.
 const DRIVER_LINKS: NavLink[] = [
-  { href: '/logistics/my', label: '🚚 Мои доставки', min: 'driver' },
-  { href: '/logistics/my-stats', label: '📊 Мои расчёты', min: 'driver' },
+  { href: '/logistics/my', key: 'nav_my_deliveries', min: 'driver' },
+  { href: '/logistics/my-stats', key: 'nav_my_stats', min: 'driver' },
 ];
 
 // Магазин (worker) — кроме общих пунктов, видит создание заявок на доставку клиентам.
 const WORKER_EXTRA_LINKS: NavLink[] = [
-  { href: '/logistics/shop', label: '🚚 Заказы клиентам', min: 'worker' },
+  { href: '/logistics/shop', key: 'nav_shop_orders', min: 'worker' },
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -39,6 +40,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { session, refresh } = useAuth();
   const [open, setOpen] = useState(false);
+  const { t } = useLang();
+  const ROLE_LABEL_T: Record<Role, TKey> = {
+    driver: 'role_driver', worker: 'role_worker', manager: 'role_manager', admin: 'role_admin',
+  };
 
   // Без «обвязки»: вход и страница проверки (полный экран).
   const bare = pathname === '/login' || pathname.startsWith('/session');
@@ -68,7 +73,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div className="md:flex md:min-h-screen print:block print:min-h-0">
       {/* Верхняя полоса на телефоне */}
       <div className="md:hidden sticky top-0 z-30 bg-slate-900 text-white flex items-center gap-3 px-4 h-14 print:hidden">
-        <button onClick={() => setOpen(true)} aria-label="Меню" className="text-2xl leading-none">☰</button>
+        <button onClick={() => setOpen(true)} aria-label={t('menu')} className="text-2xl leading-none">☰</button>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/icon.svg" alt="" className="w-6 h-6 rounded" />
         <span className="font-semibold tracking-wide">TaminotWeb</span>
@@ -100,7 +105,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 isActive(l.href) ? 'bg-white text-slate-900' : 'text-gray-300 hover:bg-slate-700/70 hover:text-white'
               }`}
             >
-              {l.label}
+              {t(l.key)}
             </Link>
           ))}
         </nav>
@@ -109,13 +114,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="border-t border-slate-700/70 p-3">
             <div className="px-1 mb-2 text-xs text-gray-300 truncate">
               {session.name}
-              <span className="text-gray-500"> · {ROLE_LABEL[session.role]}</span>
+              <span className="text-gray-500"> · {t(ROLE_LABEL_T[session.role])}</span>
             </div>
+            <Link
+              href="/profile"
+              onClick={() => setOpen(false)}
+              className={`block px-3 py-2 mb-1.5 rounded-lg text-sm font-medium transition-colors ${
+                isActive('/profile') ? 'bg-white text-slate-900' : 'text-gray-300 hover:bg-slate-700/70 hover:text-white'
+              }`}
+            >
+              {t('nav_profile')}
+            </Link>
             <button
               onClick={doLogout}
               className="w-full px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm text-gray-200 transition-colors"
             >
-              Выйти
+              {t('logout')}
             </button>
           </div>
         )}

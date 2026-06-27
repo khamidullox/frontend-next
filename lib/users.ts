@@ -1,5 +1,5 @@
 import { getDb, getRtdb } from './firebase';
-import { hashPassword, Role } from './auth';
+import { hashPassword, Role, Language } from './auth';
 
 const COLLECTION = 'users';
 
@@ -18,6 +18,7 @@ export interface StoredUser {
   shop_id?: string;      // для роли «магазин» — привязка к точке (lib/shops.ts)
   home_warehouse?: string; // для роли «магазин» — код своего склада (по умолчанию в ценниках и т.п.)
   gps_user_id?: string;  // UUID на платформе gps16888.com
+  language?: Language;   // язык интерфейса — выбирается самим пользователем в /profile
 }
 
 export interface UserInfo {
@@ -34,6 +35,7 @@ export interface UserInfo {
   shop_id: string;
   home_warehouse: string;
   gps_user_id: string;
+  language: Language;
 }
 
 function publicUser(u: StoredUser): UserInfo {
@@ -51,6 +53,7 @@ function publicUser(u: StoredUser): UserInfo {
     shop_id: u.shop_id ?? '',
     home_warehouse: u.home_warehouse ?? '',
     gps_user_id: u.gps_user_id ?? '',
+    language: u.language === 'uz' ? 'uz' : 'ru',
   };
 }
 
@@ -206,6 +209,20 @@ export async function setPassword(
   const snap = await ref.get();
   if (!snap.exists) return { error: 'Пользователь не найден' };
   await ref.set({ password_hash: hashPassword(password) }, { merge: true });
+  return { ok: true };
+}
+
+// Язык интерфейса — самостоятельно меняет любой пользователь у себя в /profile
+// (в отличие от пароля/логина, тут не нужны права админа).
+export async function setLanguage(
+  username: string,
+  language: Language
+): Promise<{ ok: true } | { error: string }> {
+  if (language !== 'ru' && language !== 'uz') return { error: 'Неверный язык' };
+  const ref = getDb().collection(COLLECTION).doc(normUsername(username));
+  const snap = await ref.get();
+  if (!snap.exists) return { error: 'Пользователь не найден' };
+  await ref.set({ language }, { merge: true });
   return { ok: true };
 }
 
