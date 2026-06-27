@@ -75,6 +75,9 @@ function LogisticsContent() {
   const [error, setError] = useState('');
   const [hideDone, setHideDone] = useState(true);
   const [onlyPicked, setOnlyPicked] = useState(false);
+  // Сворачивание секций «Без водителя» / «Собранные, без водителя» — раскрыты по умолчанию.
+  const [unassignedOpen, setUnassignedOpen] = useState(true);
+  const [pickedUnassignedOpen, setPickedUnassignedOpen] = useState(true);
   const [capSettings, setCapSettings] = useState<LogisticsSettings>(DEFAULT_CAP_SETTINGS);
   // Синхронный «снимок» cap_by_type — для saveCapType. Обновление state через функцию-
   // обновитель (prev => ...) НЕ гарантирует, что она выполнится до следующей строки кода
@@ -397,8 +400,15 @@ function LogisticsContent() {
     );
   }, [drivers, driverSearch, selCats, allCats]);
 
-  const visibleUnassigned = (hideDone ? unassigned.filter((d) => !isDone(d.status)) : unassigned)
+  const visibleUnassignedAll = (hideDone ? unassigned.filter((d) => !isDone(d.status)) : unassigned)
     .filter((d) => !onlyPicked || d.picked);
+  // Разделяем «без водителя» на ещё не собранные и уже собранные (готовые к выдаче
+  // водителю) — два отдельных сворачиваемых блока. Как только у доставки появляется
+  // водитель, она уходит из items.driver_username === '' и пропадает из обоих списков
+  // сама (попадает в группу своего водителя) — отдельного сброса «собрано» не нужно,
+  // флаг picked остаётся true (товар физически собран), просто список меняется.
+  const visibleUnassigned = visibleUnassignedAll.filter((d) => !d.picked);
+  const visiblePickedUnassigned = visibleUnassignedAll.filter((d) => d.picked);
 
   return (
     <div>
@@ -660,14 +670,36 @@ function LogisticsContent() {
           {/* Без водителя */}
           {visibleUnassigned.length > 0 && (
             <div className="mb-5">
-              <div className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2">
+              <button onClick={() => setUnassignedOpen((o) => !o)}
+                className="w-full flex items-center gap-1.5 text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2">
+                <span className="text-gray-400">{unassignedOpen ? '▾' : '▸'}</span>
                 Без водителя ({visibleUnassigned.length})
-              </div>
-              <div className="flex flex-col gap-2">
-                {visibleUnassigned.map((d) => (
-                  <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} directionsByDriver={directionsByDriver} />
-                ))}
-              </div>
+              </button>
+              {unassignedOpen && (
+                <div className="flex flex-col gap-2">
+                  {visibleUnassigned.map((d) => (
+                    <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} directionsByDriver={directionsByDriver} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Собранные, но ещё без водителя — готовы к выдаче */}
+          {visiblePickedUnassigned.length > 0 && (
+            <div className="mb-5">
+              <button onClick={() => setPickedUnassignedOpen((o) => !o)}
+                className="w-full flex items-center gap-1.5 text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-2">
+                <span className="text-gray-400">{pickedUnassignedOpen ? '▾' : '▸'}</span>
+                📦 Собранные, без водителя ({visiblePickedUnassigned.length})
+              </button>
+              {pickedUnassignedOpen && (
+                <div className="flex flex-col gap-2">
+                  {visiblePickedUnassigned.map((d) => (
+                    <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} directionsByDriver={directionsByDriver} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
