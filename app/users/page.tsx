@@ -490,6 +490,7 @@ function EditUserModal({
   const isDriver = user.role === 'driver';
   const isWorker = user.role === 'worker';
   const [editName, setEditName] = useState(user.name);
+  const [login, setLogin] = useState(user.username);
   const [password, setPassword] = useState('');
   const [wh, setWh] = useState<string[]>(user.warehouses);
   const [shopId, setShopId] = useState(user.shop_id || '');
@@ -516,8 +517,16 @@ function EditUserModal({
     setBusy(true);
     setErr('');
     try {
-      const patch: { name?: string; password?: string; warehouses?: string[]; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string; shop_id?: string; home_warehouse?: string; gps_user_id?: string } = {};
+      const patch: { name?: string; new_username?: string; password?: string; warehouses?: string[]; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string; shop_id?: string; home_warehouse?: string; gps_user_id?: string } = {};
       if (editName.trim() && editName.trim() !== user.name) patch.name = editName.trim();
+      const newLogin = login.trim().toLowerCase();
+      if (newLogin && newLogin !== user.username) {
+        if (!confirm(`Сменить логин «${user.username}» на «${newLogin}»? Пользователю нужно будет заново войти под новым логином.`)) {
+          setBusy(false);
+          return;
+        }
+        patch.new_username = newLogin;
+      }
       if (password.trim()) patch.password = password.trim();
       if (isDriver) {
         patch.car_number = car.trim();
@@ -569,6 +578,17 @@ function EditUserModal({
             <input value={editName} onChange={(e) => setEditName(e.target.value)}
               placeholder="Полное имя"
               className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          </div>
+
+          {/* Логин */}
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Логин</label>
+            <input value={login} onChange={(e) => setLogin(e.target.value)}
+              placeholder="латиница/цифры, минимум 3 символа" autoComplete="off"
+              className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            {login.trim().toLowerCase() !== user.username && (
+              <div className="text-xs text-amber-600 mt-1">⚠️ После смены логина нужно будет войти заново под новым логином.</div>
+            )}
           </div>
 
           {/* Пароль */}

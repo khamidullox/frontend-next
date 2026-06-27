@@ -115,7 +115,7 @@ export async function setUserWarehouses(username: string, warehouses: string[]):
 
 // Единое обновление пользователя из модалки (пароль / склады / профиль водителя).
 export async function updateUser(username: string, patch: {
-  name?: string; password?: string; warehouses?: string[]; car_number?: string; transport?: string;
+  name?: string; new_username?: string; password?: string; warehouses?: string[]; car_number?: string; transport?: string;
   capacity_m3?: number; capacity_kg?: number; direction?: string; shop_id?: string; home_warehouse?: string; gps_user_id?: string;
 }): Promise<void> {
   const res = await fetch(`/api/users/${encodeURIComponent(username)}`, {

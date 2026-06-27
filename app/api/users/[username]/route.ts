@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { deleteUser, setPassword, setUserWarehouses, setDriverProfile, setWorkerShop, setWorkerHomeWarehouse } from '@/lib/users';
+import { deleteUser, setPassword, setUserWarehouses, setDriverProfile, setWorkerShop, setWorkerHomeWarehouse, renameUser } from '@/lib/users';
 import { listDeliveriesForDriver } from '@/lib/deliveries';
 import { withRole } from '@/lib/auth';
 
@@ -26,8 +26,14 @@ export async function PATCH(
   { params }: { params: Promise<{ username: string }> }
 ) {
   return withRole('admin', async () => {
-    const { username } = await params;
+    const { username: paramUsername } = await params;
     const body = await request.json().catch(() => ({}));
+    let username = paramUsername;
+    if (typeof body.new_username === 'string' && body.new_username.trim()) {
+      const res = await renameUser(username, body.new_username);
+      if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
+      username = body.new_username.trim().toLowerCase();
+    }
     if (typeof body.password === 'string' && body.password) {
       const res = await setPassword(username, body.password);
       if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
@@ -58,7 +64,7 @@ export async function PATCH(
       const res = await setWorkerHomeWarehouse(username, body.home_warehouse);
       if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
     }
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, username });
   });
 }
 

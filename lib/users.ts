@@ -1,4 +1,4 @@
-import { getDb } from './firebase';
+import { getDb, getRtdb } from './firebase';
 import { hashPassword, Role } from './auth';
 
 const COLLECTION = 'users';
@@ -206,5 +206,55 @@ export async function setPassword(
   const snap = await ref.get();
   if (!snap.exists) return { error: 'Пользователь не найден' };
   await ref.set({ password_hash: hashPassword(password) }, { merge: true });
+  return { ok: true };
+}
+
+// Смена логина: username — это сам id документа в Firestore, переименовать
+// документ на месте нельзя, поэтому переносим (читаем → пишем новый id →
+// удаляем старый) и заодно правим все места, где логин хранится как внешняя
+// ссылка: deliveries.driver_username, routes.driver_username, узел координат
+// в Realtime DB (vehicle_positions/{username}). Активная сессия (cookie) у
+// пользователя при этом не обновится — после смены логина нужен повторный вход.
+export async function renameUser(
+  oldUsername: string,
+  newUsername: string
+): Promise<{ ok: true } | { error: string }> {
+  const oldU = normUsername(oldUsername);
+  const newU = normUsername(newUsername);
+  if (!newU) return { error: 'Логин обязателен' };
+  if (!/^[a-z0-9._-]{3,}$/.test(newU))
+    return { error: 'Логин: латиница/цифры, минимум 3 символа' };
+  if (newU === oldU) return { ok: true };
+
+  const db = getDb();
+  const oldRef = db.collection(COLLECTION).doc(oldU);
+  const newRef = db.collection(COLLECTION).doc(newU);
+  const [oldSnap, newSnap] = await Promise.all([oldRef.get(), newRef.get()]);
+  if (!oldSnap.exists) return { error: 'Пользователь не найден' };
+  if (newSnap.exists) return { error: 'Такой логин уже есть' };
+
+  const user = oldSnap.data() as StoredUser;
+  await newRef.set({ ...user, username: newU });
+  await oldRef.delete();
+
+  const [deliveriesSnap, routesSnap] = await Promise.all([
+    db.collection('deliveries').where('driver_username', '==', oldU).get(),
+    db.collection('routes').where('driver_username', '==', oldU).get(),
+  ]);
+  const batch = db.batch();
+  let changed = false;
+  for (const doc of deliveriesSnap.docs) { batch.update(doc.ref, { driver_username: newU }); changed = true; }
+  for (const doc of routesSnap.docs) { batch.update(doc.ref, { driver_username: newU }); changed = true; }
+  if (changed) await batch.commit();
+
+  try {
+    const posSnap = await getRtdb().ref(`vehicle_positions/${oldU}`).get();
+    if (posSnap.exists()) {
+      const pos = posSnap.val();
+      await getRtdb().ref(`vehicle_positions/${newU}`).set({ ...pos, username: newU });
+      await getRtdb().ref(`vehicle_positions/${oldU}`).remove();
+    }
+  } catch { /* RTDB недоступна — не критично, координаты перезапишутся сами при следующем GPS-пинге */ }
+
   return { ok: true };
 }
