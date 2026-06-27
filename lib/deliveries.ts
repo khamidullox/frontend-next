@@ -639,7 +639,10 @@ export async function claimDelivery(
       const snap = await tx.get(ref);
       if (!snap.exists) throw new Error('Заявка не найдена');
       const d = normalizeDelivery(snap.data() as Delivery);
-      if (d.kind !== 'shop_to_client') throw new Error('Это не заявка магазина');
+      // Самостоятельно взять можно: заявку магазина (как раньше) или собранную
+      // накладную/заказ/перемещение (warehouse_dispatch), ждущую водителя.
+      if (d.kind !== 'shop_to_client' && d.kind !== 'warehouse_dispatch') throw new Error('Эту доставку нельзя взять самому');
+      if (d.kind === 'warehouse_dispatch' && !d.picked) throw new Error('Ещё не собрано');
       if (d.driver_username) throw new Error('Заказ уже взят другим водителем');
       d.driver_username = u.username;
       d.driver_name = u.name;
@@ -678,6 +681,20 @@ export async function listOpenShopOffers(): Promise<ShopOffer[]> {
   return out.sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
+// Собранные накладные/заказы/перемещения (warehouse_dispatch), ещё без водителя —
+// водитель видит их у себя и может «взять» сам (см. claimDelivery), не дожидаясь
+// ручного назначения менеджером через AssignDocModal.
+export async function listOpenPickedDocs(): Promise<Delivery[]> {
+  const snap = await getDb().collection(COLLECTION).where('kind', '==', 'warehouse_dispatch').get();
+  const out: Delivery[] = [];
+  for (const doc of snap.docs) {
+    const d = normalizeDelivery(doc.data() as Delivery);
+    if (d.driver_username || d.status !== 'new' || !d.picked) continue;
+    out.push(d);
+  }
+  return out.sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
 // Отметить «Собрано» вручную (или снять отметку, если поставили по ошибке).
 export async function setDeliveryPicked(
   id: string,
@@ -711,6 +728,35 @@ export async function markPickedByDocId(docId: string): Promise<void> {
     if (!d.picked) { batch.update(doc.ref, { picked: true, updated_at: now }); changed = true; }
   }
   if (changed) await batch.commit();
+}
+
+// Сборщик завершил проверку накладной/заказа/перемещения (worker, до назначения
+// водителя) → доставка должна появиться в «Собранные, без водителя» сразу, не дожидаясь
+// ручного назначения через AssignDocModal. Если доставка для этого doc_id уже существует
+// (например, её создали раньше вручную) — просто помечаем «собрано» (как markPickedByDocId);
+// если нет — создаём новую без водителя через обычный createDelivery({session_id}).
+export async function createOrMarkPickedFromSession(
+  sessionId: string,
+  createdBy?: string
+): Promise<void> {
+  const s = await getCheckSession(str(sessionId));
+  if (!s) return;
+  const docId = str(s.document.doc_id);
+  if (docId) {
+    const snap = await getDb().collection(COLLECTION).where('doc_id', '==', docId).get();
+    if (!snap.empty) {
+      const now = new Date().toISOString();
+      const batch = getDb().batch();
+      let changed = false;
+      for (const doc of snap.docs) {
+        const d = normalizeDelivery(doc.data() as Delivery);
+        if (!d.picked) { batch.update(doc.ref, { picked: true, updated_at: now }); changed = true; }
+      }
+      if (changed) await batch.commit();
+      return;
+    }
+  }
+  await createDelivery({ session_id: sessionId, created_by: createdBy });
 }
 
 export async function setDeliveryStatus(

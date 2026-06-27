@@ -1015,6 +1015,15 @@ export async function listAvailableOffers(): Promise<ShopOffer[]> {
   return data.data || [];
 }
 
+// Собранные накладные/заказы/перемещения без водителя — водитель видит и может взять
+// сам (claimOffer ниже — он общий, не привязан к типу доставки).
+export async function listAvailableDocs(): Promise<Delivery[]> {
+  const res = await fetch('/api/logistics/available-docs', { cache: 'no-store' });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.data || [];
+}
+
 // Водитель берёт заказ из рассылки. Бросает ошибку (напр. «уже взят»), если не удалось.
 export async function claimOffer(deliveryId: string): Promise<Delivery> {
   const res = await fetch('/api/logistics/shop-requests/claim', {

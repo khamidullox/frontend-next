@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   listDeliveries, updateDelivery, Delivery, DeliveryStatus,
-  DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL,
+  DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL, DocType,
   listRoutes, startRoute, finishRoute, sendTrackPoint, addDeliveriesToRoute, Route,
   listShops, Shop, resolveDeliveryPoint, resolvePickupPoint,
-  listAvailableOffers, claimOffer, ShopOffer,
+  listAvailableOffers, claimOffer, ShopOffer, listAvailableDocs,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 import PushSubscribe from '@/components/PushSubscribe';
@@ -87,12 +87,14 @@ export default function MyDeliveriesPage() {
   const [showMap, setShowMap] = useState(true);
   const [showDone, setShowDone] = useState(false);
   const [offers, setOffers] = useState<ShopOffer[]>([]);
+  const [availableDocs, setAvailableDocs] = useState<Delivery[]>([]);
   const [claimingId, setClaimingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       setItems(await listDeliveries());
       setOffers(await listAvailableOffers());
+      setAvailableDocs(await listAvailableDocs());
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -427,6 +429,35 @@ export default function MyDeliveriesPage() {
                 <button onClick={() => claim(o.id)} disabled={claimingId === o.id}
                   className="shrink-0 px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white text-sm font-semibold rounded-lg whitespace-nowrap">
                   {claimingId === o.id ? '⏳…' : '✋ Взять'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Собранные накладные/заказы/перемещения без водителя — без геопривязки (в
+          отличие от заявок магазина выше), поэтому без расстояния, просто список. */}
+      {availableDocs.length > 0 && (
+        <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+          <div className="text-sm font-bold text-emerald-700 mb-2">📦 Собранные, ждут водителя ({availableDocs.length})</div>
+          <div className="flex flex-col gap-2">
+            {availableDocs.map((d) => (
+              <div key={d.id} className="bg-white rounded-lg p-3 flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold truncate">
+                    {(d.doc_type && DOC_TYPE_LABEL[d.doc_type as DocType]) || d.doc_type || 'Документ'} {d.doc_number ? `№${d.doc_number}` : ''}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-0.5 truncate">
+                    {d.from_name || '—'} → {d.to_name || d.client_name || '—'}
+                  </div>
+                  {d.items.length > 0 && (
+                    <div className="text-xs text-gray-400 mt-0.5 truncate">📦 {d.items.map((it) => `${it.name} ×${it.qty}`).join(', ')}</div>
+                  )}
+                </div>
+                <button onClick={() => claim(d.id)} disabled={claimingId === d.id}
+                  className="shrink-0 px-3 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white text-sm font-semibold rounded-lg whitespace-nowrap">
+                  {claimingId === d.id ? '⏳…' : '✋ Взять'}
                 </button>
               </div>
             ))}
