@@ -76,8 +76,8 @@ function LogisticsContent() {
   const [hideDone, setHideDone] = useState(true);
   const [onlyPicked, setOnlyPicked] = useState(false);
   // Сворачивание секций «Без водителя» / «Собранные, без водителя» — раскрыты по умолчанию.
-  const [unassignedOpen, setUnassignedOpen] = useState(true);
-  const [pickedUnassignedOpen, setPickedUnassignedOpen] = useState(true);
+  const [unassignedOpen, setUnassignedOpen] = useState(false);
+  const [pickedUnassignedOpen, setPickedUnassignedOpen] = useState(false);
   const [capSettings, setCapSettings] = useState<LogisticsSettings>(DEFAULT_CAP_SETTINGS);
   // Синхронный «снимок» cap_by_type — для saveCapType. Обновление state через функцию-
   // обновитель (prev => ...) НЕ гарантирует, что она выполнится до следующей строки кода
