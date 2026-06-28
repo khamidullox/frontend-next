@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { login, setupAdmin } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
+import DeviceCheck from '@/components/DeviceCheck';
 
 export default function LoginPage() {
   const { setupNeeded, refresh } = useAuth();
@@ -28,7 +29,13 @@ export default function LoginPage() {
       await refresh();
       router.replace('/');
     } catch (err) {
-      setError((err as Error).message);
+      // Сетевой сбой (fetch не дошёл) — это не «неверный пароль», а проблема связи/
+      // настроек телефона. Показываем понятную подсказку вместо технической ошибки.
+      if (err instanceof TypeError) {
+        setError('Нет связи с сервером. Проверьте интернет и что на телефоне правильно выставлены дата и время (Настройки → Дата и время → «Автоматически»).');
+      } else {
+        setError((err as Error).message);
+      }
       setBusy(false);
     }
   }
@@ -44,6 +51,8 @@ export default function LoginPage() {
             {setupNeeded ? 'Создайте первого администратора' : 'Вход в систему'}
           </p>
         </div>
+
+        <DeviceCheck />
 
         <form onSubmit={submit} className="flex flex-col gap-3">
           {setupNeeded && (
