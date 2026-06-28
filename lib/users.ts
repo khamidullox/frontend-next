@@ -19,6 +19,7 @@ export interface StoredUser {
   home_warehouse?: string; // для роли «магазин» — код своего склада (по умолчанию в ценниках и т.п.)
   gps_user_id?: string;  // UUID на платформе gps16888.com
   language?: Language;   // язык интерфейса — выбирается самим пользователем в /profile
+  features?: Record<string, boolean>; // переопределения доступа к разделам (см. lib/features.ts)
 }
 
 export interface UserInfo {
@@ -36,6 +37,7 @@ export interface UserInfo {
   home_warehouse: string;
   gps_user_id: string;
   language: Language;
+  features: Record<string, boolean>;
 }
 
 function publicUser(u: StoredUser): UserInfo {
@@ -54,6 +56,7 @@ function publicUser(u: StoredUser): UserInfo {
     home_warehouse: u.home_warehouse ?? '',
     gps_user_id: u.gps_user_id ?? '',
     language: u.language === 'uz' ? 'uz' : 'ru',
+    features: u.features && typeof u.features === 'object' ? u.features : {},
   };
 }
 
@@ -223,6 +226,23 @@ export async function setLanguage(
   const snap = await ref.get();
   if (!snap.exists) return { error: 'Пользователь не найден' };
   await ref.set({ language }, { merge: true });
+  return { ok: true };
+}
+
+// Переопределения доступа к разделам (см. lib/features.ts) — задаёт админ в карточке.
+export async function setUserFeatures(
+  username: string,
+  features: Record<string, boolean>
+): Promise<{ ok: true } | { error: string }> {
+  const ref = getDb().collection(COLLECTION).doc(normUsername(username));
+  const snap = await ref.get();
+  if (!snap.exists) return { error: 'Пользователь не найден' };
+  // Чистим: оставляем только булевы значения.
+  const clean: Record<string, boolean> = {};
+  for (const [k, v] of Object.entries(features || {})) {
+    if (typeof v === 'boolean') clean[k] = v;
+  }
+  await ref.set({ features: clean }, { merge: true });
   return { ok: true };
 }
 

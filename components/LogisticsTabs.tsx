@@ -2,21 +2,25 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/components/AuthProvider';
+import { canAccess, FeatureKey } from '@/lib/features';
 
-const TABS = [
+const TABS: { href: string; label: string; feature?: FeatureKey }[] = [
   { href: '/logistics', label: '1️⃣ Накладные/заказы' },
-  { href: '/logistics/shop-requests', label: '2️⃣ Заявки магазинов' },
+  { href: '/logistics/shop-requests', label: '2️⃣ Заявки магазинов', feature: 'log_shop_requests' },
   { href: '/logistics/map', label: '3️⃣ Карта' },
-  { href: '/logistics/client-addresses', label: '4️⃣ Адреса клиентов' },
-  { href: '/logistics/mileage', label: '5️⃣ Пробег GPS' },
+  { href: '/logistics/client-addresses', label: '4️⃣ Адреса клиентов', feature: 'log_addresses' },
+  { href: '/logistics/mileage', label: '5️⃣ Пробег GPS', feature: 'log_mileage' },
 ];
 
-// Навигация между тремя разделами логистики (для менеджера/админа).
+// Навигация между разделами логистики (для менеджера/админа).
 export default function LogisticsTabs() {
   const pathname = usePathname();
+  const { session } = useAuth();
+  const tabs = TABS.filter((t) => !t.feature || !session || canAccess(t.feature, session.role, session.features));
   return (
     <div className="flex gap-1 mb-3 bg-gray-100 rounded-xl p-1 flex-wrap">
-      {TABS.map((t) => (
+      {tabs.map((t) => (
         <Link
           key={t.href}
           href={t.href}

@@ -6,21 +6,24 @@ import { useState } from 'react';
 import { ROLE_RANK, Role, logout } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 import { useLang, TKey } from '@/lib/i18n';
+import { canAccess, FeatureKey } from '@/lib/features';
 
-interface NavLink { href: string; key: TKey; min: Role }
+// feature — если задан, видимость пункта определяется правами раздела (с учётом
+// переопределений у пользователя), иначе обычной ролью (min).
+interface NavLink { href: string; key: TKey; min: Role; feature?: FeatureKey }
 
 const LINKS: NavLink[] = [
   { href: '/', key: 'nav_check', min: 'worker' },
   { href: '/products', key: 'nav_catalog', min: 'worker' },
   { href: '/warehouses', key: 'nav_stock', min: 'worker' },
   { href: '/price-tags', key: 'nav_pricetags', min: 'worker' },
-  { href: '/movements', key: 'nav_movements', min: 'manager' },
-  { href: '/orders', key: 'nav_orders', min: 'manager' },
+  { href: '/movements', key: 'nav_movements', min: 'manager', feature: 'movements' },
+  { href: '/orders', key: 'nav_orders', min: 'manager', feature: 'orders' },
   { href: '/history', key: 'nav_history', min: 'manager' },
   { href: '/logistics', key: 'nav_logistics', min: 'manager' },
-  { href: '/analytics', key: 'nav_analytics', min: 'manager' },
-  { href: '/transfers', key: 'nav_transfers', min: 'admin' },
-  { href: '/receipts', key: 'nav_receipts', min: 'admin' },
+  { href: '/analytics', key: 'nav_analytics', min: 'manager', feature: 'analytics' },
+  { href: '/transfers', key: 'nav_transfers', min: 'admin', feature: 'transfers' },
+  { href: '/receipts', key: 'nav_receipts', min: 'admin', feature: 'receipts' },
   { href: '/users', key: 'nav_users', min: 'admin' },
 ];
 
@@ -52,11 +55,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const rank = session ? ROLE_RANK[session.role] : 0;
+  // Пункт виден, если проходит по роли И (если у него есть feature) по правам раздела.
+  const allowed = (l: NavLink) =>
+    rank >= ROLE_RANK[l.min] &&
+    (!l.feature || !session || canAccess(l.feature, session.role, session.features));
   const links = session?.role === 'driver'
     ? DRIVER_LINKS
     : session?.role === 'worker'
-    ? [...LINKS.filter((l) => rank >= ROLE_RANK[l.min]), ...WORKER_EXTRA_LINKS]
-    : LINKS.filter((l) => rank >= ROLE_RANK[l.min]);
+    ? [...LINKS.filter(allowed), ...WORKER_EXTRA_LINKS]
+    : LINKS.filter(allowed);
 
   function isActive(href: string) {
     if (href === '/') return pathname === '/' || pathname.startsWith('/session');

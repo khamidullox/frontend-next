@@ -16,6 +16,8 @@ import {
 } from '@/lib/api';
 import { useLivePoll } from '@/lib/useLivePoll';
 import { fmtDateTime as fmt } from '@/lib/format';
+import { useAuth } from '@/components/AuthProvider';
+import { canAccess } from '@/lib/features';
 
 function fmtTime(iso?: string | null) {
   if (!iso) return '';
@@ -68,6 +70,8 @@ export default function LogisticsPage() {
 }
 
 function LogisticsContent() {
+  const { session } = useAuth();
+  const can = (k: Parameters<typeof canAccess>[0]) => !session || canAccess(k, session.role, session.features);
   const [items, setItems] = useState<Delivery[]>([]);
   const [drivers, setDrivers] = useState<UserInfo[]>([]);
   const [activeRoutes, setActiveRoutes] = useState<Route[]>([]);
@@ -423,17 +427,21 @@ function LogisticsContent() {
             🏪 <span>Точки доставки</span>
             <span className="text-[10px] text-gray-400 font-normal">(магазины/склады)</span>
           </Link>
-          <Link
-            href="/logistics/reports"
-            className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center gap-1">
-            📊 Отчёты
-          </Link>
-          <Link
-            href="/logistics/clients"
-            title="Все доставки магазин → клиент: магазин, телефон, адрес/геолокация, товар. Можно выгрузить в Excel"
-            className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center gap-1">
-            👥 База клиентов
-          </Link>
+          {can('log_reports') && (
+            <Link
+              href="/logistics/reports"
+              className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center gap-1">
+              📊 Отчёты
+            </Link>
+          )}
+          {can('log_clients') && (
+            <Link
+              href="/logistics/clients"
+              title="Все доставки магазин → клиент: магазин, телефон, адрес/геолокация, товар. Можно выгрузить в Excel"
+              className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center gap-1">
+              👥 База клиентов
+            </Link>
+          )}
           <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
             <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} />
             Скрывать завершённые
@@ -456,6 +464,7 @@ function LogisticsContent() {
       </div>
 
       {/* Вместимость по виду транспорта — список видов берётся из карточек водителей */}
+      {can('log_capacity') && (
       <div className="bg-white rounded-xl shadow-sm p-3 mb-3 flex flex-wrap items-center gap-3">
         <span className="text-xs text-gray-500 whitespace-nowrap">📦 Вместимость по умолчанию:</span>
         <select value={effectiveCapType} onChange={(e) => setCapType(e.target.value)}
@@ -498,8 +507,10 @@ function LogisticsContent() {
           {vehicleTypes.length === 0 && ' Сейчас ни у одного водителя не указан транспорт.'}
         </span>
       </div>
+      )}
 
       {/* Заявки магазинов — быстрое создание доставки В магазин из справочника */}
+      {can('log_shop_requests') && (
       <div className="bg-white rounded-xl shadow-sm mb-3">
         <button
           onClick={() => { setShowShopOrders((v) => !v); if (!shops.length) loadShops(); }}
@@ -566,6 +577,7 @@ function LogisticsContent() {
           </div>
         )}
       </div>
+      )}
 
       {/* Создание доставки — свёрнуто (основной поток: назначение из карточки водителя) */}
       <button onClick={() => setShowForm((v) => !v)}

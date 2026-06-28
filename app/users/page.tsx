@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { listUsers, createUser, deleteUserApi, updateUser, listAllWarehouses, listShops, WarehouseSummary, Shop, UserInfo, Role, ROLE_LABEL } from '@/lib/api';
 import AdminGate from '@/components/AdminGate';
+import { FEATURES, effectiveDefault } from '@/lib/features';
 import { loadXLSX } from '@/lib/xlsx';
 import Pager from '@/components/Pager';
 import { whCode } from '@/lib/warehouse';
@@ -505,6 +506,12 @@ function EditUserModal({
   const [err, setErr] = useState('');
   const [confirmDel, setConfirmDel] = useState(false);
   const [kmStats, setKmStats] = useState<{ total_km: number; delivery_count: number } | null>(null);
+  // Доступ к разделам: текущее эффективное значение (переопределение либо умолчание по роли).
+  const [feats, setFeats] = useState<Record<string, boolean>>(() => {
+    const out: Record<string, boolean> = {};
+    for (const f of FEATURES) out[f.key] = user.features?.[f.key] ?? effectiveDefault(f.key, user.role);
+    return out;
+  });
 
   useEffect(() => {
     if (!isDriver) return;
@@ -517,7 +524,7 @@ function EditUserModal({
     setBusy(true);
     setErr('');
     try {
-      const patch: { name?: string; new_username?: string; password?: string; warehouses?: string[]; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string; shop_id?: string; home_warehouse?: string; gps_user_id?: string } = {};
+      const patch: { name?: string; new_username?: string; password?: string; warehouses?: string[]; car_number?: string; transport?: string; capacity_m3?: number; capacity_kg?: number; direction?: string; shop_id?: string; home_warehouse?: string; gps_user_id?: string; features?: Record<string, boolean> } = {};
       if (editName.trim() && editName.trim() !== user.name) patch.name = editName.trim();
       const newLogin = login.trim().toLowerCase();
       if (newLogin && newLogin !== user.username) {
@@ -538,6 +545,14 @@ function EditUserModal({
       } else {
         patch.warehouses = wh;
         if (isWorker) { patch.shop_id = shopId; patch.home_warehouse = homeWh; }
+      }
+      // Доступ к разделам — храним только отличия от умолчания по роли (минимальный набор).
+      if (user.role !== 'admin') {
+        const overrides: Record<string, boolean> = {};
+        for (const f of FEATURES) {
+          if (feats[f.key] !== effectiveDefault(f.key, user.role)) overrides[f.key] = feats[f.key];
+        }
+        patch.features = overrides;
       }
       await updateUser(user.username, patch);
       onSaved();
@@ -674,6 +689,30 @@ function EditUserModal({
                 <label className="text-xs text-gray-500 mb-1 block">Склады</label>
                 <WarehousePicker all={allWh} selected={wh} onChange={setWh} />
               </div>
+            </div>
+          )}
+
+          {/* Доступ к разделам — у админа всё всегда открыто, поэтому показываем только остальным */}
+          {user.role !== 'admin' && (
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Доступ к разделам</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1.5 border-2 border-gray-100 rounded-lg p-2.5">
+                {FEATURES.map((f) => {
+                  const isDefault = feats[f.key] === effectiveDefault(f.key, user.role);
+                  return (
+                    <label key={f.key} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!feats[f.key]}
+                        onChange={(e) => setFeats((s) => ({ ...s, [f.key]: e.target.checked }))}
+                      />
+                      <span className={feats[f.key] ? '' : 'text-gray-400'}>{f.label}</span>
+                      {!isDefault && <span className="text-[10px] text-amber-600">●</span>}
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="text-[11px] text-gray-400 mt-1">● — отличается от стандартного для роли «{ROLE_LABEL[user.role]}»</div>
             </div>
           )}
 

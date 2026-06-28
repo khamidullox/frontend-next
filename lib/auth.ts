@@ -23,6 +23,7 @@ export interface Session {
   shop_id?: string;      // для роли «магазин» — привязка к точке (lib/shops.ts)
   home_warehouse?: string; // для роли «магазин» — код своего склада (по умолчанию в ценниках и т.п.)
   language?: Language;  // язык интерфейса, выбирается самим пользователем в /profile
+  features?: Record<string, boolean>; // переопределения доступа к разделам (см. lib/features.ts)
 }
 
 const COOKIE = 'auth';
