@@ -8,6 +8,7 @@ import { DocType } from './document';
 import { listShops, Shop } from './shops';
 import { notifyDriverAssigned } from './push';
 import { haversineKm } from './geo';
+import { roadKm } from './roadDistance';
 import { normalizeName } from './normalize';
 
 const COLLECTION = 'deliveries';
@@ -99,6 +100,37 @@ export function computeRouteKm(deliveries: Delivery[], shops: Shop[]): Map<strin
   return result;
 }
 
+// То же, что computeRouteKm, но плечи между остановками считаются по РЕАЛЬНЫМ ДОРОГАМ
+// (lib/roadDistance.ts, с кэшем и фолбэком на прямую×1.3), а не по прямой. Это и есть
+// км, который сохраняется в доставку и идёт в оплату «за км».
+async function computeRouteKmRoad(deliveries: Delivery[], shops: Shop[]): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  const sorted = [...deliveries].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const seen = new Set<string>();
+  let current: [number, number] | null = null;
+  for (const d of sorted) {
+    const dest = resolveDestPoint(d, shops);
+    if (!dest) continue;
+    const destKey = d.kind !== 'shop_to_client' && d.shop_id
+      ? d.shop_id
+      : `${dest[0].toFixed(3)},${dest[1].toFixed(3)}`;
+    const manual = d.km_auto === false;
+    if (seen.has(destKey)) {
+      if (!manual) result.set(d.id, 0); // та же точка уже посещалась — путь учтён
+      continue;
+    }
+    seen.add(destKey);
+    if (manual) { current = dest; continue; }
+    const src = current || resolveSourcePoint(d, shops);
+    if (src) {
+      const km = await roadKm(src[0], src[1], dest[0], dest[1]);
+      result.set(d.id, Math.round(km));
+    }
+    current = dest;
+  }
+  return result;
+}
+
 // Пересчитывает км для всех доставок маршрута и сохраняет изменившиеся значения.
 export async function recomputeRouteKm(routeId: string): Promise<void> {
   const id = str(routeId);
@@ -109,7 +141,7 @@ export async function recomputeRouteKm(routeId: string): Promise<void> {
   const deliveries = snap.docs.map((d) => normalizeDelivery(d.data() as Delivery));
 
   const shops = await listShops();
-  const kmMap = computeRouteKm(deliveries, shops);
+  const kmMap = await computeRouteKmRoad(deliveries, shops);
 
   const now = new Date().toISOString();
   const batch = db.batch();
