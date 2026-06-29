@@ -1104,6 +1104,8 @@ export interface ShopTurnoverRow {
   base: number;
   turnover: number;
   arrival_date: string | null;
+  // Другие магазины, где этот товар есть в остатке, но продаётся слабо (доноры для перекидки).
+  surplus?: { code: string; name: string; sold: number; stock: number }[];
 }
 
 export interface ShopTurnoverSummary {

@@ -52,6 +52,11 @@ function fmtArrival(iso: string | null): string {
   return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
 }
 
+// Список магазинов-доноров: «5505: ост.5/пр.1, 7703: ост.3/пр.0».
+function surplusText(list: { code: string; name: string; sold: number; stock: number }[]): string {
+  return list.map((s) => `${s.code}: ост.${Math.round(s.stock)}/пр.${Math.round(s.sold)}`).join(', ');
+}
+
 export default function ShopTurnoverSection() {
   const [shops, setShops] = useState<ShopTurnoverSummary[]>([]);
   const [shop, setShop] = useState('');
@@ -131,6 +136,7 @@ export default function ShopTurnoverSection() {
         'База': r.base,
         'Оборачиваемость': Math.round(r.turnover * 1000) / 1000,
         'Дата прихода': fmtArrival(r.arrival_date),
+        'Есть в др. маг. (мало продаётся)': r.surplus && r.surplus.length ? surplusText(r.surplus) : '',
         'Категория': category(r, t1, t2),
         'Требуется': isNeeded(r) ? 'Т' : '',
       }));
@@ -214,9 +220,9 @@ export default function ShopTurnoverSection() {
         </select>
         <button onClick={() => setOnlyNeeded((v) => !v)}
           className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
-            onlyNeeded ? 'bg-red-600 text-white border-red-600' : 'bg-red-50 text-red-700 border-red-200'
+            onlyNeeded ? 'bg-amber-500 text-white border-amber-500' : 'bg-amber-50 text-amber-700 border-amber-200'
           }`}>
-          🔴 Т — требуется ({counts['_needed'] || 0})
+          🟠 Т — требуется ({counts['_needed'] || 0})
         </button>
         {(groupFilter || brandFilter || catFilter || onlyNeeded) && (
           <button onClick={() => { setGroupFilter(''); setBrandFilter(''); setCatFilter(''); setOnlyNeeded(false); }}
@@ -253,6 +259,7 @@ export default function ShopTurnoverSection() {
                 <th className="py-1 pr-2 text-right">База</th>
                 <th className="py-1 pr-2 text-right">Обор.</th>
                 <th className="py-1 pr-2 text-right whitespace-nowrap">Приход</th>
+                <th className="py-1 pr-2 text-left">Есть в др. маг. (мало продаётся)</th>
                 <th className="py-1 text-right">Категория</th>
               </tr>
             </thead>
@@ -261,27 +268,32 @@ export default function ShopTurnoverSection() {
                 const cat = category(r, t1, t2);
                 const needed = isNeeded(r);
                 return (
-                  <tr key={r.product_code} className={needed ? 'bg-red-50' : ''}>
+                  <tr key={r.product_code}>
                     <td className="py-1.5 pr-2 max-w-xs truncate" title={r.product_name}>
                       {needed && (
                         <span title="Требуется: продаётся, но в остатке 0 — нужно завезти"
-                          className="inline-block mr-1 px-1.5 rounded bg-red-600 text-white text-[10px] font-bold align-middle">Т</span>
+                          className="inline-block mr-1 px-1.5 rounded bg-amber-500 text-white text-[10px] font-bold align-middle">Т</span>
                       )}
                       {r.product_name || r.product_code}
                     </td>
                     <td className="py-1.5 pr-2 text-right text-gray-400">{Math.round(r.order_qty)}</td>
                     <td className="py-1.5 pr-2 text-right text-gray-400">{Math.round(r.return_qty)}</td>
                     <td className="py-1.5 pr-2 text-right font-medium text-emerald-600">{Math.round(r.sold_qty)}</td>
-                    <td className={`py-1.5 pr-2 text-right ${needed ? 'text-red-600 font-semibold' : ''}`}>{Math.round(r.stock)}</td>
+                    <td className={`py-1.5 pr-2 text-right ${needed ? 'font-semibold' : ''}`}>{Math.round(r.stock)}</td>
                     <td className="py-1.5 pr-2 text-right text-gray-400">{Math.round(r.base)}</td>
                     <td className="py-1.5 pr-2 text-right">{Math.round(r.turnover * 100)}%</td>
                     <td className="py-1.5 pr-2 text-right text-gray-500 whitespace-nowrap">{fmtArrival(r.arrival_date)}</td>
+                    <td className="py-1.5 pr-2 text-left text-gray-600 max-w-sm">
+                      {r.surplus && r.surplus.length > 0 ? (
+                        <span title={surplusText(r.surplus)} className="line-clamp-2">{surplusText(r.surplus)}</span>
+                      ) : <span className="text-gray-300">—</span>}
+                    </td>
                     <td className={`py-1.5 text-right font-semibold ${CAT_CLASS[cat]}`}>{cat}</td>
                   </tr>
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={9} className="py-3 text-center text-gray-400">Нет данных по этому магазину за период</td></tr>
+                <tr><td colSpan={10} className="py-3 text-center text-gray-400">Нет данных по этому магазину за период</td></tr>
               )}
             </tbody>
           </table>
