@@ -1132,3 +1132,52 @@ export async function fetchShopTurnover(from: string, to: string, shop?: string)
   if (!res.ok) throw new Error((data as { error?: string }).error || 'Не удалось загрузить анализ по магазину');
   return data.data as ShopTurnoverResult;
 }
+
+// ─── WMS (адресное хранение склада 001) ──────────────────────────────────────
+export interface WmsLocation { code: string; label: string; zone: string; warehouse: string; created_at: string }
+export interface WmsStockRow {
+  id: string; location: string; product_code: string; product_name: string;
+  card_number: string; qty: number; updated_at: string; updated_by: string;
+}
+
+export async function wmsListLocations(): Promise<WmsLocation[]> {
+  const res = await fetch('/api/wms/locations', { cache: 'no-store' });
+  if (!res.ok) return [];
+  return (await res.json()).data || [];
+}
+export async function wmsCreateLocation(input: { code: string; label?: string; zone?: string }): Promise<void> {
+  const res = await fetch('/api/wms/locations', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Ошибка');
+}
+export async function wmsDeleteLocation(code: string): Promise<void> {
+  const res = await fetch(`/api/wms/locations?code=${encodeURIComponent(code)}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Ошибка');
+}
+export async function wmsPlace(input: { location: string; product: string; qty: number; card_number?: string }): Promise<{ qty: number; product_code: string; product_name: string }> {
+  const res = await fetch('/api/wms/stock', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'place', ...input }),
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.error || 'Ошибка');
+  return d.data;
+}
+export async function wmsMove(input: { from: string; to: string; product: string; qty: number }): Promise<void> {
+  const res = await fetch('/api/wms/stock', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'move', ...input }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Ошибка');
+}
+export async function wmsFindByProduct(product: string): Promise<{ product_code: string; product_name: string; rows: WmsStockRow[] }> {
+  const res = await fetch(`/api/wms/stock?product=${encodeURIComponent(product)}`, { cache: 'no-store' });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.error || 'Ошибка');
+  return d.data;
+}
+export async function wmsListByLocation(location: string): Promise<WmsStockRow[]> {
+  const res = await fetch(`/api/wms/stock?location=${encodeURIComponent(location)}`, { cache: 'no-store' });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.error || 'Ошибка');
+  return d.data.rows || [];
+}

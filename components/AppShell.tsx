@@ -17,6 +17,7 @@ const LINKS: NavLink[] = [
   { href: '/products', key: 'nav_catalog', min: 'worker' },
   { href: '/warehouses', key: 'nav_stock', min: 'worker' },
   { href: '/price-tags', key: 'nav_pricetags', min: 'worker' },
+  { href: '/wms', key: 'nav_wms', min: 'worker' },
   { href: '/movements', key: 'nav_movements', min: 'manager', feature: 'movements' },
   { href: '/orders', key: 'nav_orders', min: 'manager', feature: 'orders' },
   { href: '/history', key: 'nav_history', min: 'manager' },

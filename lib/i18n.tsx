@@ -12,6 +12,7 @@ const DICT = {
   nav_catalog: { ru: '📚 Справочник', uz: '📚 Katalog' },
   nav_stock: { ru: '🏬 Остатки', uz: '🏬 Qoldiqlar' },
   nav_pricetags: { ru: '🏷️ Ценники', uz: '🏷️ Narx yorliqlari' },
+  nav_wms: { ru: '📦 WMS склад', uz: '📦 WMS ombor' },
   nav_movements: { ru: '🗂️ Накладные', uz: '🗂️ Nakladlar' },
   nav_orders: { ru: '🧾 Заказы', uz: '🧾 Buyurtmalar' },
   nav_history: { ru: '📋 История', uz: '📋 Tarix' },
