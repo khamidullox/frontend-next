@@ -54,8 +54,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return <main className="max-w-3xl mx-auto px-4 py-4">{children}</main>;
   }
 
-  // Широкий контейнер для страниц с большими таблицами.
-  const wide = pathname.startsWith('/analytics') || pathname.startsWith('/logistics');
+  // Широкий контейнер — только для аналитики (большая таблица оборачиваемости).
+  const wide = pathname.startsWith('/analytics');
 
   const rank = session ? ROLE_RANK[session.role] : 0;
   // Пункт виден, если проходит по роли И (если у него есть feature) по правам раздела.
