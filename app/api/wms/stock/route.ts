@@ -1,14 +1,17 @@
 import { NextRequest } from 'next/server';
 import { withRole } from '@/lib/auth';
-import { placeStock, setStock, moveStock, findByProduct, listByLocation } from '@/lib/wms';
+import { placeStock, setStock, moveStock, findByProduct, listByLocation, getOverview } from '@/lib/wms';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
 
-// GET: ?product=<штрихкод/код> — где лежит; ?location=<ячейка> — что в ячейке.
+// GET: ?overview=1 — сводка (товары по ячейкам + «нужно разместить»);
+//      ?product=<штрихкод/код> — где лежит; ?location=<ячейка> — что в ячейке.
 export async function GET(request: NextRequest) {
   return withRole('worker', async () => {
     const sp = request.nextUrl.searchParams;
+    if (sp.get('overview')) return Response.json({ data: await getOverview() });
     const product = sp.get('product');
     const location = sp.get('location');
     if (product) {

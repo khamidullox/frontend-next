@@ -1,5 +1,5 @@
 import { getDb } from './firebase';
-import { getProductInfos, findProductCodeByBarcode } from './products';
+import { getProductInfos, findProductCodeByBarcode, getStockByWarehouseCode } from './products';
 
 // ─── WMS: адресное хранение для склада 001 (этап 1) ──────────────────────────
 // В Smartup нет WMS — ведём свой слой в Firestore. Ячейки (зоны/колонны ангара)
@@ -29,6 +29,7 @@ export interface WmsStockRow {
   product_name: string;
   card_number: string; // номер карточки (затравка из закупа, правится у нас)
   qty: number;
+  created_at: string;  // когда товар впервые положили в эту ячейку (порядок FIFO при списании)
   updated_at: string;
   updated_by: string;
 }
@@ -86,11 +87,12 @@ async function applyDelta(location: string, productCode: string, productName: st
     const snap = await tx.get(ref);
     const cur = snap.exists ? (snap.data() as WmsStockRow) : null;
     const qty = Math.max(0, (cur?.qty || 0) + delta);
+    const now = new Date().toISOString();
     const row: WmsStockRow = {
       id, location: loc, product_code: productCode,
       product_name: productName || cur?.product_name || productCode,
       card_number: card_number !== undefined ? str(card_number) : (cur?.card_number || ''),
-      qty, updated_at: new Date().toISOString(), updated_by: str(by),
+      qty, created_at: cur?.created_at || now, updated_at: now, updated_by: str(by),
     };
     tx.set(ref, row);
     return qty;
@@ -158,4 +160,106 @@ export async function listByLocation(location: string): Promise<WmsStockRow[]> {
   const snap = await getDb().collection(STOCK).where('location', '==', normCode(location)).get();
   return snap.docs.map((d) => d.data() as WmsStockRow).filter((r) => r.qty > 0)
     .sort((a, b) => a.product_name.localeCompare(b.product_name, 'ru'));
+}
+
+// ─── Сверка с остатком Smartup (склад 001) ───────────────────────────────────
+// Остаток 001 из Smartup — источник истины. Ячейки распределяют его. Сверка
+// приводит сумму по ячейкам каждого РАЗМЕЩЁННОГО товара к остатку Smartup:
+//  • стало больше (приход того же товара) → добавляем в самую раннюю ячейку;
+//  • стало меньше (уход/продажа) → списываем по очереди (FIFO, с самой ранней).
+// Товары без единой ячейки сюда не трогаем — они попадают в «Нужно разместить».
+
+async function getWh001Stock(): Promise<Map<string, number>> {
+  const all = await getStockByWarehouseCode();
+  return all.get(WMS_WAREHOUSE) || new Map<string, number>();
+}
+
+async function loadPlacementsByProduct(): Promise<Map<string, WmsStockRow[]>> {
+  const snap = await getDb().collection(STOCK).get();
+  const m = new Map<string, WmsStockRow[]>();
+  for (const d of snap.docs) {
+    const r = d.data() as WmsStockRow;
+    const arr = m.get(r.product_code) || [];
+    arr.push(r);
+    m.set(r.product_code, arr);
+  }
+  // Порядок FIFO — по created_at (ранние первыми).
+  for (const arr of m.values()) arr.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+  return m;
+}
+
+// Привести ячейки к остатку Smartup. Возвращает число изменённых товаров.
+export async function reconcileFromStock(by = 'sync'): Promise<{ adjusted: number }> {
+  const [stock, byProduct] = await Promise.all([getWh001Stock(), loadPlacementsByProduct()]);
+  const db = getDb();
+  const now = new Date().toISOString();
+  let batch = db.batch();
+  let ops = 0, adjusted = 0;
+
+  for (const [product, rows] of byProduct) {
+    const total = stock.get(product) || 0;
+    const placed = rows.reduce((s, r) => s + r.qty, 0);
+    let delta = total - placed;
+    if (delta === 0) continue;
+    adjusted++;
+
+    if (delta > 0) {
+      // приход того же товара — в самую раннюю ячейку
+      const r = rows[0];
+      batch.update(db.collection(STOCK).doc(r.id), { qty: r.qty + delta, updated_at: now, updated_by: by });
+      ops++;
+    } else {
+      // уход — FIFO с самой ранней ячейки
+      let need = -delta;
+      for (const r of rows) {
+        if (need <= 0) break;
+        const take = Math.min(r.qty, need);
+        if (take <= 0) continue;
+        batch.update(db.collection(STOCK).doc(r.id), { qty: r.qty - take, updated_at: now, updated_by: by });
+        ops++;
+        need -= take;
+      }
+    }
+    if (ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; }
+  }
+  if (ops > 0) await batch.commit();
+  return { adjusted };
+}
+
+export interface WmsPlacedProduct {
+  product_code: string; product_name: string;
+  total: number; placed: number; // total = Smartup 001, placed = сумма ячеек (после сверки = total)
+  cells: { location: string; qty: number; card_number: string }[];
+}
+export interface WmsUnplaced { product_code: string; product_name: string; qty: number }
+
+// Полный обзор: сначала сверка, потом раскладка по товарам + список «нужно разместить».
+export async function getOverview(): Promise<{ placed: WmsPlacedProduct[]; unplaced: WmsUnplaced[]; total_unplaced_qty: number }> {
+  await reconcileFromStock().catch(() => {});
+  const [stock, byProduct] = await Promise.all([getWh001Stock(), loadPlacementsByProduct()]);
+
+  const placed: WmsPlacedProduct[] = [];
+  for (const [product, rows] of byProduct) {
+    const live = rows.filter((r) => r.qty > 0);
+    if (!live.length) continue;
+    placed.push({
+      product_code: product,
+      product_name: rows[0].product_name || product,
+      total: stock.get(product) || 0,
+      placed: live.reduce((s, r) => s + r.qty, 0),
+      cells: live.map((r) => ({ location: r.location, qty: r.qty, card_number: r.card_number })),
+    });
+  }
+  placed.sort((a, b) => a.product_name.localeCompare(b.product_name, 'ru'));
+
+  // Нужно разместить: есть остаток в 001, но НЕТ ни одной ячейки (новый товар).
+  const unplacedCodes = [...stock.entries()].filter(([code, q]) => q > 0 && !byProduct.has(code)).map(([code]) => code);
+  const infos = await getProductInfos(unplacedCodes);
+  const unplaced: WmsUnplaced[] = unplacedCodes.map((code) => ({
+    product_code: code,
+    product_name: infos.get(code)?.name || infos.get(code)?.short_name || code,
+    qty: stock.get(code) || 0,
+  })).sort((a, b) => b.qty - a.qty);
+
+  return { placed, unplaced, total_unplaced_qty: unplaced.reduce((s, u) => s + u.qty, 0) };
 }

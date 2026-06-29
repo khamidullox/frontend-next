@@ -1181,3 +1181,15 @@ export async function wmsListByLocation(location: string): Promise<WmsStockRow[]
   if (!res.ok) throw new Error(d.error || 'Ошибка');
   return d.data.rows || [];
 }
+
+export interface WmsPlacedProduct {
+  product_code: string; product_name: string; total: number; placed: number;
+  cells: { location: string; qty: number; card_number: string }[];
+}
+export interface WmsUnplaced { product_code: string; product_name: string; qty: number }
+export async function wmsOverview(): Promise<{ placed: WmsPlacedProduct[]; unplaced: WmsUnplaced[]; total_unplaced_qty: number }> {
+  const res = await fetch('/api/wms/stock?overview=1', { cache: 'no-store' });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.error || 'Ошибка');
+  return d.data;
+}
