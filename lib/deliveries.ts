@@ -797,9 +797,10 @@ export async function setDeliveryStatus(
   by: string,
   role?: string,
   returnNote?: string,
-  // Геопозиция водителя в момент нажатия (с телефона) — фолбэк точки клиента, когда
-  // магазин не отметил её на карте при создании заявки. Используем ТОЛЬКО если своих
-  // координат у заявки ещё нет — не перезатираем то, что уже было указано вручную.
+  // Геопозиция водителя в момент нажатия (с телефона) — фолбэк точки доставки, когда
+  // у неё нет координат (магазин не отметил на карте, либо в заказе из Smartup нет
+  // person_latitude/longitude). Используем ТОЛЬКО если своих координат у доставки ещё
+  // нет — не перезатираем то, что уже было указано вручную/из Smartup.
   driverLat?: number,
   driverLng?: number
 ): Promise<{ delivery: Delivery } | { error: string }> {
@@ -820,7 +821,7 @@ export async function setDeliveryStatus(
   delivery.history = [...(delivery.history || []), { at: now, status, by: str(by), role: role ? str(role) : undefined }].slice(-50);
 
   if (
-    status === 'delivered' && delivery.kind === 'shop_to_client' &&
+    status === 'delivered' &&
     delivery.lat == null && delivery.lng == null &&
     typeof driverLat === 'number' && typeof driverLng === 'number'
   ) {

@@ -693,9 +693,11 @@ function DeliveryCard({
                   onSet(d.id, a.status, reason.trim());
                   return;
                 }
-                // Заявка магазина без своей точки на карте — берём геопозицию водителя
-                // в момент «Доставлено» как точку клиента, чтобы км считались не от нуля.
-                if (a.status === 'delivered' && d.kind === 'shop_to_client' && d.lat == null && d.lng == null) {
+                // Доставка без своей точки на карте (заявка магазина без отметки, либо
+                // заказ из Smartup без person_latitude/longitude) — берём геопозицию
+                // водителя в момент «Доставлено» как точку клиента, чтобы км считались
+                // не от нуля и точка сохранилась на будущее (не запрашиваем повторно).
+                if (a.status === 'delivered' && d.lat == null && d.lng == null) {
                   const pos = await getCurrentPosition();
                   onSet(d.id, a.status, undefined, pos);
                   return;
