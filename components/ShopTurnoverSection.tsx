@@ -57,6 +57,16 @@ function surplusText(list: { code: string; name: string; sold: number; stock: nu
   return list.map((s) => `${s.code}: ост.${Math.round(s.stock)}/пр.${Math.round(s.sold)}`).join(', ');
 }
 
+// Сколько дней прошло с последнего прихода до сегодня (null — прихода нет).
+function daysOnStock(iso: string | null): number | null {
+  const m = iso?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const arr = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.max(0, Math.round((today - arr) / 86400000));
+}
+
 export default function ShopTurnoverSection() {
   const [shops, setShops] = useState<ShopTurnoverSummary[]>([]);
   const [shop, setShop] = useState('');
@@ -136,6 +146,7 @@ export default function ShopTurnoverSection() {
         'База': r.base,
         'Оборачиваемость': Math.round(r.turnover * 1000) / 1000,
         'Дата прихода': fmtArrival(r.arrival_date),
+        'Дней на складе': daysOnStock(r.arrival_date) ?? '',
         'Есть в др. маг. (мало продаётся)': r.surplus && r.surplus.length ? surplusText(r.surplus) : '',
         'Категория': category(r, t1, t2),
         'Требуется': isNeeded(r) ? 'Т' : '',
@@ -259,6 +270,7 @@ export default function ShopTurnoverSection() {
                 <th className="py-1 pr-2 text-right">База</th>
                 <th className="py-1 pr-2 text-right">Обор.</th>
                 <th className="py-1 pr-2 text-right whitespace-nowrap">Приход</th>
+                <th className="py-1 pr-2 text-right whitespace-nowrap">Дней<br/>на складе</th>
                 <th className="py-1 pr-2 text-left">Есть в др. маг. (мало продаётся)</th>
                 <th className="py-1 text-right">Категория</th>
               </tr>
@@ -283,6 +295,7 @@ export default function ShopTurnoverSection() {
                     <td className="py-1.5 pr-2 text-right text-gray-400">{Math.round(r.base)}</td>
                     <td className="py-1.5 pr-2 text-right">{Math.round(r.turnover * 100)}%</td>
                     <td className="py-1.5 pr-2 text-right text-gray-500 whitespace-nowrap">{fmtArrival(r.arrival_date)}</td>
+                    <td className="py-1.5 pr-2 text-right text-gray-500">{(() => { const d = daysOnStock(r.arrival_date); return d == null ? '—' : `${d} дн`; })()}</td>
                     <td className="py-1.5 pr-2 text-left text-gray-600 max-w-sm">
                       {r.surplus && r.surplus.length > 0 ? (
                         <span title={surplusText(r.surplus)} className="line-clamp-2">{surplusText(r.surplus)}</span>
@@ -293,7 +306,7 @@ export default function ShopTurnoverSection() {
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={10} className="py-3 text-center text-gray-400">Нет данных по этому магазину за период</td></tr>
+                <tr><td colSpan={11} className="py-3 text-center text-gray-400">Нет данных по этому магазину за период</td></tr>
               )}
             </tbody>
           </table>
