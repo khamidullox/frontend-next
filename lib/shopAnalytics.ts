@@ -2,6 +2,7 @@ import { getStockByWarehouseCode, getCachedCatalog } from './products';
 import { shopForWarehouseCode, SHOP_LIST } from './shopWarehouseMap';
 import { getCachedSnapshot, getCachedListUpdatedMs } from './listCache';
 import { getCombinedSales, earliestStoredDate } from './shopSalesHistory';
+import { getShopArrivalDates } from './movement';
 
 // Одна строка анализа: товар × магазин за период. Категория (Активно/Пассивно/…) тут
 // НЕ хранится — она зависит от настраиваемых порогов и считается на клиенте по turnover,
@@ -18,6 +19,7 @@ export interface ShopTurnoverRow {
   stock: number;        // текущий доступный остаток
   base: number;         // ЛЁГКАЯ версия базы: остаток + продано (≈ сколько было в обороте)
   turnover: number;     // продажи / база
+  arrival_date: string | null; // последняя дата прихода в магазин (внутр. перемещения), YYYY-MM-DD
 }
 
 export interface ShopTurnoverSummary {
@@ -42,7 +44,7 @@ export interface ShopTurnoverData {
 const ROW_CHUNK = 400;
 // v5 — продажи теперь из накопленной истории (за дни до сегодня) + живой Smartup за
 // сегодня; v4 держал только живой ~16-дневный срез order$export.
-const CACHE_KEY = (from: string, to: string) => `shop_turnover_v5_${from}_${to}`;
+const CACHE_KEY = (from: string, to: string) => `shop_turnover_v6_${from}_${to}`;
 
 // Диапазон, заканчивающийся сегодня, ещё «живой» (данные за сегодня дополняются) —
 // держим кэш недолго. Полностью прошлый диапазон не меняется — кэшируем надолго.
@@ -57,10 +59,11 @@ interface Acc { name: string; order: number; ret: number; sold: number; stock: n
 // берутся из накопленной истории (за дни до сегодня) + живой Smartup за сегодня, так
 // что диапазон не ограничен ~16-дневным окном order$export, как только история накопится.
 async function buildRows(fromISO: string, toISO: string): Promise<ShopTurnoverRow[]> {
-  const [combined, stockByCode, catalog] = await Promise.all([
+  const [combined, stockByCode, catalog, arrivals] = await Promise.all([
     getCombinedSales(fromISO, toISO),
     getStockByWarehouseCode(),
     getCachedCatalog(),
+    getShopArrivalDates().catch(() => new Map<string, string>()),
   ]);
   const catByCode = new Map(catalog.map((c) => [c.code, c]));
 
@@ -111,6 +114,7 @@ async function buildRows(fromISO: string, toISO: string): Promise<ShopTurnoverRo
         stock: a.stock,
         base,
         turnover: base > 0 ? a.sold / base : 0,
+        arrival_date: arrivals.get(`${shop.code}|${code}`) || null,
       });
     }
   }

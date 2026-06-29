@@ -1103,6 +1103,7 @@ export interface ShopTurnoverRow {
   stock: number;
   base: number;
   turnover: number;
+  arrival_date: string | null;
 }
 
 export interface ShopTurnoverSummary {
