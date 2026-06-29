@@ -880,7 +880,7 @@ export async function updateDeliveryFields(
   id: string,
   fields: {
     client_name?: string; client_phone?: string; address?: string; note?: string; direction?: string;
-    km?: number; total_weight?: number; items?: DeliveryItem[]; lat?: number | null; lng?: number | null;
+    km?: number; total_weight?: number; total_volume_l?: number; items?: DeliveryItem[]; lat?: number | null; lng?: number | null;
     defer_until?: string | null;
   }
 ): Promise<{ delivery: Delivery } | { error: string }> {
@@ -908,6 +908,11 @@ export async function updateDeliveryFields(
     delivery.km_auto = false; // ручная правка — больше не пересчитывать автоматически.
   }
   if (fields.total_weight !== undefined) delivery.total_weight = Math.max(0, Number(fields.total_weight) || 0);
+  // Ручной ввод/правка куба (м³ × 1000 = л). Снимаем флаг приблизительности — значение задано вручную.
+  if (fields.total_volume_l !== undefined) {
+    delivery.total_volume_l = Math.max(0, Number(fields.total_volume_l) || 0);
+    delivery.dims_approx = false;
+  }
   // Правка состава заявки (товары/количество) — пересчитываем вес/объём по каталогу,
   // иначе после редактирования куб/вес остался бы от старого набора товаров.
   if (fields.items !== undefined) {

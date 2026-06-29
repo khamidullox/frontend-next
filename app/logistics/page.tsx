@@ -998,6 +998,8 @@ function DeliveryRow({
   const [addr, setAddr] = useState(d.address);
   const [km, setKm] = useState(String(d.km || ''));
   const [manualKg, setManualKg] = useState('');
+  // Куб (м³) для ручного ввода/правки — предзаполняем текущим значением, если оно есть.
+  const [manualM3, setManualM3] = useState(d.total_volume_l > 0 ? String(Math.round(d.total_volume_l / 10) / 100) : '');
 
   const assignedDriver = drivers.find((dr) => dr.username === d.driver_username);
   const capKg = assignedDriver
@@ -1060,6 +1062,17 @@ function DeliveryRow({
             onChange={(e) => setKm(e.target.value)}
             onBlur={() => onPatch(d.id, { km: Number(km) || 0 })}
             className="w-14 border border-gray-100 rounded px-1.5 py-0.5 text-[11px] text-right outline-none focus:border-blue-300"
+          />
+        </div>
+        {/* Ручной ввод/правка куба (м³). Если у товара куб уже посчитан — поле им заполнено, можно изменить. */}
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-gray-400">м³:</span>
+          <input type="number" min={0} step={0.01} value={manualM3}
+            onChange={(e) => setManualM3(e.target.value)}
+            onBlur={() => { const v = Number(manualM3); if (v >= 0 && Math.round(v * 1000) !== Math.round(d.total_volume_l)) onPatch(d.id, { total_volume_l: v * 1000 }); }}
+            placeholder="—"
+            title="Объём груза, м³ — ручной ввод (переопределяет авто-расчёт)"
+            className="w-16 border border-gray-100 rounded px-1.5 py-0.5 text-[11px] text-right outline-none focus:border-blue-300"
           />
         </div>
         {(d.total_qty > 0 || d.total_weight > 0) && (

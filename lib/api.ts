@@ -695,7 +695,7 @@ export async function updateDelivery(
   id: string,
   patch: {
     status?: DeliveryStatus; driver_username?: string | null; client_name?: string; client_phone?: string;
-    address?: string; note?: string; direction?: string; km?: number; total_weight?: number; picked?: boolean;
+    address?: string; note?: string; direction?: string; km?: number; total_weight?: number; total_volume_l?: number; picked?: boolean;
     items?: DeliveryItem[]; lat?: number | null; lng?: number | null; defer_until?: string | null;
     return_note?: string;
   }

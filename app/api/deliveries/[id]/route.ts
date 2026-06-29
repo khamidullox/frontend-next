@@ -100,7 +100,7 @@ export async function PATCH(
   }
   if (body.client_name !== undefined || body.client_phone !== undefined || body.address !== undefined ||
       body.note !== undefined || body.direction !== undefined || body.km !== undefined ||
-      body.total_weight !== undefined || body.items !== undefined || body.lat !== undefined || body.lng !== undefined ||
+      body.total_weight !== undefined || body.total_volume_l !== undefined || body.items !== undefined || body.lat !== undefined || body.lng !== undefined ||
       body.defer_until !== undefined) {
     const items = Array.isArray(body.items)
       ? body.items.map((it: { code?: unknown; name?: unknown; qty?: unknown }) => ({
@@ -115,6 +115,7 @@ export async function PATCH(
       direction: body.direction,
       km: body.km,
       total_weight: body.total_weight,
+      total_volume_l: body.total_volume_l,
       items,
       lat: body.lat != null ? Number(body.lat) : (body.lat === null ? null : undefined),
       lng: body.lng != null ? Number(body.lng) : (body.lng === null ? null : undefined),
