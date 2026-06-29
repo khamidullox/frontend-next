@@ -52,8 +52,29 @@ function fmtArrival(iso: string | null): string {
   return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
 }
 
+// Категории доноров, которые сервер вообще присылает (оборачиваемость ≤ 60%).
+const DONOR_CATS = ['Не продаётся', 'Мало продаётся', 'Пассивно'];
+
+type Donor = { code: string; name: string; sold: number; stock: number };
+
+// Категория конкретного донора по тем же порогам, что и для товара.
+function donorCategory(s: Donor, t1: number, t2: number): string {
+  const base = s.stock + s.sold;
+  if (base <= 0) return 'Нет в наличии';
+  if (s.sold <= 0) return 'Не продаётся';
+  const turn = s.sold / base;
+  if (turn <= t1) return 'Мало продаётся';
+  if (turn <= t2) return 'Пассивно';
+  return 'Активно';
+}
+
+// Доноры, отфильтрованные по выбранным категориям.
+function visibleDonors(list: Donor[] | undefined, cats: string[], t1: number, t2: number): Donor[] {
+  return (list || []).filter((s) => cats.includes(donorCategory(s, t1, t2)));
+}
+
 // Список магазинов-доноров: «5505: ост.5/пр.1, 7703: ост.3/пр.0».
-function surplusText(list: { code: string; name: string; sold: number; stock: number }[]): string {
+function surplusText(list: Donor[]): string {
   return list.map((s) => `${s.code}: ост.${Math.round(s.stock)}/пр.${Math.round(s.sold)}`).join(', ');
 }
 
@@ -85,6 +106,8 @@ export default function ShopTurnoverSection() {
   const [brandFilter, setBrandFilter] = useState('');
   const [catFilter, setCatFilter] = useState('');
   const [onlyNeeded, setOnlyNeeded] = useState(false);
+  // Какие категории доноров показывать в колонке «Есть в др. маг.» (мультивыбор).
+  const [donorCats, setDonorCats] = useState<string[]>([...DONOR_CATS]);
 
   const activeQuick = QUICK.find((q) => q.from() === from && to === isoDate(new Date()))?.key || '';
 
@@ -147,7 +170,7 @@ export default function ShopTurnoverSection() {
         'Оборачиваемость': Math.round(r.turnover * 1000) / 1000,
         'Дата прихода': fmtArrival(r.arrival_date),
         'Дней на складе': daysOnStock(r.arrival_date) ?? '',
-        'Есть в др. маг. (мало продаётся)': r.surplus && r.surplus.length ? surplusText(r.surplus) : '',
+        'Есть в др. маг. (мало продаётся)': surplusText(visibleDonors(r.surplus, donorCats, t1, t2)),
         'Категория': category(r, t1, t2),
         'Требуется': isNeeded(r) ? 'Т' : '',
       }));
@@ -244,6 +267,23 @@ export default function ShopTurnoverSection() {
         <span className="text-[11px] text-gray-400 ml-auto">Показано: {filtered.length}</span>
       </div>
 
+      {/* Какие категории доноров показывать в колонке «Есть в др. маг.» (несколько вариантов) */}
+      <div className="bg-white rounded-xl shadow-sm p-3 flex flex-wrap items-center gap-2">
+        <span className="text-xs text-gray-500">Доноры в колонке «Есть в др. маг.»:</span>
+        {DONOR_CATS.map((c) => {
+          const on = donorCats.includes(c);
+          return (
+            <button key={c}
+              onClick={() => setDonorCats((prev) => prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c])}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+                on ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-500 border-gray-200'
+              }`}>
+              {on ? '✓ ' : ''}{c}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="flex flex-wrap gap-2">
         {['Активно', 'Пассивно', 'Мало продаётся', 'Не продаётся'].map((cat) => (
           <span key={cat} className={`text-xs font-semibold ${CAT_CLASS[cat]}`}>
@@ -297,9 +337,12 @@ export default function ShopTurnoverSection() {
                     <td className="py-1.5 pr-2 text-right text-gray-500 whitespace-nowrap">{fmtArrival(r.arrival_date)}</td>
                     <td className="py-1.5 pr-2 text-right text-gray-500">{(() => { const d = daysOnStock(r.arrival_date); return d == null ? '—' : `${d} дн`; })()}</td>
                     <td className="py-1.5 pr-2 text-left text-gray-600 max-w-sm">
-                      {r.surplus && r.surplus.length > 0 ? (
-                        <span title={surplusText(r.surplus)} className="line-clamp-2">{surplusText(r.surplus)}</span>
-                      ) : <span className="text-gray-300">—</span>}
+                      {(() => {
+                        const don = visibleDonors(r.surplus, donorCats, t1, t2);
+                        return don.length > 0
+                          ? <span title={surplusText(don)} className="line-clamp-2">{surplusText(don)}</span>
+                          : <span className="text-gray-300">—</span>;
+                      })()}
                     </td>
                     <td className={`py-1.5 text-right font-semibold ${CAT_CLASS[cat]}`}>{cat}</td>
                   </tr>
