@@ -54,9 +54,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return <main className="max-w-3xl mx-auto px-4 py-4">{children}</main>;
   }
 
-  // Широкий контейнер для страниц с большими таблицами.
-  const wide = pathname.startsWith('/analytics') || pathname.startsWith('/logistics');
-
   const rank = session ? ROLE_RANK[session.role] : 0;
   // Пункт виден, если проходит по роли И (если у него есть feature) по правам раздела.
   const allowed = (l: NavLink) =>
@@ -145,10 +142,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         )}
       </aside>
 
-      {/* Контент. Страницы с большими таблицами (аналитика/логистика) — шире, чтобы
-          помещалось больше колонок; остальные остаются компактными. */}
+      {/* Контент */}
       <main className="flex-1 min-w-0">
-        <div className={`${wide ? 'max-w-6xl' : 'max-w-3xl'} mx-auto px-4 py-4 print:p-0 print:m-0 print:max-w-none`}>{children}</div>
+        <div className="max-w-3xl mx-auto px-4 py-4 print:p-0 print:m-0 print:max-w-none">{children}</div>
       </main>
     </div>
   );

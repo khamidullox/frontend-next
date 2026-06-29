@@ -45,13 +45,6 @@ function isNeeded(row: ShopTurnoverRow): boolean {
   return row.sold_qty > 0 && row.stock <= 0;
 }
 
-// Дата прихода YYYY-MM-DD → ДД.ММ.ГГГГ (пусто → «—»).
-function fmtArrival(iso: string | null): string {
-  if (!iso) return '—';
-  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
-}
-
 export default function ShopTurnoverSection() {
   const [shops, setShops] = useState<ShopTurnoverSummary[]>([]);
   const [shop, setShop] = useState('');
@@ -130,7 +123,6 @@ export default function ShopTurnoverSection() {
         'Остаток': r.stock,
         'База': r.base,
         'Оборачиваемость': Math.round(r.turnover * 1000) / 1000,
-        'Дата прихода': fmtArrival(r.arrival_date),
         'Категория': category(r, t1, t2),
         'Требуется': isNeeded(r) ? 'Т' : '',
       }));
@@ -252,7 +244,6 @@ export default function ShopTurnoverSection() {
                 <th className="py-1 pr-2 text-right">Остаток</th>
                 <th className="py-1 pr-2 text-right">База</th>
                 <th className="py-1 pr-2 text-right">Обор.</th>
-                <th className="py-1 pr-2 text-right whitespace-nowrap">Приход</th>
                 <th className="py-1 text-right">Категория</th>
               </tr>
             </thead>
@@ -275,13 +266,12 @@ export default function ShopTurnoverSection() {
                     <td className={`py-1.5 pr-2 text-right ${needed ? 'text-red-600 font-semibold' : ''}`}>{Math.round(r.stock)}</td>
                     <td className="py-1.5 pr-2 text-right text-gray-400">{Math.round(r.base)}</td>
                     <td className="py-1.5 pr-2 text-right">{Math.round(r.turnover * 100)}%</td>
-                    <td className="py-1.5 pr-2 text-right text-gray-500 whitespace-nowrap">{fmtArrival(r.arrival_date)}</td>
                     <td className={`py-1.5 text-right font-semibold ${CAT_CLASS[cat]}`}>{cat}</td>
                   </tr>
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={9} className="py-3 text-center text-gray-400">Нет данных по этому магазину за период</td></tr>
+                <tr><td colSpan={8} className="py-3 text-center text-gray-400">Нет данных по этому магазину за период</td></tr>
               )}
             </tbody>
           </table>

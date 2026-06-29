@@ -2,7 +2,6 @@ import { smartupRequest } from './smartup';
 import { getProductInfos, getWarehouseCodeMap } from './products';
 import { CheckDocument, DocItem } from './document';
 import { cached } from './cache';
-import { shopForWarehouseCode } from './shopWarehouseMap';
 
 const MOVEMENT_EXPORT_ENDPOINT = '/b/anor/mxsx/mkw/movement$export';
 const LIST_TTL_MS = 90 * 1000;
@@ -140,39 +139,6 @@ export async function listMovements(): Promise<MovementListItem[]> {
       };
     })
     .sort((a, b) => b.movement_id.localeCompare(a.movement_id, undefined, { numeric: true }));
-}
-
-// Дата строки в формате Smartup → {iso: "YYYY-MM-DD", ts}. Понимает "DD.MM.YYYY[ время]"
-// и "YYYY-MM-DD[ время]".
-function parseMovDate(s: string): { iso: string | null; ts: number } {
-  const str = String(s || '').trim();
-  let m = str.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
-  if (m) return { iso: `${m[3]}-${m[2]}-${m[1]}`, ts: Date.UTC(+m[3], +m[2] - 1, +m[1]) };
-  m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return { iso: `${m[1]}-${m[2]}-${m[3]}`, ts: Date.UTC(+m[1], +m[2] - 1, +m[3]) };
-  return { iso: null, ts: 0 };
-}
-
-// Последняя дата прихода товара в магазин — по внутренним накладным (movement$export),
-// где склад-получатель = склад магазина. Ключ `${shop_code}|${product_code}` → "YYYY-MM-DD".
-// Берём ВСЕ статусы (в т.ч. завершённые «C» — это и есть состоявшиеся приходы).
-export async function getShopArrivalDates(): Promise<Map<string, string>> {
-  const movements = await getAllMovements();
-  const out = new Map<string, string>();
-  const bestTs = new Map<string, number>();
-  for (const m of movements) {
-    const shop = shopForWarehouseCode(m.to_warehouse_code || '');
-    if (!shop) continue;
-    const { iso, ts } = parseMovDate(m.from_movement_date);
-    if (!iso) continue;
-    for (const it of m.movement_items || []) {
-      const code = String(it.product_code || '').trim();
-      if (!code) continue;
-      const key = `${shop.code}|${code}`;
-      if (ts > (bestTs.get(key) ?? -1)) { bestTs.set(key, ts); out.set(key, iso); }
-    }
-  }
-  return out;
 }
 
 export async function getEnrichedMovement(
