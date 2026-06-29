@@ -7,6 +7,10 @@
     {
       "path": "/api/sync/stock",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/finish-routes",
+      "schedule": "0 17 * * *"
     }
   ]
 }

@@ -169,3 +169,18 @@ export async function finishRoute(
   await ref.set(route);
   return { route };
 }
+
+// Принудительно завершает ВСЕ активные маршруты (ночной cron в 22:00, см.
+// app/api/cron/finish-routes). Если водитель забыл нажать «Закончить маршрут»,
+// его заход тянулся бы во вчерашнем виде до утра — и было бы непонятно, выехал
+// он уже сегодня или это хвост вчерашнего. Закрывая всё в 22:00, к утру список
+// активных маршрутов гарантированно пуст — кто «в заходе» днём, точно вышел сегодня.
+export async function finishAllActiveRoutes(): Promise<{ finished: number }> {
+  const snap = await getDb().collection(COLLECTION).where('status', '==', 'active').get();
+  let finished = 0;
+  for (const doc of snap.docs) {
+    const res = await finishRoute(doc.id);
+    if ('route' in res) finished++;
+  }
+  return { finished };
+}
