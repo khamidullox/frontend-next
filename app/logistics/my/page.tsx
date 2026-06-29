@@ -16,8 +16,6 @@ import { fmtDateTime } from '@/lib/format';
 import { haversineKm } from '@/lib/geo';
 
 const TRACK_INTERVAL_MS = 45_000;
-// Радиус, в котором водителю показываем заказы из рассылки (как на сервере).
-const OFFER_RADIUS_KM = 6;
 
 // Маршрут с несколькими точками сразу в Яндекс.Картах (запускает навигацию в самом
 // приложении карт через все остановки по порядку, не по одной).
@@ -377,16 +375,16 @@ export default function MyDeliveriesPage() {
   const done = items.filter((d) => d.status === 'delivered' || d.status === 'returned');
   const doneKm = done.reduce((s, d) => s + (d.km || 0), 0);
 
-  // Заказы из рассылки рядом со мной: если позиция известна — только в радиусе и с
-  // расстоянием; иначе показываем все (водитель сам решит).
+  // Заказы из рассылки: показываем ВСЕ открытые заявки без ограничения по радиусу —
+  // водитель сам решает, что взять. Если позиция известна, считаем расстояние и
+  // сортируем «ближние сверху», но ничего не скрываем.
   const nearbyOffers = (() => {
     const withDist = offers.map((o) => ({
       o,
       dist: (myPos && o.pickup_lat != null && o.pickup_lng != null)
         ? haversineKm(myPos.lat, myPos.lng, o.pickup_lat, o.pickup_lng) : null,
     }));
-    const filtered = myPos ? withDist.filter((x) => x.dist != null && x.dist <= OFFER_RADIUS_KM) : withDist;
-    return filtered.sort((a, b) => (a.dist ?? 1e9) - (b.dist ?? 1e9));
+    return withDist.sort((a, b) => (a.dist ?? 1e9) - (b.dist ?? 1e9));
   })();
 
   // Сколько всего «взял с собой» в этот выезд — уменьшается по мере доставки по частям.
@@ -440,7 +438,7 @@ export default function MyDeliveriesPage() {
       {/* Заказы из рассылки рядом — водитель берёт сам */}
       {nearbyOffers.length > 0 && (
         <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3">
-          <div className="text-xs font-bold text-amber-700 mb-2">📢 Заказы рядом ({nearbyOffers.length})</div>
+          <div className="text-xs font-bold text-amber-700 mb-2">📢 Свободные заказы ({nearbyOffers.length})</div>
           <div className="flex flex-col gap-2">
             {nearbyOffers.map(({ o, dist }) => (
               <div key={o.id} className="bg-white rounded-lg p-3 flex items-start gap-3">
