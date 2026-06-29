@@ -341,6 +341,32 @@ function LogisticsContent() {
     }
   }
 
+  // Заявка на обед для точки (от базы 001 до этого магазина/склада) — отдельная от
+  // обычной «+ Доставка», с фиксированным кубом 0,2 м³ и явной пометкой «Обед» в
+  // названии, чтобы водитель сразу видел, что это именно обед, а не товар.
+  async function createLunchDelivery(shop: Shop) {
+    setShopBusyId(shop.id);
+    setError('');
+    try {
+      const d = await createDelivery({
+        kind: 'shop_to_client',
+        shop_id: shop.id,
+        shop_name: shop.name,
+        client_name: `🍽️ Обед — ${shop.name}`,
+        address: shop.address,
+        direction: shop.direction,
+        km: shop.km,
+        volume_m3: 0.2,
+        note: 'Обед',
+      });
+      setItems((prev) => [d, ...prev]);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setShopBusyId(null);
+    }
+  }
+
   // Группировка доставок: штатные водители (по username), внешние (по имени), без водителя.
   const { byDriver, external, unassigned } = useMemo(() => {
     const map = new Map<string, Delivery[]>();
@@ -561,6 +587,15 @@ function LogisticsContent() {
                           {activeCnt} акт.
                         </span>
                       )}
+                      <button
+                        onClick={() => createLunchDelivery(shop)}
+                        disabled={shopBusyId === shop.id}
+                        title="Заявка на обед: от базы 001 до этой точки, куб 0,2 м³"
+                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600
+                                   disabled:bg-gray-200 disabled:text-gray-400 text-white whitespace-nowrap transition-colors"
+                      >
+                        {shopBusyId === shop.id ? '⏳' : '🍽️ Обед'}
+                      </button>
                       <button
                         onClick={() => createShopDelivery(shop)}
                         disabled={shopBusyId === shop.id}
