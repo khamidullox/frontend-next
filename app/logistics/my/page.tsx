@@ -504,7 +504,9 @@ export default function MyDeliveriesPage() {
                     {(d.doc_type && DOC_TYPE_LABEL[d.doc_type as DocType]) || d.doc_type || 'Документ'} {d.doc_number ? `№${d.doc_number}` : ''}
                   </div>
                   <div className="text-xs text-gray-400 mt-0.5 break-words">
-                    {d.from_name || '—'} → {d.to_name || d.client_name || '—'}
+                    {d.from_name && d.to_name
+                      ? `${d.from_name} → ${d.to_name}`           /* накладная/перемещение: склад → склад */
+                      : (d.client_name || d.to_name || d.from_name || '—') /* заказ: клиент (person_name) */}
                   </div>
                   {d.items.length > 0 && (
                     <div className="text-xs text-gray-400 mt-0.5 truncate">📦 {d.items.map((it) => `${it.name} ×${it.qty}`).join(', ')}</div>
