@@ -88,6 +88,18 @@ export default function MyDeliveriesPage() {
   const [availableDocs, setAvailableDocs] = useState<Delivery[]>([]);
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [myCap, setMyCap] = useState<MyCapacity | null>(null);
+  // Вкладка: «мои» (взятые заказы) или «свободные» (можно взять). Переключается
+  // кнопками и свайпом — водителю по умолчанию видны его взятые заказы.
+  const [view, setView] = useState<'mine' | 'free'>('mine');
+  const touchX = useRef<number | null>(null);
+  function onTouchStart(e: React.TouchEvent) { touchX.current = e.touches[0].clientX; }
+  function onTouchEnd(e: React.TouchEvent) {
+    if (touchX.current == null) return;
+    const dx = e.changedTouches[0].clientX - touchX.current;
+    touchX.current = null;
+    if (dx > 60) setView('mine');      // свайп вправо → мои взятые
+    else if (dx < -60) setView('free'); // свайп влево → свободные
+  }
 
   const load = useCallback(async () => {
     try {
@@ -400,21 +412,35 @@ export default function MyDeliveriesPage() {
     );
   }
 
+  const freeCount = nearbyOffers.length + availableDocs.length;
+
   return (
-    <div>
+    <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       <PushSubscribe />
-      <div className="mb-4">
+      <div className="mb-3">
         <h2 className="text-xl font-bold">🚚 Мои доставки</h2>
         {session && (
           <p className="text-xs text-gray-400 mt-0.5">{session.name}</p>
         )}
       </div>
 
+      {/* Вкладки: мои взятые / свободные (можно листать свайпом) */}
+      <div className="flex gap-1 mb-3 bg-gray-100 rounded-xl p-1">
+        <button onClick={() => setView('mine')}
+          className={`flex-1 py-2 text-sm font-semibold rounded-lg ${view === 'mine' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
+          🚚 Мои ({active.length})
+        </button>
+        <button onClick={() => setView('free')}
+          className={`flex-1 py-2 text-sm font-semibold rounded-lg ${view === 'free' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
+          📢 Свободные ({freeCount})
+        </button>
+      </div>
+
       {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
 
       {/* Моя текущая загрузка — сколько уже взял с собой относительно вместимости
           своей машины, чтобы было понятно, есть ли место под новый заказ ниже. */}
-      {myCap && (activeWeight > 0 || activeVolL > 0) && (() => {
+      {view === 'mine' && myCap && (activeWeight > 0 || activeVolL > 0) && (() => {
         const pctKg = myCap.capacity_kg > 0 ? Math.min(100, Math.round((activeWeight / myCap.capacity_kg) * 100)) : null;
         const pctM3 = myCap.capacity_m3 > 0 ? Math.min(100, Math.round((activeVolL / 1000 / myCap.capacity_m3) * 100)) : null;
         const pct = Math.max(pctKg ?? 0, pctM3 ?? 0);
@@ -436,7 +462,7 @@ export default function MyDeliveriesPage() {
       })()}
 
       {/* Заказы из рассылки рядом — водитель берёт сам */}
-      {nearbyOffers.length > 0 && (
+      {view === 'free' && nearbyOffers.length > 0 && (
         <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3">
           <div className="text-xs font-bold text-amber-700 mb-2">📢 Свободные заказы ({nearbyOffers.length})</div>
           <div className="flex flex-col gap-2">
@@ -467,7 +493,7 @@ export default function MyDeliveriesPage() {
 
       {/* Собранные накладные/заказы/перемещения без водителя — без геопривязки (в
           отличие от заявок магазина выше), поэтому без расстояния, просто список. */}
-      {availableDocs.length > 0 && (
+      {view === 'free' && availableDocs.length > 0 && (
         <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
           <div className="text-xs font-bold text-emerald-700 mb-2">📦 Собранные, ждут водителя ({availableDocs.length})</div>
           <div className="flex flex-col gap-2">
@@ -499,6 +525,12 @@ export default function MyDeliveriesPage() {
         </div>
       )}
 
+      {view === 'mine' && (<>
+      {active.length === 0 && (
+        <div className="bg-white rounded-xl shadow-sm p-4 text-sm text-gray-500 mb-3">
+          Взятых заказов нет. Откройте вкладку «📢 Свободные» (или свайпните влево), чтобы взять заказ.
+        </div>
+      )}
       {/* Маршрут (заход) — закреплён сверху и сделан компактным, чтобы не перекрывать
           список заказов под собой; подробности (км/загрузка/геолокация) под кнопкой,
           мелким шрифтом, а не в большом блоке как раньше. */}
@@ -611,6 +643,13 @@ export default function MyDeliveriesPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+      </>)}
+
+      {view === 'free' && freeCount === 0 && (
+        <div className="bg-white rounded-xl shadow-sm p-4 text-sm text-gray-500">
+          Свободных заказов сейчас нет.
         </div>
       )}
     </div>
