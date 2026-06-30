@@ -17,6 +17,16 @@ function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Подпись дня для заголовка свёрнутого блока: «Сегодня»/«Вчера», иначе дата.
+function dayLabel(dateStr: string): string {
+  const today = isoDate(new Date());
+  const yesterday = isoDate(new Date(Date.now() - 86_400_000));
+  if (dateStr === today) return 'Сегодня';
+  if (dateStr === yesterday) return 'Вчера';
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', weekday: 'short' });
+}
+
 // Дата завершения доставки: из истории (delivered/returned), иначе updated_at.
 function completedAt(d: Delivery): string {
   const h = (d.history || []).filter((x) => x.status === 'delivered' || x.status === 'returned');
@@ -67,7 +77,17 @@ export default function MyStatsPage() {
 
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
-  const [quick, setQuick] = useState<'today' | 'week' | 'thisMonth' | 'all'>('today');
+  const [quick, setQuick] = useState<'today' | 'week' | 'thisMonth' | 'all'>('thisMonth');
+  // Дни, развёрнутые в списке ниже — по умолчанию только сегодняшний, чтобы не
+  // листать длинный список выездов за весь месяц сразу.
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(() => new Set([isoDate(new Date())]));
+  function toggleDay(day: string) {
+    setExpandedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(day)) next.delete(day); else next.add(day);
+      return next;
+    });
+  }
 
   useEffect(() => {
     Promise.all([listDeliveries(), getMyRates()])
@@ -91,8 +111,8 @@ export default function MyStatsPage() {
     setFilterFrom(isoDate(from)); setFilterTo(isoDate(now));
   }
 
-  // Применяем дефолтный быстрый фильтр («сегодня») при первой загрузке.
-  useEffect(() => { applyQuick('today'); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Применяем дефолтный быстрый фильтр («этот месяц») при первой загрузке.
+  useEffect(() => { applyQuick('thisMonth'); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const periodDeliveries = useMemo(() => deliveries.filter((d) => {
     if (d.status !== 'delivered' && d.status !== 'returned') return false;
@@ -123,6 +143,20 @@ export default function MyStatsPage() {
 
   const trips = useMemo(() => groupTrips(periodDeliveries), [periodDeliveries]);
   const todayTrips = useMemo(() => groupTrips(todayDeliveries), [todayDeliveries]);
+
+  // Выезды по дням, последний день первым — внутри каждого дня тоже сначала
+  // самый поздний выезд. Длинный список (например, за «Этот месяц») сворачивается
+  // в один блок на день вместо сплошной ленты карточек.
+  const days = useMemo(() => {
+    const map = new Map<string, Delivery[][]>();
+    for (const group of trips) {
+      const day = completedAt(group[0]).slice(0, 10);
+      const arr = map.get(day) || [];
+      arr.push(group);
+      map.set(day, arr);
+    }
+    return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  }, [trips]);
 
   const totalKm = periodDeliveries.reduce((s, d) => s + (d.km || 0), 0);
   const periodEarnings = trips.reduce((s, group) => {
@@ -208,53 +242,83 @@ export default function MyStatsPage() {
         <div className="bg-white rounded-xl p-8 text-center text-gray-400">Нет завершённых доставок за период</div>
       ) : (
         <div className="flex flex-col gap-2">
-          {trips.map((group, gi) => {
-            const tripKm = group.reduce((s, d) => s + (d.km || 0), 0);
-            const rate = rates[tripKey(group[0])];
-            const e = tripEarnings(group.filter((d) => d.status === 'delivered'), rate);
-            const billedStops = new Set<string>();
+          {days.map(([day, dayTrips]) => {
+            const dayDeliveries = dayTrips.flat();
+            const dayEarnings = dayTrips.reduce((s, group) => {
+              const e = tripEarnings(group.filter((d) => d.status === 'delivered'), rates[tripKey(group[0])]);
+              return { kmPay: s.kmPay + e.kmPay, pointPay: s.pointPay + e.pointPay };
+            }, { kmPay: 0, pointPay: 0 });
+            const isOpen = expandedDays.has(day);
             return (
-              <div key={tripKey(group[0])} className="rounded-xl border border-gray-100 overflow-hidden bg-white shadow-sm">
-                <div className="px-3 py-2 bg-gray-50 flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-semibold text-gray-700">🚐 Выезд {gi + 1}</span>
-                  <span className="text-xs text-gray-400">· {group.length} {group.length === 1 ? 'накладная' : 'накладных'}</span>
-                  {tripKm > 0 && <span className="text-xs text-emerald-600">🛣️ {tripKm * 2} км</span>}
-                  {e.kmPay > 0 && <span className="text-xs font-semibold text-amber-600">💰 {e.kmPay.toLocaleString('ru-RU')} сум за км</span>}
-                  {e.pointPay > 0 && <span className="text-xs font-semibold text-amber-600">📍 {e.pointPay.toLocaleString('ru-RU')} сум за точки</span>}
-                  <span className="text-xs text-gray-400 ml-auto">📅 {fmt(completedAt(group[0]))}</span>
-                </div>
-                <div className="flex flex-col divide-y divide-gray-100">
-                  {group.map((d, i) => {
-                    const dk = destKey(d);
-                    const showPay = d.status === 'delivered' && rate && rate.pointRate > 0 && !billedStops.has(dk);
-                    if (showPay) billedStops.add(dk);
-                    return (
-                      <div key={d.id} className="px-3 py-2 flex items-start gap-2">
-                        <span className="text-xs text-gray-300 w-5 shrink-0">{i + 1}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium truncate">
-                            {d.doc_number ? `№ ${d.doc_number} · ` : ''}{d.client_name || d.to_name || d.from_name || '—'}
+              <div key={day} className="rounded-xl border border-gray-100 overflow-hidden bg-white shadow-sm">
+                <button onClick={() => toggleDay(day)}
+                  className="w-full text-left px-3 py-2.5 bg-gray-50 flex items-center gap-2 flex-wrap hover:bg-gray-100 transition-colors">
+                  <span className="text-sm font-semibold text-gray-700">📅 {dayLabel(day)}</span>
+                  <span className="text-xs text-gray-400">· {dayTrips.length} {dayTrips.length === 1 ? 'выезд' : 'выездов'} · {dayDeliveries.length} доставок</span>
+                  <span className="ml-auto flex items-center gap-2">
+                    {(dayEarnings.kmPay + dayEarnings.pointPay) > 0 && (
+                      <span className="text-xs font-bold text-amber-600">
+                        {(dayEarnings.kmPay + dayEarnings.pointPay).toLocaleString('ru-RU')} сум
+                      </span>
+                    )}
+                    <span className="text-gray-400 text-xs">{isOpen ? '▲' : '▼'}</span>
+                  </span>
+                </button>
+
+                {isOpen && (
+                  <div className="flex flex-col gap-2 p-2 bg-gray-50/50 border-t border-gray-100">
+                    {dayTrips.map((group, gi) => {
+                      const tripKm = group.reduce((s, d) => s + (d.km || 0), 0);
+                      const rate = rates[tripKey(group[0])];
+                      const e = tripEarnings(group.filter((d) => d.status === 'delivered'), rate);
+                      const billedStops = new Set<string>();
+                      return (
+                        <div key={tripKey(group[0])} className="rounded-lg border border-gray-100 overflow-hidden bg-white">
+                          <div className="px-3 py-2 bg-gray-50 flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-semibold text-gray-700">🚐 Выезд {gi + 1}</span>
+                            <span className="text-xs text-gray-400">· {group.length} {group.length === 1 ? 'накладная' : 'накладных'}</span>
+                            {tripKm > 0 && <span className="text-xs text-emerald-600">🛣️ {tripKm * 2} км</span>}
+                            {e.kmPay > 0 && <span className="text-xs font-semibold text-amber-600">💰 {e.kmPay.toLocaleString('ru-RU')} сум за км</span>}
+                            {e.pointPay > 0 && <span className="text-xs font-semibold text-amber-600">📍 {e.pointPay.toLocaleString('ru-RU')} сум за точки</span>}
+                            <span className="text-xs text-gray-400 ml-auto">📅 {fmt(completedAt(group[0]))}</span>
                           </div>
-                          {d.address && <div className="text-xs text-gray-400 truncate">📍 {d.address}</div>}
-                          <div className="flex flex-wrap gap-2 mt-0.5">
-                            {d.km > 0 && <span className="text-xs text-emerald-600">🛣️ {d.km} км</span>}
-                            {d.direction && <span className="text-xs text-sky-500">{d.direction}</span>}
+                          <div className="flex flex-col divide-y divide-gray-100">
+                            {group.map((d, i) => {
+                              const dk = destKey(d);
+                              const showPay = d.status === 'delivered' && rate && rate.pointRate > 0 && !billedStops.has(dk);
+                              if (showPay) billedStops.add(dk);
+                              return (
+                                <div key={d.id} className="px-3 py-2 flex items-start gap-2">
+                                  <span className="text-xs text-gray-300 w-5 shrink-0">{i + 1}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium truncate">
+                                      {d.doc_number ? `№ ${d.doc_number} · ` : ''}{d.client_name || d.to_name || d.from_name || '—'}
+                                    </div>
+                                    {d.address && <div className="text-xs text-gray-400 truncate">📍 {d.address}</div>}
+                                    <div className="flex flex-wrap gap-2 mt-0.5">
+                                      {d.km > 0 && <span className="text-xs text-emerald-600">🛣️ {d.km} км</span>}
+                                      {d.direction && <span className="text-xs text-sky-500">{d.direction}</span>}
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-col items-end shrink-0 gap-0.5">
+                                    <span className={`text-xs font-medium ${STATUS_COLOR[d.status]}`}>
+                                      {STATUS_LABEL[d.status]}
+                                    </span>
+                                    {showPay && (
+                                      <span className="text-[11px] font-semibold text-amber-600 whitespace-nowrap">
+                                        💰 {rate!.pointRate.toLocaleString('ru-RU')} сум
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
-                        <div className="flex flex-col items-end shrink-0 gap-0.5">
-                          <span className={`text-xs font-medium ${STATUS_COLOR[d.status]}`}>
-                            {STATUS_LABEL[d.status]}
-                          </span>
-                          {showPay && (
-                            <span className="text-[11px] font-semibold text-amber-600 whitespace-nowrap">
-                              💰 {rate!.pointRate.toLocaleString('ru-RU')} сум
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
