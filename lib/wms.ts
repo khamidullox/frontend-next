@@ -38,7 +38,7 @@ export async function createLocation(warehouse: string, input: { code: string; l
   const wh = normWh(warehouse);
   const code = normCode(input.code);
   if (!code) return { error: 'Код ячейки обязателен' };
-  if (!/^[A-Z0-9._-]{1,20}$/.test(code)) return { error: 'Код: латиница/цифры/-_. , до 20 символов' };
+  if (!/^[A-ZА-ЯЁ0-9._-]{1,20}$/.test(code)) return { error: 'Код: буквы/цифры/-_. , до 20 символов' };
   const ref = getDb().collection(LOC).doc(`${wh}__${code}`);
   if ((await ref.get()).exists) return { error: 'Такая ячейка уже есть на этом складе' };
   await ref.set({ code, label: str(input.label) || code, zone: str(input.zone), warehouse: wh, created_at: new Date().toISOString() } satisfies WmsLocation);
@@ -48,8 +48,10 @@ export async function createLocation(warehouse: string, input: { code: string; l
 export async function deleteLocation(warehouse: string, code: string): Promise<{ ok: true } | { error: string }> {
   const wh = normWh(warehouse);
   const c = normCode(code);
-  const snap = await getDb().collection(STOCK).where('warehouse', '==', wh).where('location', '==', c).where('qty', '>', 0).limit(1).get();
-  if (!snap.empty) return { error: 'В ячейке есть товар — сначала уберите/переместите' };
+  // Без фильтра по qty в запросе (иначе нужен составной индекс Firestore) — считаем в коде.
+  const snap = await getDb().collection(STOCK).where('warehouse', '==', wh).where('location', '==', c).get();
+  const hasStock = snap.docs.some((d) => ((d.data() as WmsStockRow).qty || 0) > 0);
+  if (hasStock) return { error: 'В ячейке есть товар — сначала уберите/переместите' };
   await getDb().collection(LOC).doc(`${wh}__${c}`).delete();
   return { ok: true };
 }
