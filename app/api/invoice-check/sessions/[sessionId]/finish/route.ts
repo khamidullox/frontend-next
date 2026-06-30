@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { finishSession } from '@/lib/sessions';
-import { withRole } from '@/lib/auth';
+import { withRole, ROLE_RANK } from '@/lib/auth';
 import { createOrMarkPickedFromSession } from '@/lib/deliveries';
 
 export const runtime = 'nodejs';
@@ -18,15 +18,15 @@ export async function POST(
       if (!finished) {
         return Response.json({ error: 'Сессия проверки не найдена' }, { status: 404 });
       }
-      // Сразу заводим доставку без водителя (или отмечаем «собрано», если уже была
-      // создана вручную) — чтобы она появилась в «Собранные, без водителя» на /logistics
-      // без необходимости назначать водителя через AssignDocModal. Ошибку не глушим
-      // молча — пишем в лог сервера, иначе «собрано» может тихо не создаться.
-      try {
-        const r = await createOrMarkPickedFromSession(sessionId, session.username);
-        if (r.error) console.error('[finish] auto-pick failed for session', sessionId, r.error);
-      } catch (e) {
-        console.error('[finish] auto-pick threw for session', sessionId, (e as Error).message);
+      // «Собрано» создаёт только сторона отгрузки (менеджер/админ). Магазин (worker)
+      // просто проверяет свою входящую накладную — для него доставку НЕ заводим.
+      if (ROLE_RANK[session.role] >= ROLE_RANK['manager']) {
+        try {
+          const r = await createOrMarkPickedFromSession(sessionId, session.username);
+          if (r.error) console.error('[finish] auto-pick failed for session', sessionId, r.error);
+        } catch (e) {
+          console.error('[finish] auto-pick threw for session', sessionId, (e as Error).message);
+        }
       }
       return Response.json(finished);
     } catch (err) {
