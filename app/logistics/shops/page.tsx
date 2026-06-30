@@ -96,8 +96,9 @@ function ShopsContent() {
 
   // Точки назначения накладных база → клиент (warehouse_dispatch), у которых нет
   // соответствия в справочнике (ни по shop_id, ни по нормализованному названию) —
-  // предлагаем добавить как точку типа «клиент» (👤, см. fillFromUnlinked).
+  // одним кликом добавляем как точку типа «клиент» (👤, см. addFromUnlinked).
   const [unlinked, setUnlinked] = useState<{ name: string; count: number }[]>([]);
+  const [addingUnlinked, setAddingUnlinked] = useState<string | null>(null); // имя точки в процессе создания
 
   useEffect(() => {
     listAllWarehouses().then(setWarehouses).catch(() => {});
@@ -145,10 +146,20 @@ function ShopsContent() {
     return () => { cancelled = true; };
   }, [items]);
 
-  function fillFromUnlinked(destName: string) {
-    setName(destName);
-    setType('client');
-    nameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // Сразу создаём точку с именем из накладной (тип «клиент»). Адрес/координаты
+  // можно добавить позже через ✏️. Клик=одно действие, форма не нужна.
+  async function addFromUnlinked(destName: string) {
+    if (addingUnlinked) return;
+    setAddingUnlinked(destName);
+    setError('');
+    try {
+      const shop = await createShop({ name: destName, type: 'client', address: '', direction: '', km: 0, phone: '' });
+      setItems((prev) => [...prev, shop].sort((a, b) => a.name.localeCompare(b.name, 'ru')));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setAddingUnlinked(null);
+    }
   }
 
   // Базы — склады с координатами
@@ -355,12 +366,17 @@ function ShopsContent() {
           <div className="text-xs font-semibold text-amber-700 mb-2">
             ⚠️ Получатели накладных база → клиент без точки в справочнике ({unlinked.length})
           </div>
+          <p className="text-[11px] text-amber-600 mb-2">
+            Нажмите — точка сразу добавится. Адрес и координаты можно уточнить через ✏️.
+          </p>
           <div className="flex flex-wrap gap-1.5">
             {unlinked.map((u) => (
-              <button key={u.name} onClick={() => fillFromUnlinked(u.name)}
-                title="Заполнить форму ниже названием — останется указать адрес/координаты"
-                className="text-xs px-2.5 py-1 rounded-full bg-white border border-amber-300 text-amber-700 hover:bg-amber-100 whitespace-nowrap">
-                + {u.name} {u.count > 1 && <span className="text-amber-400">×{u.count}</span>}
+              <button key={u.name}
+                onClick={() => addFromUnlinked(u.name)}
+                disabled={!!addingUnlinked}
+                title="Добавить эту точку в справочник"
+                className="text-xs px-2.5 py-1 rounded-full bg-white border border-amber-300 text-amber-700 hover:bg-amber-100 disabled:opacity-50 whitespace-nowrap">
+                {addingUnlinked === u.name ? '⏳…' : <>+ {u.name} {u.count > 1 && <span className="text-amber-400">×{u.count}</span>}</>}
               </button>
             ))}
           </div>
