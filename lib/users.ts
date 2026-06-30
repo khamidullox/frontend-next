@@ -42,8 +42,8 @@ export interface UserInfo {
 
 function publicUser(u: StoredUser): UserInfo {
   return {
-    username: u.username,
-    name: u.name,
+    username: u.username ?? '',
+    name: u.name ?? '',
     role: u.role,
     created_at: u.created_at,
     warehouses: Array.isArray(u.warehouses) ? u.warehouses : [],
@@ -86,8 +86,9 @@ export async function getUserRaw(username: string): Promise<StoredUser | null> {
 export async function listUsers(): Promise<UserInfo[]> {
   const snap = await getDb().collection(COLLECTION).get();
   return snap.docs
-    .map((d) => publicUser(d.data() as StoredUser))
-    .sort((a, b) => a.username.localeCompare(b.username));
+    // Логин = id документа; если в данных поля username нет (битый/старый док) — берём id.
+    .map((d) => publicUser({ ...(d.data() as StoredUser), username: (d.data() as StoredUser).username || d.id }))
+    .sort((a, b) => (a.username || '').localeCompare(b.username || ''));
 }
 
 export async function createUser(input: {

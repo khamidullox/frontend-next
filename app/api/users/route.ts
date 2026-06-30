@@ -10,8 +10,7 @@ export async function GET() {
     try {
       return Response.json({ data: await listUsers() });
     } catch (e) {
-      // Временно отдаём текст ошибки, чтобы понять причину 500.
-      return Response.json({ error: 'listUsers: ' + (e as Error).message }, { status: 500 });
+      return Response.json({ error: (e as Error).message }, { status: 500 });
     }
   });
 }
