@@ -7,7 +7,12 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   return withRole('admin', async () => {
-    return Response.json({ data: await listUsers() });
+    try {
+      return Response.json({ data: await listUsers() });
+    } catch (e) {
+      // Временно отдаём текст ошибки, чтобы понять причину 500.
+      return Response.json({ error: 'listUsers: ' + (e as Error).message }, { status: 500 });
+    }
   });
 }
 

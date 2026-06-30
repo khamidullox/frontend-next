@@ -88,8 +88,8 @@ export interface UserInfo {
 
 export async function listUsers(): Promise<UserInfo[]> {
   const res = await fetch('/api/users', { cache: 'no-store' });
-  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || `Ошибка сервера: ${res.status}`);
   return data.data || [];
 }
 
