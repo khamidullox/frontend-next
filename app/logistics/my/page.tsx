@@ -681,7 +681,7 @@ function DeliveryCard({
       </div>
 
       {actions.length > 0 && (
-        <div className="flex gap-2 flex-wrap pt-1">
+        <div className="flex gap-2 flex-wrap pt-1 justify-end">
           {actions.map((a) => (
             <button key={a.status} disabled={busy}
               onClick={async () => {
@@ -704,7 +704,7 @@ function DeliveryCard({
                 }
                 onSet(d.id, a.status);
               }}
-              className={`flex-1 min-w-[130px] py-3 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors ${a.cls}`}>
+              className={`px-4 py-2 text-white text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors ${a.cls}`}>
               {busy ? '⏳…' : a.label}
             </button>
           ))}
