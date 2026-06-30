@@ -346,6 +346,7 @@ interface CreateInput {
   transfer_id?: string;  // явное перемещение
   receipt_id?: string;   // явная приёмка
   session_id?: string;   // ID проверки — подтянем данные из неё
+  from_name?: string;    // откуда: ручной ввод или название точки из справочника
   client_name?: string;
   client_phone?: string;
   address?: string;
@@ -435,11 +436,11 @@ export async function createDelivery(
   const dims = await computeDims(docItems);
 
   // Названия складов «откуда → куда» (если документ — накладная/перемещение).
-  let from_name: string | null = null;
+  let from_name: string | null = input.from_name ? str(input.from_name) : null;
   let to_name: string | null = null;
   if (fromCode || toCode) {
     const whMap = await getWarehouseCodeMap();
-    from_name = fromCode ? whMap.get(fromCode) || fromCode : null;
+    from_name = fromCode ? whMap.get(fromCode) || fromCode : from_name;
     to_name = toCode ? whMap.get(toCode) || toCode : null;
   }
 

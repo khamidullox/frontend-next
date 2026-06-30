@@ -664,6 +664,7 @@ export async function listDeliveries(sinceIso?: string): Promise<Delivery[]> {
 
 export async function createDelivery(input: {
   kind?: 'warehouse_dispatch' | 'shop_to_client';
+  from_name?: string;
   shop_id?: string;
   shop_name?: string;
   query?: string;

@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
     const res = await createDelivery({
       source: body.source,
       kind: body.kind,
+      from_name: body.from_name,
       shop_id: body.shop_id,
       shop_name: body.shop_name,
       query: body.query,

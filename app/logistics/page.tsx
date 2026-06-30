@@ -113,6 +113,8 @@ function LogisticsContent() {
   const [manualWeightKg, setManualWeightKg] = useState('');
   const [manualVolM3, setManualVolM3] = useState('');
   const [manualKm, setManualKm] = useState('');
+  const [fromShopId, setFromShopId] = useState('');
+  const [toShopId, setToShopId] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmState, setConfirmState] = useState<{ msg: string; onOk: () => void } | null>(null);
 
@@ -256,10 +258,22 @@ function LogisticsContent() {
           : formDriver
           ? { driver_username: formDriver }
           : {};
+      const fromShop = fromShopId ? shops.find((s) => s.id === fromShopId) : null;
+      const toShop = toShopId ? shops.find((s) => s.id === toShopId) : null;
       await createDelivery({
         ...(mode === 'document' ? { query: query.trim() } : {}),
-        client_name: client.trim(),
-        address: address.trim(),
+        ...(fromShop ? { from_name: fromShop.name } : {}),
+        ...(toShop ? {
+          shop_id: toShop.id,
+          client_name: client.trim() || toShop.name,
+          address: address.trim() || toShop.address,
+          direction: toShop.direction,
+          ...(toShop.km && !manualKm ? { km: toShop.km } : {}),
+          ...(toShop.lat && toShop.lng ? { lat: toShop.lat, lng: toShop.lng } : {}),
+        } : {
+          client_name: client.trim(),
+          address: address.trim(),
+        }),
         note: note.trim(),
         ...(mode === 'manual' && manualWeightKg ? { weight_kg: Number(manualWeightKg) } : {}),
         ...(mode === 'manual' && manualVolM3 ? { volume_m3: Number(manualVolM3) } : {}),
@@ -269,6 +283,7 @@ function LogisticsContent() {
       setQuery(''); setClient(''); setAddress(''); setNote('');
       setManualWeightKg(''); setManualVolM3(''); setManualKm('');
       setFormDriver(''); setExtName(''); setExtCar('');
+      setFromShopId(''); setToShopId('');
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -616,7 +631,7 @@ function LogisticsContent() {
       )}
 
       {/* Создание доставки — свёрнуто (основной поток: назначение из карточки водителя) */}
-      <button onClick={() => setShowForm((v) => !v)}
+      <button onClick={() => { setShowForm((v) => !v); if (!shops.length) loadShops(); }}
         className="mb-3 text-sm font-semibold px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700">
         {showForm ? '× Скрыть форму' : '+ Создать доставку вручную'}
       </button>
@@ -640,9 +655,42 @@ function LogisticsContent() {
             className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
         )}
 
+        {/* Откуда / куда — из справочника точек (необязательно) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div>
+            <label className="text-[11px] text-gray-400 mb-1 block">📦 Откуда (склад/точка)</label>
+            <select value={fromShopId} onChange={(e) => setFromShopId(e.target.value)}
+              className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
+              <option value="">— не указано —</option>
+              {shops.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-[11px] text-gray-400 mb-1 block">🏪 Куда (из справочника)</label>
+            <select value={toShopId} onChange={(e) => {
+              const id = e.target.value;
+              setToShopId(id);
+              const sh = shops.find((s) => s.id === id);
+              if (sh) {
+                setClient(sh.name);
+                setAddress(sh.address || '');
+                if (sh.km) setManualKm(String(sh.km));
+              }
+            }}
+              className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-blue-400">
+              <option value="">— или ввести вручную ↓ —</option>
+              {shops.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <input value={client} onChange={(e) => setClient(e.target.value)}
-            placeholder="Клиент / куда"
+            placeholder="Клиент / куда (имя)"
             className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
           <input value={address} onChange={(e) => setAddress(e.target.value)}
             placeholder="Адрес доставки"
