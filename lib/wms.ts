@@ -92,15 +92,42 @@ async function applyDelta(wh: string, location: string, productCode: string, pro
 
 export async function placeStock(input: {
   warehouse: string; location: string; product: string; qty: number; card_number?: string; by?: string;
+  autoCreate?: boolean; zone?: string; label?: string;
 }): Promise<{ ok: true; qty: number; product_code: string; product_name: string } | { error: string }> {
   const wh = normWh(input.warehouse);
   const qty = Math.floor(Number(input.qty) || 0);
   if (qty <= 0) return { error: 'Количество должно быть больше 0' };
-  if (!(await ensureLocation(wh, input.location))) return { error: 'Ячейка не найдена' };
+  if (!(await ensureLocation(wh, input.location))) {
+    // Ячейку можно завести «на лету» (из формы размещения по ангар/колонна/строка).
+    if (input.autoCreate) {
+      const cr = await createLocation(wh, { code: input.location, zone: input.zone, label: input.label });
+      if ('error' in cr) return { error: cr.error };
+    } else {
+      return { error: 'Ячейка не найдена' };
+    }
+  }
   const p = await resolveProduct(input.product);
   if (!p) return { error: 'Товар не распознан' };
   const newQty = await applyDelta(wh, input.location, p.code, p.name, qty, str(input.by), input.card_number);
   return { ok: true, qty: newQty, product_code: p.code, product_name: p.name };
+}
+
+// Массовое размещение (импорт из Excel): каждая строка — товар + ячейка (создаётся,
+// если её нет) + количество. Возвращает сколько разложено и список ошибок.
+export async function bulkPlace(
+  warehouse: string,
+  rows: { product: string; location: string; qty: number; zone?: string; label?: string }[],
+  by?: string
+): Promise<{ placed: number; errors: string[] }> {
+  let placed = 0;
+  const errors: string[] = [];
+  for (const r of rows) {
+    if (!str(r.product) || !str(r.location) || !(Number(r.qty) > 0)) continue;
+    const res = await placeStock({ warehouse, location: r.location, product: r.product, qty: r.qty, by, autoCreate: true, zone: r.zone, label: r.label });
+    if ('error' in res) errors.push(`${r.product} → ${r.location}: ${res.error}`);
+    else placed++;
+  }
+  return { placed, errors };
 }
 
 export async function setStock(input: {

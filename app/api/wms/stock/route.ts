@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     let res;
     if (body.action === 'move') res = await moveStock({ warehouse: wh, from: body.from, to: body.to, product: body.product, qty: body.qty, by });
     else if (body.action === 'set') res = await setStock({ warehouse: wh, location: body.location, product: body.product, qty: body.qty, by });
-    else res = await placeStock({ warehouse: wh, location: body.location, product: body.product, qty: body.qty, card_number: body.card_number, by });
+    else res = await placeStock({ warehouse: wh, location: body.location, product: body.product, qty: body.qty, card_number: body.card_number, by, autoCreate: !!body.autoCreate, zone: body.zone, label: body.label });
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
     return Response.json({ data: res });
   });

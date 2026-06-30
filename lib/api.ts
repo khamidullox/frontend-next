@@ -1160,12 +1160,20 @@ export async function wmsDeleteLocation(warehouse: string, code: string): Promis
   const res = await fetch(`/api/wms/locations?warehouse=${encodeURIComponent(warehouse)}&code=${encodeURIComponent(code)}`, { method: 'DELETE' });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Ошибка');
 }
-export async function wmsPlace(warehouse: string, input: { location: string; product: string; qty: number; card_number?: string }): Promise<{ qty: number; product_code: string; product_name: string }> {
+export async function wmsPlace(warehouse: string, input: { location: string; product: string; qty: number; card_number?: string; autoCreate?: boolean; zone?: string; label?: string }): Promise<{ qty: number; product_code: string; product_name: string }> {
   const res = await fetch('/api/wms/stock', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'place', warehouse, ...input }),
   });
   const d = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(d.error || 'Ошибка');
+  return d.data;
+}
+export async function wmsBulkImport(warehouse: string, rows: { product: string; location: string; qty: number; zone?: string; label?: string }[]): Promise<{ placed: number; errors: string[] }> {
+  const res = await fetch('/api/wms/import', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ warehouse, rows }),
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.error || 'Ошибка импорта');
   return d.data;
 }
 export async function wmsMove(warehouse: string, input: { from: string; to: string; product: string; qty: number }): Promise<void> {

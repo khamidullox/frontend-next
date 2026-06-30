@@ -56,7 +56,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   // Широкий контейнер — только для аналитики (большая таблица оборачиваемости).
-  const wide = pathname.startsWith('/analytics');
+  const wide = pathname.startsWith('/analytics') || pathname.startsWith('/wms');
 
   const rank = session ? ROLE_RANK[session.role] : 0;
   // Пункт виден, если проходит по роли И (если у него есть feature) по правам раздела.
