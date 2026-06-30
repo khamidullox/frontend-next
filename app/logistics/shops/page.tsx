@@ -97,7 +97,7 @@ function ShopsContent() {
   // Точки назначения накладных база → клиент (warehouse_dispatch), у которых нет
   // соответствия в справочнике (ни по shop_id, ни по нормализованному названию) —
   // одним кликом добавляем как точку типа «клиент» (👤, см. addFromUnlinked).
-  const [unlinked, setUnlinked] = useState<{ name: string; count: number }[]>([]);
+  const [unlinked, setUnlinked] = useState<{ name: string; count: number; lat?: number; lng?: number }[]>([]);
   const [addingUnlinked, setAddingUnlinked] = useState<string | null>(null); // имя точки в процессе создания
 
   useEffect(() => {
@@ -131,13 +131,20 @@ function ShopsContent() {
     listDeliveries()
       .then((all) => {
         if (cancelled) return;
-        const counts = new Map<string, { name: string; count: number }>();
+        const counts = new Map<string, { name: string; count: number; lat?: number; lng?: number }>();
         for (const d of all) {
           if (d.kind !== 'warehouse_dispatch' || d.shop_id || !d.to_name) continue;
           const norm = normalizeName(d.to_name);
           if (!norm || known.has(norm)) continue;
           const cur = counts.get(norm) || { name: d.to_name, count: 0 };
           cur.count += 1;
+          // Если у этой доставки уже есть GPS-координаты (водитель отметил «Доставлено»
+          // и сохранились координаты) — подтягиваем, чтобы при добавлении точки сразу
+          // были координаты, без необходимости вводить вручную.
+          if (!cur.lat && d.lat != null && d.lng != null) {
+            cur.lat = d.lat;
+            cur.lng = d.lng;
+          }
           counts.set(norm, cur);
         }
         setUnlinked([...counts.values()].sort((a, b) => b.count - a.count));
@@ -157,8 +164,24 @@ function ShopsContent() {
     // Убираем хвостовое «(Имя оператора)» — нормализация при сравнении тоже учитывает это,
     // так что чистые названия будут матчиться с существующими to_name в накладных.
     const cleanName = destName.replace(/\s*\([^)]+\)\s*$/, '').trim() || destName;
+    // Координаты из уже завершённых доставок по этому to_name (GPS водителя при доставке).
+    const meta = unlinked.find((u) => u.name === destName);
+    const hasCoords = meta?.lat != null && meta?.lng != null;
+    // Если координаты есть — сразу определяем город и расстояние от ближайшей базы.
+    let direction = '';
+    let autoKm = 0;
+    if (hasCoords) {
+      direction = await cityFromCoords(meta!.lat!, meta!.lng!);
+      const base = bases[0];
+      if (base?.lat && base?.lng) autoKm = haversineKm(base.lat, base.lng, meta!.lat!, meta!.lng!);
+    }
     try {
-      const shop = await createShop({ name: cleanName, type: 'client', address: '', direction: '', km: 0, phone: '' });
+      const shop = await createShop({
+        name: cleanName, type: 'client', address: '', phone: '',
+        direction: direction || '',
+        km: autoKm,
+        ...(hasCoords ? { lat: meta!.lat, lng: meta!.lng } : {}),
+      });
       setItems((prev) => [...prev, shop].sort((a, b) => a.name.localeCompare(b.name, 'ru')));
     } catch (e) {
       setError((e as Error).message);
