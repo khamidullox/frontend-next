@@ -48,11 +48,16 @@ export async function createLocation(warehouse: string, input: { code: string; l
 export async function deleteLocation(warehouse: string, code: string): Promise<{ ok: true } | { error: string }> {
   const wh = normWh(warehouse);
   const c = normCode(code);
+  const db = getDb();
   // Без фильтра по qty в запросе (иначе нужен составной индекс Firestore) — считаем в коде.
-  const snap = await getDb().collection(STOCK).where('warehouse', '==', wh).where('location', '==', c).get();
+  const snap = await db.collection(STOCK).where('warehouse', '==', wh).where('location', '==', c).get();
   const hasStock = snap.docs.some((d) => ((d.data() as WmsStockRow).qty || 0) > 0);
   if (hasStock) return { error: 'В ячейке есть товар — сначала уберите/переместите' };
-  await getDb().collection(LOC).doc(`${wh}__${c}`).delete();
+  // Новый id (`${wh}__${code}`).
+  await db.collection(LOC).doc(`${wh}__${c}`).delete();
+  // Старые ячейки (до мультисклада) имели id = code и поле warehouse — подчищаем их.
+  const legacy = await db.collection(LOC).doc(c).get();
+  if (legacy.exists && (legacy.data() as WmsLocation).warehouse === wh) await db.collection(LOC).doc(c).delete();
   return { ok: true };
 }
 
