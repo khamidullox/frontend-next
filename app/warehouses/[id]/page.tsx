@@ -75,6 +75,7 @@ export default function WarehouseDetailPage() {
   const [exporting, setExporting] = useState(false);
   const [photo, setPhoto] = useState<{ code: string; name: string } | null>(null);
   const [newCodes, setNewCodes] = useState<Set<string>>(new Set());
+  const [onlyNew, setOnlyNew] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -97,11 +98,12 @@ export default function WarehouseDetailPage() {
   const rows = useMemo(() => {
     if (!stock) return [];
     const filtered = stock.rows.filter(r =>
-      !q ||
+      (!onlyNew || newCodes.has(r.product_code)) &&
+      (!q ||
       r.product_code.toLowerCase().includes(q) ||
       r.product_name.toLowerCase().includes(q) ||
       r.producer.toLowerCase().includes(q) ||
-      r.group.toLowerCase().includes(q)
+      r.group.toLowerCase().includes(q))
     );
     return filtered.sort((a, b) => {
       if (sortMode === 'qty_asc') return a.quantity - b.quantity;
@@ -112,10 +114,12 @@ export default function WarehouseDetailPage() {
       }
       return b.quantity - a.quantity;
     });
-  }, [stock, q, sortMode]);
+  }, [stock, q, sortMode, onlyNew, newCodes]);
 
   // Пагинация: при смене поиска/сортировки возвращаемся на первую страницу.
-  useEffect(() => { setPage(1); }, [q, sortMode]);
+  useEffect(() => { setPage(1); }, [q, sortMode, onlyNew]);
+
+  const newCount = useMemo(() => stock ? stock.rows.filter(r => newCodes.has(r.product_code)).length : 0, [stock, newCodes]);
 
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -215,6 +219,15 @@ export default function WarehouseDetailPage() {
                 <option value="name">Название</option>
                 <option value="group">Группа</option>
               </select>
+              <button
+                onClick={() => setOnlyNew(v => !v)}
+                title="Показать только новинки (приход за последние 3–4 дня)"
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg border whitespace-nowrap transition-colors ${
+                  onlyNew ? 'bg-pink-500 text-white border-pink-500' : 'bg-pink-50 text-pink-600 border-pink-200 hover:bg-pink-100'
+                }`}
+              >
+                🆕 Новинки{newCount > 0 ? ` (${newCount})` : ''}
+              </button>
             </div>
 
             <p className="text-xs text-gray-400 mb-2">
