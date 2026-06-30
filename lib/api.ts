@@ -1193,3 +1193,18 @@ export async function wmsOverview(): Promise<{ placed: WmsPlacedProduct[]; unpla
   if (!res.ok) throw new Error(d.error || 'Ошибка');
   return d.data;
 }
+
+// ─── Разделение доставки по вместимости ──────────────────────────────────────
+export interface DeliveryItemDim { code: string; name: string; qty: number; unit_weight: number; unit_volume_l: number }
+export async function fetchDeliveryItemDims(id: string): Promise<{ items: DeliveryItemDim[]; total_weight: number; total_volume_l: number }> {
+  const res = await fetch(`/api/deliveries/${encodeURIComponent(id)}/split`, { cache: 'no-store' });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.error || 'Ошибка');
+  return d.data;
+}
+export async function splitDeliveryApi(id: string, driver_username: string, take: { code: string; qty: number }[]): Promise<void> {
+  const res = await fetch(`/api/deliveries/${encodeURIComponent(id)}/split`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ driver_username, take }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Ошибка');
+}

@@ -929,6 +929,101 @@ export async function updateDeliveryFields(
   return { delivery };
 }
 
+// Состав доставки с весом/объёмом ЕДИНИЦЫ товара — для разделения по вместимости
+// машины (клиент сам подбирает, сколько влезает).
+export async function getDeliveryItemDims(
+  id: string
+): Promise<{ items: { code: string; name: string; qty: number; unit_weight: number; unit_volume_l: number }[]; total_weight: number; total_volume_l: number } | { error: string }> {
+  const snap = await getDb().collection(COLLECTION).doc(str(id)).get();
+  if (!snap.exists) return { error: 'Доставка не найдена' };
+  const d = normalizeDelivery(snap.data() as Delivery);
+  const catalog = await getCachedCatalog();
+  const m = new Map(catalog.map((c) => [c.code, c]));
+  const items = (d.items || []).map((it) => {
+    const c = m.get(str(it.code));
+    return { code: it.code, name: it.name, qty: it.qty, unit_weight: c?.weight || 0, unit_volume_l: c?.volume_l || 0 };
+  });
+  return { items, total_weight: d.total_weight, total_volume_l: d.total_volume_l };
+}
+
+// Разделение доставки по вместимости: часть `take` уходит водителю отдельной
+// доставкой (собрано+назначено), а исходная остаётся остатком с уменьшенным кол-вом
+// в «Собранных». Если берут всё — просто назначаем исходную, без новой.
+export async function splitDelivery(
+  id: string,
+  take: { code: string; qty: number }[],
+  driver_username: string,
+  by?: string
+): Promise<{ delivery: Delivery; split: boolean } | { error: string }> {
+  const db = getDb();
+  const ref = db.collection(COLLECTION).doc(str(id));
+  const snap = await ref.get();
+  if (!snap.exists) return { error: 'Доставка не найдена' };
+  const orig = normalizeDelivery(snap.data() as Delivery);
+
+  const takeMap = new Map<string, number>();
+  for (const t of take) {
+    const q = Math.max(0, Math.floor(Number(t.qty) || 0));
+    if (q > 0) takeMap.set(str(t.code), (takeMap.get(str(t.code)) || 0) + q);
+  }
+  if (!takeMap.size) return { error: 'Не выбрано, что взять' };
+
+  const takenItems: DeliveryItem[] = [];
+  const remItems: DeliveryItem[] = [];
+  for (const it of orig.items || []) {
+    const t = Math.min(it.qty, takeMap.get(str(it.code)) || 0);
+    if (t > 0) takenItems.push({ code: it.code, name: it.name, qty: t });
+    const rem = it.qty - t;
+    if (rem > 0) remItems.push({ code: it.code, name: it.name, qty: rem });
+  }
+  if (!takenItems.length) return { error: 'Нечего взять' };
+
+  const now = new Date().toISOString();
+
+  // Берут всё (остатка нет) — просто назначаем исходную доставку, новую не плодим.
+  if (!remItems.length) {
+    await applyDriver(orig, str(driver_username));
+    orig.updated_at = now;
+    orig.history = [...(orig.history || []), { at: now, status: orig.status, by: str(by) }];
+    await ref.set(orig);
+    return { delivery: orig, split: false };
+  }
+
+  const takenDims = await computeDims(takenItems.map((i) => ({ product_code: i.code, quantity: i.qty })));
+  const taken: Delivery = {
+    ...orig,
+    id: crypto.randomUUID(),
+    created_at: now,
+    updated_at: now,
+    items: takenItems,
+    total_weight: takenDims.weight,
+    total_volume_l: takenDims.volume_l,
+    total_qty: takenDims.qty,
+    dims_approx: takenDims.approx,
+    picked: true,            // часть уже собрана
+    route_id: null,
+    driver_username: null, driver_name: null, car_number: null, transport: null,
+    status: 'new',
+    history: [{ at: now, status: 'new', by: str(by) }],
+  };
+  await applyDriver(taken, str(driver_username));
+
+  // Исходная → остаток (меньшее кол-во), остаётся собранной без водителя.
+  const remDims = await computeDims(remItems.map((i) => ({ product_code: i.code, quantity: i.qty })));
+  orig.items = remItems;
+  orig.total_weight = remDims.weight;
+  orig.total_volume_l = remDims.volume_l;
+  orig.total_qty = remDims.qty;
+  orig.dims_approx = remDims.approx;
+  orig.updated_at = now;
+
+  const batch = db.batch();
+  batch.set(db.collection(COLLECTION).doc(taken.id), taken);
+  batch.set(ref, orig);
+  await batch.commit();
+  return { delivery: taken, split: true };
+}
+
 // Отметка времени последней рассылки push водителям рядом (см. lib/shopOffers.ts).
 export async function markNotified(id: string): Promise<void> {
   await getDb().collection(COLLECTION).doc(str(id)).set(

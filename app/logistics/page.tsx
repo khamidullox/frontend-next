@@ -18,6 +18,7 @@ import { useLivePoll } from '@/lib/useLivePoll';
 import { fmtDateTime as fmt } from '@/lib/format';
 import { useAuth } from '@/components/AuthProvider';
 import { canAccess } from '@/lib/features';
+import SplitDeliveryModal from '@/components/SplitDeliveryModal';
 
 function fmtTime(iso?: string | null) {
   if (!iso) return '';
@@ -725,7 +726,7 @@ function LogisticsContent() {
               {unassignedOpen && (
                 <div className="flex flex-col gap-2">
                   {visibleUnassigned.map((d) => (
-                    <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} directionsByDriver={directionsByDriver} />
+                    <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} capSettings={capSettings} directionsByDriver={directionsByDriver} onReload={load} />
                   ))}
                 </div>
               )}
@@ -743,7 +744,7 @@ function LogisticsContent() {
               {pickedUnassignedOpen && (
                 <div className="flex flex-col gap-2">
                   {visiblePickedUnassigned.map((d) => (
-                    <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} directionsByDriver={directionsByDriver} />
+                    <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} capSettings={capSettings} directionsByDriver={directionsByDriver} onReload={load} />
                   ))}
                 </div>
               )}
@@ -769,7 +770,7 @@ function LogisticsContent() {
                       </div>
                       <div className="flex flex-col gap-2">
                         {shown.map((d) => (
-                          <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} compact directionsByDriver={directionsByDriver} />
+                          <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} compact capSettings={capSettings} directionsByDriver={directionsByDriver} onReload={load} />
                         ))}
                       </div>
                     </div>
@@ -828,6 +829,7 @@ function LogisticsContent() {
                   onAssign={() => setAssignTo(dr)}
                   capSettings={capSettings}
                   directionsByDriver={directionsByDriver}
+                  onReload={load}
                 />
               ))}
             </div>
@@ -857,7 +859,7 @@ function LogisticsContent() {
 
 // ─── Карточка водителя ──────────────────────────────────────────────────────
 function DriverCard({
-  driver, deliveries, allDrivers, hideDone, onlyPicked, activeRoute, onPatch, onRemove, onAssign, capSettings, directionsByDriver,
+  driver, deliveries, allDrivers, hideDone, onlyPicked, activeRoute, onPatch, onRemove, onAssign, capSettings, directionsByDriver, onReload,
 }: {
   driver: UserInfo;
   deliveries: Delivery[];
@@ -870,6 +872,7 @@ function DriverCard({
   onAssign: () => void;
   capSettings: LogisticsSettings;
   directionsByDriver: Map<string, Set<string>>;
+  onReload?: () => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -990,7 +993,7 @@ function DriverCard({
           ) : (
             <div className="flex flex-col gap-2">
               {shown.map((d) => (
-                <DeliveryRow key={d.id} d={d} drivers={allDrivers} onPatch={onPatch} onRemove={onRemove} compact capSettings={capSettings} directionsByDriver={directionsByDriver} />
+                <DeliveryRow key={d.id} d={d} drivers={allDrivers} onPatch={onPatch} onRemove={onRemove} compact capSettings={capSettings} directionsByDriver={directionsByDriver} onReload={onReload} />
               ))}
             </div>
           )}
@@ -1005,7 +1008,7 @@ function DriverCard({
               {showDone && (
                 <div className="flex flex-col gap-2 mt-2 opacity-80">
                   {doneDeliveries.map((d) => (
-                    <DeliveryRow key={d.id} d={d} drivers={allDrivers} onPatch={onPatch} onRemove={onRemove} compact capSettings={capSettings} directionsByDriver={directionsByDriver} />
+                    <DeliveryRow key={d.id} d={d} drivers={allDrivers} onPatch={onPatch} onRemove={onRemove} compact capSettings={capSettings} directionsByDriver={directionsByDriver} onReload={onReload} />
                   ))}
                 </div>
               )}
@@ -1019,7 +1022,7 @@ function DriverCard({
 
 // ─── Строка доставки ──────────────────────────────────────────────────────────
 function DeliveryRow({
-  d, drivers, onPatch, onRemove, compact, capSettings, directionsByDriver,
+  d, drivers, onPatch, onRemove, compact, capSettings, directionsByDriver, onReload,
 }: {
   d: Delivery;
   drivers: UserInfo[];
@@ -1028,11 +1031,13 @@ function DeliveryRow({
   compact?: boolean;
   capSettings?: LogisticsSettings;
   directionsByDriver?: Map<string, Set<string>>;
+  onReload?: () => void;
 }) {
   const [editAddr, setEditAddr] = useState(false);
   const [addr, setAddr] = useState(d.address);
   const [km, setKm] = useState(String(d.km || ''));
   const [manualKg, setManualKg] = useState('');
+  const [splitOpen, setSplitOpen] = useState(false);
   // Куб (м³) для ручного ввода/правки — предзаполняем текущим значением, если оно есть.
   const [manualM3, setManualM3] = useState(d.total_volume_l > 0 ? String(Math.round(d.total_volume_l / 10) / 100) : '');
 
@@ -1180,11 +1185,29 @@ function DeliveryRow({
           className="text-xs px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600">
           📍 {d.address ? 'адрес' : '+ адрес'}
         </button>
+        {(d.items?.length ?? 0) > 0 && (
+          <button onClick={() => setSplitOpen(true)}
+            title="Назначить водителю только часть, что влезает в машину; остаток оставить"
+            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200">
+            ✂️ Часть
+          </button>
+        )}
         <button onClick={() => onRemove(d.id)}
           className="ml-auto text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 hover:bg-red-200">
           🗑️
         </button>
       </div>
+
+      {splitOpen && (
+        <SplitDeliveryModal
+          delivery={d}
+          drivers={drivers}
+          capSettings={capSettings ?? null}
+          defaultCapSettings={DEFAULT_CAP_SETTINGS}
+          onClose={() => setSplitOpen(false)}
+          onDone={() => { setSplitOpen(false); onReload?.(); }}
+        />
+      )}
 
       {editAddr && (
         <div className="flex items-center gap-2">
