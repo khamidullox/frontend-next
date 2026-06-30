@@ -5,7 +5,7 @@ import AdminGate from '@/components/AdminGate';
 import {
   wmsListLocations, wmsCreateLocation, wmsDeleteLocation,
   wmsPlace, wmsFindByProduct, wmsListByLocation, wmsOverview,
-  WmsLocation, WmsStockRow, WmsPlacedProduct, WmsUnplaced,
+  WmsLocation, WmsStockRow, WmsPlacedProduct, WmsUnplaced, WMS_WAREHOUSES,
 } from '@/lib/api';
 
 type Tab = 'distribute' | 'overview' | 'find' | 'locations';
@@ -20,10 +20,20 @@ export default function WmsPage() {
 
 function WmsContent() {
   const [tab, setTab] = useState<Tab>('distribute');
+  const [wh, setWh] = useState(WMS_WAREHOUSES[0]);
   return (
     <div>
-      <h2 className="text-xl font-bold mb-1">📦 WMS — склад 001 (Основной)</h2>
-      <p className="text-xs text-gray-400 mb-3">Остаток из Smartup распределяется по ячейкам. Приход/уход сверяется автоматически.</p>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+        <h2 className="text-xl font-bold">📦 WMS — адресное хранение</h2>
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-gray-500">Склад:</span>
+          <select value={wh} onChange={(e) => setWh(e.target.value)}
+            className="border-2 border-gray-200 rounded-lg px-3 py-1.5 text-sm font-semibold bg-white outline-none focus:border-blue-400">
+            {WMS_WAREHOUSES.map((w) => <option key={w} value={w}>{w}</option>)}
+          </select>
+        </label>
+      </div>
+      <p className="text-xs text-gray-400 mb-3">Остаток выбранного склада из Smartup распределяется по ячейкам. Приход/уход сверяется автоматически.</p>
       <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">
         {([['distribute', '📥 Нужно разместить'], ['overview', '📊 По ячейкам'], ['find', '🔎 Найти'], ['locations', '🗄️ Ячейки']] as [Tab, string][]).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
@@ -32,16 +42,16 @@ function WmsContent() {
           </button>
         ))}
       </div>
-      {tab === 'distribute' && <DistributeTab />}
-      {tab === 'overview' && <OverviewTab />}
-      {tab === 'find' && <FindTab />}
-      {tab === 'locations' && <LocationsTab />}
+      {tab === 'distribute' && <DistributeTab wh={wh} />}
+      {tab === 'overview' && <OverviewTab wh={wh} />}
+      {tab === 'find' && <FindTab wh={wh} />}
+      {tab === 'locations' && <LocationsTab wh={wh} />}
     </div>
   );
 }
 
 // ─── Нужно разместить ────────────────────────────────────────────────────────
-function DistributeTab() {
+function DistributeTab({ wh }: { wh: string }) {
   const [unplaced, setUnplaced] = useState<WmsUnplaced[]>([]);
   const [loading, setLoading] = useState(true);
   const [locs, setLocs] = useState<WmsLocation[]>([]);
@@ -53,19 +63,20 @@ function DistributeTab() {
   const load = useCallback(async () => {
     setLoading(true); setErr('');
     try {
-      const o = await wmsOverview();
+      const o = await wmsOverview(wh);
       setUnplaced(o.unplaced);
     } catch (e) { setErr((e as Error).message); }
     finally { setLoading(false); }
-  }, []);
-  useEffect(() => { load(); wmsListLocations().then(setLocs).catch(() => {}); }, [load]);
+  }, [wh]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { load(); wmsListLocations(wh).then(setLocs).catch(() => {}); }, [load, wh]);
 
   async function place(u: WmsUnplaced) {
     const d = draft[u.product_code] || { loc: '', qty: String(u.qty), card: '' };
     if (!d.loc.trim()) { setErr('Укажите ячейку'); return; }
     setBusyCode(u.product_code); setErr('');
     try {
-      await wmsPlace({ location: d.loc.trim(), product: u.product_code, qty: Number(d.qty) || u.qty, card_number: d.card.trim() || undefined });
+      await wmsPlace(wh, { location: d.loc.trim(), product: u.product_code, qty: Number(d.qty) || u.qty, card_number: d.card.trim() || undefined });
       await load();
     } catch (e) { setErr((e as Error).message); }
     finally { setBusyCode(''); }
@@ -81,7 +92,7 @@ function DistributeTab() {
       {loading ? (
         <div className="text-gray-500 text-sm">Загрузка остатка из Smartup…</div>
       ) : unplaced.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm p-4 text-sm text-gray-500">✓ Весь остаток склада 001 разложен по ячейкам.</div>
+        <div className="bg-white rounded-xl shadow-sm p-4 text-sm text-gray-500">✓ Весь остаток склада {wh} разложен по ячейкам.</div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm divide-y divide-gray-100">
           {unplaced.map((u) => {
@@ -114,11 +125,12 @@ function DistributeTab() {
 }
 
 // ─── По ячейкам (обзор размещённого) ─────────────────────────────────────────
-function OverviewTab() {
+function OverviewTab({ wh }: { wh: string }) {
   const [placed, setPlaced] = useState<WmsPlacedProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
-  useEffect(() => { wmsOverview().then((o) => setPlaced(o.placed)).catch(() => {}).finally(() => setLoading(false)); }, []);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setLoading(true); wmsOverview(wh).then((o) => setPlaced(o.placed)).catch(() => {}).finally(() => setLoading(false)); }, [wh]);
   const list = placed.filter((p) => !q.trim() || p.product_name.toLowerCase().includes(q.toLowerCase()) || p.product_code.includes(q.trim()));
   if (loading) return <div className="text-gray-500 text-sm">Загрузка…</div>;
   return (
@@ -149,7 +161,7 @@ function OverviewTab() {
 }
 
 // ─── Найти ───────────────────────────────────────────────────────────────────
-function FindTab() {
+function FindTab({ wh }: { wh: string }) {
   const [mode, setMode] = useState<'product' | 'location'>('product');
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<WmsStockRow[]>([]);
@@ -163,10 +175,10 @@ function FindTab() {
     setBusy(true);
     try {
       if (mode === 'product') {
-        const r = await wmsFindByProduct(q.trim());
+        const r = await wmsFindByProduct(wh, q.trim());
         setTitle(`${r.product_name} (${r.product_code})`); setRows(r.rows);
       } else {
-        setTitle(`Ячейка ${q.trim().toUpperCase()}`); setRows(await wmsListByLocation(q.trim()));
+        setTitle(`Ячейка ${q.trim().toUpperCase()}`); setRows(await wmsListByLocation(wh, q.trim()));
       }
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
@@ -214,7 +226,7 @@ function FindTab() {
 }
 
 // ─── Ячейки ──────────────────────────────────────────────────────────────────
-function LocationsTab() {
+function LocationsTab({ wh }: { wh: string }) {
   const [locs, setLocs] = useState<WmsLocation[]>([]);
   const [code, setCode] = useState('');
   const [label, setLabel] = useState('');
@@ -222,19 +234,19 @@ function LocationsTab() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(() => { wmsListLocations().then(setLocs).catch(() => {}); }, []);
+  const load = useCallback(() => { wmsListLocations(wh).then(setLocs).catch(() => {}); }, [wh]);
   useEffect(() => { load(); }, [load]);
 
   async function add() {
     setErr('');
     if (!code.trim()) { setErr('Укажите код ячейки'); return; }
     setBusy(true);
-    try { await wmsCreateLocation({ code: code.trim(), label: label.trim(), zone: zone.trim() }); setCode(''); setLabel(''); load(); }
+    try { await wmsCreateLocation(wh, { code: code.trim(), label: label.trim(), zone: zone.trim() }); setCode(''); setLabel(''); load(); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
   async function del(c: string) {
     if (!confirm(`Удалить ячейку ${c}?`)) return;
-    try { await wmsDeleteLocation(c); load(); } catch (e) { setErr((e as Error).message); }
+    try { await wmsDeleteLocation(wh, c); load(); } catch (e) { setErr((e as Error).message); }
   }
 
   return (
