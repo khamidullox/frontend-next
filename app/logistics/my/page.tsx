@@ -82,7 +82,7 @@ export default function MyDeliveriesPage() {
   const [geoError, setGeoError] = useState('');
   const [shops, setShops] = useState<Shop[]>([]);
   const [myPos, setMyPos] = useState<{ lat: number; lng: number } | null>(null);
-  const [showMap, setShowMap] = useState(true);
+  const [showMap, setShowMap] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [offers, setOffers] = useState<ShopOffer[]>([]);
   const [availableDocs, setAvailableDocs] = useState<Delivery[]>([]);
@@ -90,7 +90,7 @@ export default function MyDeliveriesPage() {
   const [myCap, setMyCap] = useState<MyCapacity | null>(null);
   // Вкладка: «мои» (взятые заказы) или «свободные» (можно взять). Переключается
   // кнопками и свайпом — водителю по умолчанию видны его взятые заказы.
-  const [view, setView] = useState<'mine' | 'free'>('mine');
+  const [view, setView] = useState<'mine' | 'free'>('free');
   const touchX = useRef<number | null>(null);
   function onTouchStart(e: React.TouchEvent) { touchX.current = e.touches[0].clientX; }
   function onTouchEnd(e: React.TouchEvent) {
@@ -426,13 +426,13 @@ export default function MyDeliveriesPage() {
 
       {/* Вкладки: мои взятые / свободные (можно листать свайпом) */}
       <div className="flex gap-1 mb-3 bg-gray-100 rounded-xl p-1">
-        <button onClick={() => setView('mine')}
-          className={`flex-1 py-2 text-sm font-semibold rounded-lg ${view === 'mine' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
-          🚚 Мои ({active.length})
-        </button>
         <button onClick={() => setView('free')}
           className={`flex-1 py-2 text-sm font-semibold rounded-lg ${view === 'free' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
           📢 Свободные ({freeCount})
+        </button>
+        <button onClick={() => setView('mine')}
+          className={`flex-1 py-2 text-sm font-semibold rounded-lg ${view === 'mine' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
+          🚚 Мои ({active.length})
         </button>
       </div>
 
@@ -669,7 +669,7 @@ function DeliveryCard({
   // (склад/магазин), если водитель сейчас далеко или в другом месте.
   const pickup = (d.status === 'new' || d.status === 'assigned') ? resolvePickupPoint(d, shops) : null;
   return (
-    <div className="bg-white rounded-xl shadow-sm p-4 flex flex-col gap-2">
+    <div className="bg-white rounded-xl shadow-sm p-2.5 flex flex-col gap-1.5">
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           {d.doc_type && (
@@ -682,12 +682,12 @@ function DeliveryCard({
               🏪 {d.shop_name || 'Заявка магазина'}
             </span>
           )}
-          <div className="font-bold text-base mt-1">{d.client_name || 'Без названия'}</div>
-          {d.address && <div className="text-sm text-gray-600 mt-0.5">📍 {d.address}</div>}
+          <div className="font-bold text-sm mt-0.5">{d.client_name || 'Без названия'}</div>
+          {d.address && <div className="text-xs text-gray-600 mt-0.5">📍 {d.address}</div>}
           {d.client_phone && (
             <a href={`tel:${d.client_phone}`}
-              className="mt-1.5 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-green-50 text-green-700 text-sm font-semibold active:bg-green-100">
-              📞 Позвонить: {d.client_phone}
+              className="mt-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-50 text-green-700 text-sm font-semibold active:bg-green-100">
+              📞 {d.client_phone}
             </a>
           )}
           {d.items.length > 0 && (
@@ -720,7 +720,7 @@ function DeliveryCard({
       </div>
 
       {actions.length > 0 && (
-        <div className="flex gap-2 flex-wrap pt-1 justify-end">
+        <div className="flex gap-2 pt-1">
           {actions.map((a) => (
             <button key={a.status} disabled={busy}
               onClick={async () => {
@@ -743,7 +743,7 @@ function DeliveryCard({
                 }
                 onSet(d.id, a.status);
               }}
-              className={`px-4 py-2 text-white text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors ${a.cls}`}>
+              className={`flex-1 py-2.5 text-white text-sm font-semibold rounded-lg disabled:opacity-50 transition-colors ${a.cls}`}>
               {busy ? '⏳…' : a.label}
             </button>
           ))}
