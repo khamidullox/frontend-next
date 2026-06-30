@@ -1047,6 +1047,16 @@ export async function getMyCapacity(): Promise<MyCapacity | null> {
   return data.data || null;
 }
 
+// Своя ставка за км/точку по каждому выезду (без раскрытия всей тарифной таблицы —
+// см. app/api/logistics/my-rates) — для «Мои расчёты» (/logistics/my-stats).
+export interface MyTripRate { kmRate: number; pointRate: number }
+export async function getMyRates(): Promise<Record<string, MyTripRate>> {
+  const res = await fetch('/api/logistics/my-rates', { cache: 'no-store' });
+  if (!res.ok) return {};
+  const data = await res.json();
+  return data.data || {};
+}
+
 // Собранные накладные/заказы/перемещения без водителя — водитель видит и может взять
 // сам (claimOffer ниже — он общий, не привязан к типу доставки).
 export async function listAvailableDocs(): Promise<Delivery[]> {
