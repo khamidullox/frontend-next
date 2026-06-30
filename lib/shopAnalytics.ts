@@ -146,3 +146,72 @@ export async function getShopTurnover(fromISO: string, toISO: string): Promise<S
   const history_from = await earliestStoredDate().catch(() => null);
   return { from: fromISO, to: toISO, updated_ms, history_from, shops, rows };
 }
+
+// ─── Сводная оборачиваемость по всем магазинам (один товар = одна строка) ─────
+// Остаток делим на «магазины» (розничные склады из shopWarehouseMap) и «база»
+// (всё остальное: центральные склады 001..008/16 и пр.). Продажи — суммарно по
+// всем магазинам за период (накопленная история + сегодня живьём).
+export interface OverallRow {
+  product_code: string; product_name: string; brand: string; group: string;
+  sold: number; stock_shops: number; stock_base: number; stock_total: number;
+  base: number;      // в обороте = остаток + продано
+  turnover: number;  // продажи / база
+}
+
+async function buildOverallRows(fromISO: string, toISO: string): Promise<OverallRow[]> {
+  const [combined, stockByCode, catalog] = await Promise.all([
+    getCombinedSales(fromISO, toISO),
+    getStockByWarehouseCode(),
+    getCachedCatalog(),
+  ]);
+  const catByCode = new Map(catalog.map((c) => [c.code, c]));
+
+  interface A { sold: number; shops: number; base: number }
+  const acc = new Map<string, A>();
+  const ensure = (code: string): A => {
+    let a = acc.get(code);
+    if (!a) { a = { sold: 0, shops: 0, base: 0 }; acc.set(code, a); }
+    return a;
+  };
+
+  for (const r of combined.values()) ensure(r.product_code).sold += r.sold;
+
+  for (const [whCode, products] of stockByCode) {
+    const isShop = !!shopForWarehouseCode(whCode); // розничный склад магазина?
+    for (const [code, qty] of products) {
+      const a = ensure(code);
+      if (isShop) a.shops += qty; else a.base += qty;
+    }
+  }
+
+  const rows: OverallRow[] = [];
+  for (const [code, a] of acc) {
+    const stock_total = a.shops + a.base;
+    if (a.sold <= 0 && stock_total <= 0) continue;
+    const c = catByCode.get(code);
+    const base = stock_total + a.sold;
+    rows.push({
+      product_code: code,
+      product_name: c?.name || code,
+      brand: c?.producer || '',
+      group: c?.group || '',
+      sold: a.sold,
+      stock_shops: a.shops,
+      stock_base: a.base,
+      stock_total,
+      base,
+      turnover: base > 0 ? a.sold / base : 0,
+    });
+  }
+  return rows;
+}
+
+export interface OverallData { from: string; to: string; updated_ms: number; history_from: string | null; rows: OverallRow[] }
+
+export async function getOverallTurnover(fromISO: string, toISO: string): Promise<OverallData> {
+  const key = `overall_turnover_v1_${fromISO}_${toISO}`;
+  const rows = await getCachedSnapshot<OverallRow>(key, () => buildOverallRows(fromISO, toISO), ttlFor(toISO), ROW_CHUNK);
+  const updated_ms = (await getCachedListUpdatedMs(key)) ?? Date.now();
+  const history_from = await earliestStoredDate().catch(() => null);
+  return { from: fromISO, to: toISO, updated_ms, history_from, rows };
+}

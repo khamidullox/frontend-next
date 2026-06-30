@@ -5,6 +5,7 @@ import AdminGate from '@/components/AdminGate';
 import { fetchAnalyticsSummary, AnalyticsPeriod, AnalyticsSummary } from '@/lib/api';
 import { fmtDateTime } from '@/lib/format';
 import ShopTurnoverSection from '@/components/ShopTurnoverSection';
+import OverallTurnoverSection from '@/components/OverallTurnoverSection';
 
 const PERIODS: { key: AnalyticsPeriod; label: string }[] = [
   { key: 'today', label: 'Сегодня' },
@@ -13,7 +14,7 @@ const PERIODS: { key: AnalyticsPeriod; label: string }[] = [
   { key: '30d', label: '30 дней' },
 ];
 
-type Section = 'totals' | 'shops' | 'brands' | 'top' | 'slow' | 'turnover';
+type Section = 'totals' | 'shops' | 'brands' | 'top' | 'slow' | 'turnover' | 'overall';
 const SECTIONS: { key: Section; label: string }[] = [
   { key: 'totals', label: '📋 Итоги' },
   { key: 'shops', label: '🏪 По магазинам' },
@@ -21,11 +22,12 @@ const SECTIONS: { key: Section; label: string }[] = [
   { key: 'top', label: '🔥 Топ продаж' },
   { key: 'slow', label: '🐌 Не продаётся' },
   { key: 'turnover', label: '🏬 Оборачиваемость по магазину' },
+  { key: 'overall', label: '📦 Сводная (все магазины)' },
 ];
-// Сводные разделы (Итоги/По магазинам/…) пока скрыты по просьбе — оставлен только
-// анализ оборачиваемости. Поставить true, чтобы вернуть остальные вкладки.
+// Сводные разделы (Итоги/По магазинам/…) пока скрыты по просьбе — оставлены только
+// анализ оборачиваемости и сводная. Поставить true, чтобы вернуть остальные вкладки.
 const SHOW_SUMMARY_TABS = false;
-const VISIBLE_SECTIONS = SHOW_SUMMARY_TABS ? SECTIONS : SECTIONS.filter((s) => s.key === 'turnover');
+const VISIBLE_SECTIONS = SHOW_SUMMARY_TABS ? SECTIONS : SECTIONS.filter((s) => s.key === 'turnover' || s.key === 'overall');
 
 export default function AnalyticsPage() {
   return (
@@ -44,7 +46,7 @@ function AnalyticsContent() {
 
   useEffect(() => {
     // Сводные разделы скрыты — не дёргаем тяжёлый order$export, пока он не нужен.
-    if (section === 'turnover') { setLoading(false); return; }
+    if (section === 'turnover' || section === 'overall') { setLoading(false); return; }
     setLoading(true);
     setError('');
     fetchAnalyticsSummary(period)
@@ -82,9 +84,10 @@ function AnalyticsContent() {
       </div>
 
       {section === 'turnover' && <ShopTurnoverSection />}
+      {section === 'overall' && <OverallTurnoverSection />}
 
-      {section !== 'turnover' && error && <div className="text-red-600 text-sm mb-3">{error}</div>}
-      {section !== 'turnover' && (loading && !data ? (
+      {section !== 'turnover' && section !== 'overall' && error && <div className="text-red-600 text-sm mb-3">{error}</div>}
+      {section !== 'turnover' && section !== 'overall' && (loading && !data ? (
         <div className="text-gray-500 text-sm">Загрузка…</div>
       ) : data ? (
         <>

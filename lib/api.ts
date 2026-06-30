@@ -1212,3 +1212,18 @@ export async function splitDeliveryApi(id: string, driver_username: string, take
   });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Ошибка');
 }
+
+// ─── Сводная оборачиваемость по всем магазинам ───────────────────────────────
+export interface OverallRow {
+  product_code: string; product_name: string; brand: string; group: string;
+  sold: number; stock_shops: number; stock_base: number; stock_total: number;
+  base: number; turnover: number;
+}
+export interface OverallResult { from: string; to: string; updated_ms: number; history_from: string | null; rows: OverallRow[] }
+export async function fetchOverallTurnover(from: string, to: string): Promise<OverallResult> {
+  const qs = new URLSearchParams({ from, to }).toString();
+  const res = await fetch(`/api/analytics/overall-turnover?${qs}`, { cache: 'no-store' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Не удалось загрузить сводную оборачиваемость');
+  return data.data as OverallResult;
+}
