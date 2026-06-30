@@ -401,7 +401,7 @@ export async function createDelivery(
     base.note = base.note || str(s.document.note);
     fromCode = s.document.from_warehouse_code;
     toCode = s.document.to_warehouse_code;
-    docItems = s.items.map((it) => ({ product_code: it.product_code, quantity: it.quantity }));
+    docItems = (s.items || []).map((it) => ({ product_code: it.product_code, quantity: it.quantity }));
   } else if (input.query || input.movement_id || input.deal_id || input.transfer_id || input.receipt_id) {
     // Из документа Smartup (накладная/заказ/перемещение/приёмка).
     const doc = await resolveDocument({
@@ -780,25 +780,34 @@ export async function markPickedByDocId(docId: string): Promise<void> {
 export async function createOrMarkPickedFromSession(
   sessionId: string,
   createdBy?: string
-): Promise<void> {
+): Promise<{ action: 'marked' | 'created' | 'none'; error?: string }> {
   const s = await getCheckSession(str(sessionId));
-  if (!s) return;
+  if (!s) return { action: 'none', error: 'Сессия не найдена' };
   const docId = str(s.document.doc_id);
   if (docId) {
     const snap = await getDb().collection(COLLECTION).where('doc_id', '==', docId).get();
+    // Помечаем «собрано» уже существующие доставки этого документа. Создаём новую
+    // (ниже) ТОЛЬКО если среди них нет ни одной без водителя — иначе товар просто
+    // числился бы дважды. Если все назначены — он уже «взят», отдельная не нужна.
     if (!snap.empty) {
       const now = new Date().toISOString();
       const batch = getDb().batch();
       let changed = false;
+      let hasUnassigned = false;
       for (const doc of snap.docs) {
         const d = normalizeDelivery(doc.data() as Delivery);
+        if (!d.driver_username) hasUnassigned = true;
         if (!d.picked) { batch.update(doc.ref, { picked: true, updated_at: now }); changed = true; }
       }
       if (changed) await batch.commit();
-      return;
+      if (hasUnassigned) return { action: 'marked' };
+      // все существующие — назначены водителю: новую «собранную без водителя» не плодим
+      return { action: 'marked' };
     }
   }
-  await createDelivery({ session_id: sessionId, created_by: createdBy });
+  const res = await createDelivery({ session_id: sessionId, created_by: createdBy });
+  if ('error' in res) return { action: 'none', error: res.error };
+  return { action: 'created' };
 }
 
 export async function setDeliveryStatus(

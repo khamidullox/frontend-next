@@ -20,8 +20,14 @@ export async function POST(
       }
       // Сразу заводим доставку без водителя (или отмечаем «собрано», если уже была
       // создана вручную) — чтобы она появилась в «Собранные, без водителя» на /logistics
-      // без необходимости назначать водителя через AssignDocModal.
-      await createOrMarkPickedFromSession(sessionId, session.username).catch(() => {});
+      // без необходимости назначать водителя через AssignDocModal. Ошибку не глушим
+      // молча — пишем в лог сервера, иначе «собрано» может тихо не создаться.
+      try {
+        const r = await createOrMarkPickedFromSession(sessionId, session.username);
+        if (r.error) console.error('[finish] auto-pick failed for session', sessionId, r.error);
+      } catch (e) {
+        console.error('[finish] auto-pick threw for session', sessionId, (e as Error).message);
+      }
       return Response.json(finished);
     } catch (err) {
       return Response.json({ error: (err as Error).message }, { status: 500 });
