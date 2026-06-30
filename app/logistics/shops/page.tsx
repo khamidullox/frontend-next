@@ -148,12 +148,17 @@ function ShopsContent() {
 
   // Сразу создаём точку с именем из накладной (тип «клиент»). Адрес/координаты
   // можно добавить позже через ✏️. Клик=одно действие, форма не нужна.
+  // Имя оператора/контакта в скобках (напр. «Склад X (Saidjamol)» → «Склад X»)
+  // убираем — в накладной это имя того, кто принял заказ, а не название точки.
   async function addFromUnlinked(destName: string) {
     if (addingUnlinked) return;
     setAddingUnlinked(destName);
     setError('');
+    // Убираем хвостовое «(Имя оператора)» — нормализация при сравнении тоже учитывает это,
+    // так что чистые названия будут матчиться с существующими to_name в накладных.
+    const cleanName = destName.replace(/\s*\([^)]+\)\s*$/, '').trim() || destName;
     try {
-      const shop = await createShop({ name: destName, type: 'client', address: '', direction: '', km: 0, phone: '' });
+      const shop = await createShop({ name: cleanName, type: 'client', address: '', direction: '', km: 0, phone: '' });
       setItems((prev) => [...prev, shop].sort((a, b) => a.name.localeCompare(b.name, 'ru')));
     } catch (e) {
       setError((e as Error).message);
