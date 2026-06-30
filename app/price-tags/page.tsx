@@ -605,15 +605,17 @@ export default function PriceTagsPage() {
             >
               🖨️ Печать {previewPages > 1 ? `этой порции (${visibleItems.length} шт.)` : `(${printItems.length} шт.)`}
             </button>
-            <button
-              onClick={() => { setRows(orderedList, true); setPrintAllMode(true); }}
-              className="w-full px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors mb-1"
-            >
-              🖨️ Печать всех ({orderedList.length} шт. в списке)
-            </button>
+            {previewPages > 1 && (
+              <button
+                onClick={() => setPrintAllMode(true)}
+                className="w-full px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors mb-1"
+              >
+                🖨️ Печать всех выбранных ({printItems.length} шт.)
+              </button>
+            )}
             {previewPages > 1 && (
               <p className="text-[11px] text-gray-400 text-center mb-4">
-                Печатается текущая страница. Всего {printItems.length} шт. — печатайте по порциям, листая «Вперёд».
+                Первая кнопка печатает текущую страницу; «Печать всех выбранных» — сразу все {printItems.length} шт.
               </p>
             )}
           </>
