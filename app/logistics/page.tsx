@@ -1040,6 +1040,12 @@ function DeliveryRow({
   const [splitOpen, setSplitOpen] = useState(false);
   // Куб (м³) для ручного ввода/правки — предзаполняем текущим значением, если оно есть.
   const [manualM3, setManualM3] = useState(d.total_volume_l > 0 ? String(Math.round(d.total_volume_l / 10) / 100) : '');
+  // «Со стороны» (улица): имя/машина + сумма + комментарий.
+  const [extOpen, setExtOpen] = useState(false);
+  const [extName, setExtName] = useState(d.external ? (d.driver_name || '') : '');
+  const [extCar, setExtCar] = useState(d.external ? (d.car_number || '') : '');
+  const [extCost, setExtCost] = useState(d.external_cost ? String(d.external_cost) : '');
+  const [extNote, setExtNote] = useState(d.external_note || '');
 
   const assignedDriver = drivers.find((dr) => dr.username === d.driver_username);
   const capKg = assignedDriver
@@ -1192,6 +1198,11 @@ function DeliveryRow({
             ✂️ Часть
           </button>
         )}
+        <button onClick={() => setExtOpen((v) => !v)}
+          title="Назначить водителю со стороны (улица) с указанием суммы оплаты"
+          className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg ${d.external ? 'bg-orange-200 text-orange-800' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
+          🚖 Со стороны
+        </button>
         <button onClick={() => onRemove(d.id)}
           className="ml-auto text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 hover:bg-red-200">
           🗑️
@@ -1218,6 +1229,48 @@ function DeliveryRow({
             className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-500 hover:bg-blue-600 text-white">
             OK
           </button>
+        </div>
+      )}
+
+      {/* Назначен «со стороны» — короткая сводка */}
+      {d.external && !extOpen && (
+        <div className="text-xs text-orange-700 bg-orange-50 rounded-lg px-2.5 py-1.5">
+          🚖 Со стороны: <b>{d.driver_name || '—'}</b>{d.car_number ? ` · ${d.car_number}` : ''}
+          {d.external_cost ? ` · 💸 ${Math.round(d.external_cost).toLocaleString('ru-RU')} сум` : ''}
+          {d.external_note ? ` · 📝 ${d.external_note}` : ''}
+        </div>
+      )}
+
+      {/* Форма назначения «со стороны» (улица) */}
+      {extOpen && (
+        <div className="bg-orange-50 border border-orange-200 rounded-lg p-2.5 flex flex-col gap-2">
+          <div className="flex flex-wrap gap-2">
+            <input value={extName} onChange={(e) => setExtName(e.target.value)} placeholder="Имя водителя"
+              className="flex-1 min-w-[120px] border border-orange-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-orange-400" />
+            <input value={extCar} onChange={(e) => setExtCar(e.target.value)} placeholder="Машина (номер)"
+              className="flex-1 min-w-[120px] border border-orange-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-orange-400" />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <input type="number" min={0} value={extCost} onChange={(e) => setExtCost(e.target.value)} placeholder="Сумма, сум"
+              className="w-32 border border-orange-200 rounded-lg px-2.5 py-1.5 text-xs text-right outline-none focus:border-orange-400" />
+            <input value={extNote} onChange={(e) => setExtNote(e.target.value)} placeholder="Комментарий"
+              className="flex-1 min-w-[140px] border border-orange-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-orange-400" />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                if (!extName.trim()) return;
+                onPatch(d.id, { external_driver: extName.trim(), external_car: extCar.trim(), external_cost: Number(extCost) || 0, external_note: extNote.trim() });
+                setExtOpen(false);
+              }}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white">
+              Назначить со стороны
+            </button>
+            <button onClick={() => setExtOpen(false)}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600">
+              Отмена
+            </button>
+          </div>
         </div>
       )}
     </div>

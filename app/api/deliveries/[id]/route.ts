@@ -101,7 +101,8 @@ export async function PATCH(
   if (body.client_name !== undefined || body.client_phone !== undefined || body.address !== undefined ||
       body.note !== undefined || body.direction !== undefined || body.km !== undefined ||
       body.total_weight !== undefined || body.total_volume_l !== undefined || body.items !== undefined || body.lat !== undefined || body.lng !== undefined ||
-      body.defer_until !== undefined) {
+      body.defer_until !== undefined ||
+      body.external_driver !== undefined || body.external_cost !== undefined || body.external_note !== undefined) {
     const items = Array.isArray(body.items)
       ? body.items.map((it: { code?: unknown; name?: unknown; qty?: unknown }) => ({
           code: String(it.code || ''), name: String(it.name || ''), qty: Math.max(0, Number(it.qty) || 0),
@@ -116,6 +117,10 @@ export async function PATCH(
       km: body.km,
       total_weight: body.total_weight,
       total_volume_l: body.total_volume_l,
+      external_driver: body.external_driver,
+      external_car: body.external_car,
+      external_cost: body.external_cost,
+      external_note: body.external_note,
       items,
       lat: body.lat != null ? Number(body.lat) : (body.lat === null ? null : undefined),
       lng: body.lng != null ? Number(body.lng) : (body.lng === null ? null : undefined),

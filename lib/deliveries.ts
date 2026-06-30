@@ -247,6 +247,12 @@ export interface Delivery {
   car_number: string | null;
   transport: string | null;
 
+  // Водитель «со стороны» (улица, без аккаунта): driver_username = null, но driver_name
+  // заполнен. Сумма — сколько заплатили за эту перевозку, для отчёта расходов на улицу.
+  external?: boolean;
+  external_cost?: number;
+  external_note?: string;
+
   // Габариты груза (из позиций документа × вес/объём товара из Smartup).
   total_weight: number;   // кг
   total_volume_l: number; // л
@@ -642,6 +648,10 @@ export async function assignDriver(
   if (!snap.exists) return { error: 'Доставка не найдена' };
 
   const delivery = normalizeDelivery(snap.data() as Delivery);
+  // Назначаем штатного (или снимаем) — в любом случае это уже не «улица».
+  delivery.external = false;
+  delivery.external_cost = 0;
+  delivery.external_note = '';
   if (username) {
     await applyDriver(delivery, str(username));
   } else {
@@ -883,6 +893,7 @@ export async function updateDeliveryFields(
     client_name?: string; client_phone?: string; address?: string; note?: string; direction?: string;
     km?: number; total_weight?: number; total_volume_l?: number; items?: DeliveryItem[]; lat?: number | null; lng?: number | null;
     defer_until?: string | null;
+    external_driver?: string; external_car?: string; external_cost?: number; external_note?: string;
   }
 ): Promise<{ delivery: Delivery } | { error: string }> {
   const db = getDb();
@@ -907,6 +918,21 @@ export async function updateDeliveryFields(
   if (fields.km !== undefined) {
     delivery.km = Math.max(0, Number(fields.km) || 0);
     delivery.km_auto = false; // ручная правка — больше не пересчитывать автоматически.
+  }
+  // Назначение водителю «со стороны» (улица): имя/машина вручную, без аккаунта,
+  // плюс сумма расхода и комментарий. Снимаем штатного водителя.
+  if (fields.external_driver !== undefined) {
+    delivery.driver_username = null;
+    delivery.driver_name = str(fields.external_driver) || null;
+    delivery.car_number = fields.external_car !== undefined ? (str(fields.external_car) || null) : delivery.car_number;
+    delivery.transport = null;
+    delivery.external = true;
+    if (fields.external_cost !== undefined) delivery.external_cost = Math.max(0, Number(fields.external_cost) || 0);
+    if (fields.external_note !== undefined) delivery.external_note = str(fields.external_note);
+    if (delivery.status === 'new') delivery.status = 'assigned';
+  } else {
+    if (fields.external_cost !== undefined) delivery.external_cost = Math.max(0, Number(fields.external_cost) || 0);
+    if (fields.external_note !== undefined) delivery.external_note = str(fields.external_note);
   }
   if (fields.total_weight !== undefined) delivery.total_weight = Math.max(0, Number(fields.total_weight) || 0);
   // Ручной ввод/правка куба (м³ × 1000 = л). Снимаем флаг приблизительности — значение задано вручную.

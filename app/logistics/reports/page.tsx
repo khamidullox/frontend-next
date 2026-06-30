@@ -570,7 +570,8 @@ function ReportsContent() {
           { label: 'КПИ за км', value: `${totals.kpi.toLocaleString('ru-RU')} сум` },
           { label: 'КПИ за точки', value: `${totals.pointKpi.toLocaleString('ru-RU')} сум` },
           { label: 'Топливо', value: `${totals.fuel.toLocaleString('ru-RU')} сум` },
-          { label: 'Итого расходы', value: `${(totals.kpi + totals.pointKpi + totals.fuel).toLocaleString('ru-RU')} сум`, accent: true },
+          { label: '🚖 Улица (со стороны)', value: `${periodDeliveries.reduce((s, d) => s + (d.external_cost || 0), 0).toLocaleString('ru-RU')} сум` },
+          { label: 'Итого расходы', value: `${(totals.kpi + totals.pointKpi + totals.fuel + periodDeliveries.reduce((s, d) => s + (d.external_cost || 0), 0)).toLocaleString('ru-RU')} сум`, accent: true },
         ].map(({ label, value, accent }) => (
           <div key={label} className="bg-white rounded-xl shadow-sm p-3 text-center">
             <div className={`text-lg font-bold ${accent ? 'text-rose-600' : 'text-blue-600'}`}>{value}</div>
