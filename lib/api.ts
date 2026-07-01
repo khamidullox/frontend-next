@@ -680,6 +680,7 @@ export async function createDelivery(input: {
   km?: number;
   weight_kg?: number;
   volume_m3?: number;
+  items?: DeliveryItem[];
   driver_username?: string;
   external_driver?: string;
   external_car?: string;

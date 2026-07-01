@@ -13,7 +13,9 @@ import {
   vehicleFamily, defaultCapacity,
   listRoutes, Route,
   listShops, Shop,
+  DeliveryItem,
 } from '@/lib/api';
+import ProductPicker from '@/components/ProductPicker';
 import { useLivePoll } from '@/lib/useLivePoll';
 import { fmtDateTime as fmt } from '@/lib/format';
 import { useAuth } from '@/components/AuthProvider';
@@ -115,6 +117,7 @@ function LogisticsContent() {
   const [manualKm, setManualKm] = useState('');
   const [fromShopId, setFromShopId] = useState('');
   const [toShopId, setToShopId] = useState('');
+  const [formItems, setFormItems] = useState<DeliveryItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [confirmState, setConfirmState] = useState<{ msg: string; onOk: () => void } | null>(null);
 
@@ -275,13 +278,14 @@ function LogisticsContent() {
           address: address.trim(),
         }),
         note: note.trim(),
+        ...(mode === 'manual' && formItems.length ? { items: formItems } : {}),
         ...(mode === 'manual' && manualWeightKg ? { weight_kg: Number(manualWeightKg) } : {}),
         ...(mode === 'manual' && manualVolM3 ? { volume_m3: Number(manualVolM3) } : {}),
         ...(mode === 'manual' && manualKm ? { km: Number(manualKm) } : {}),
         ...driverPart,
       });
       setQuery(''); setClient(''); setAddress(''); setNote('');
-      setManualWeightKg(''); setManualVolM3(''); setManualKm('');
+      setManualWeightKg(''); setManualVolM3(''); setManualKm(''); setFormItems([]);
       setFormDriver(''); setExtName(''); setExtCar('');
       setFromShopId(''); setToShopId('');
       await load();
@@ -701,18 +705,28 @@ function LogisticsContent() {
           placeholder="Примечание (необязательно)"
           className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
 
+        {/* Товары из справочника — только для ручного режима (из документа состав уже
+            приходит из накладной/заказа). Если выбраны, вес/объём посчитаются по ним
+            автоматически — ручные поля ниже нужны только чтобы переопределить расчёт. */}
+        {mode === 'manual' && (
+          <div>
+            <label className="text-[11px] text-gray-400 mb-1 block">📦 Товары из справочника (необязательно)</label>
+            <ProductPicker items={formItems} onChange={setFormItems} />
+          </div>
+        )}
+
         {/* Вес / объём / км — только для ручного режима */}
         {mode === 'manual' && (
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="text-[11px] text-gray-400 mb-1 block">⚖️ Вес, кг</label>
+              <label className="text-[11px] text-gray-400 mb-1 block">⚖️ Вес, кг{formItems.length > 0 ? ' (переопределить)' : ''}</label>
               <input type="number" min={0} step="0.1" value={manualWeightKg}
                 onChange={(e) => setManualWeightKg(e.target.value)}
                 placeholder="напр. 150"
                 className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
             </div>
             <div>
-              <label className="text-[11px] text-gray-400 mb-1 block">📦 Объём, м³</label>
+              <label className="text-[11px] text-gray-400 mb-1 block">📦 Объём, м³{formItems.length > 0 ? ' (переопределить)' : ''}</label>
               <input type="number" min={0} step="0.01" value={manualVolM3}
                 onChange={(e) => setManualVolM3(e.target.value)}
                 placeholder="напр. 0.5"
