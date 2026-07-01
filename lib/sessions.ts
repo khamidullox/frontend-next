@@ -131,9 +131,18 @@ function pickDocument(doc: CheckDocument): SessionDocument {
 
 // ─── Операции ────────────────────────────────────────────────────────────────
 
-export async function createSession(input: ResolveInput & { checker_name?: string }) {
+export async function createSession(input: ResolveInput & { checker_name?: string; force?: boolean }) {
   const doc = await resolveDocument(input);
   if (!doc) return null;
+
+  // Если не принудительное создание — проверяем, не собирали ли уже этот документ.
+  if (!input.force) {
+    const recent = await listSessions(100);
+    const dup = recent.find(
+      (s) => s.status === 'finished' && (s.doc_id === doc.doc_id || s.doc_number === doc.doc_number)
+    );
+    if (dup) return { conflict: true as const, existing: dup };
+  }
 
   const items: SessionItem[] = doc.items.map((item, index) => ({
     id: item.line_id || `${item.product_code}-${index}`,

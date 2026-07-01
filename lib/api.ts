@@ -262,13 +262,17 @@ export interface ScanResult {
 
 // ─── API calls ───────────────────────────────────────
 
-export async function createSession(filters: Record<string, string>): Promise<Session> {
+export async function createSession(filters: Record<string, string | boolean>): Promise<Session> {
   const res = await fetch(`${API_BASE}/sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(filters),
   });
 
+  if (res.status === 409) {
+    const data = await res.json().catch(() => ({}));
+    throw new AlreadyCheckedError(data.existing as SessionListItem);
+  }
   if (res.status === 404) {
     throw new NotFoundError('Накладная не найдена в Smartup');
   }
@@ -1083,6 +1087,15 @@ export class NotFoundError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'NotFoundError';
+  }
+}
+
+export class AlreadyCheckedError extends Error {
+  existing: SessionListItem;
+  constructor(existing: SessionListItem) {
+    super('Документ уже проверен');
+    this.name = 'AlreadyCheckedError';
+    this.existing = existing;
   }
 }
 

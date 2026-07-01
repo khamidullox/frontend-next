@@ -12,8 +12,9 @@ export async function POST(request: NextRequest) {
       // Кто проверяет — берём из авторизации (учёт ответственного).
       const session = await createSession({ ...(body || {}), checker_name: user.name });
 
-      if (!session) {
-        return Response.json({ error: 'Накладная не найдена' }, { status: 404 });
+      if (!session) return Response.json({ error: 'Накладная не найдена' }, { status: 404 });
+      if ('conflict' in session && session.conflict) {
+        return Response.json({ existing: session.existing }, { status: 409 });
       }
       return Response.json(session, { status: 201 });
     } catch (err) {
