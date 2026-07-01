@@ -9,6 +9,7 @@ import {
   deleteDelivery,
   recomputeRouteKm,
   requeueReturnedDelivery,
+  requeueWarehouseDispatchIfReturned,
   Delivery,
   DeliveryStatus,
 } from '@/lib/deliveries';
@@ -19,14 +20,22 @@ import { notifyNearbyDrivers } from '@/lib/shopOffers';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// После «Возврат» у заявки магазина — создаём новую заявку (та же точка/состав) и
-// сразу рассылаем её свободным водителям рядом, как при создании заявки впервые.
+// После «Возврат»:
+//  - заявка магазина (shop_to_client) — создаём новую заявку (та же точка/состав) и
+//    сразу рассылаем её свободным водителям рядом, как при создании заявки впервые;
+//  - накладная/заказ/перемещение — водителя взяли по ошибке; снимаем водителя/машину/
+//    маршрут прямо с этой же доставки (это тот же документ, новую не создаём) и она
+//    снова попадает в «Собранные, без водителя» («Собрано» не сбрасываем).
 async function requeueIfReturned(delivery: Delivery) {
-  if (delivery.status !== 'returned' || delivery.kind !== 'shop_to_client') return;
-  const fresh = await requeueReturnedDelivery(delivery);
-  if (!fresh) return;
-  const shop = fresh.shop_id ? await getShop(fresh.shop_id) : null;
-  if (shop) await notifyNearbyDrivers(fresh, shop).catch(() => {});
+  if (delivery.status !== 'returned') return;
+  if (delivery.kind === 'shop_to_client') {
+    const fresh = await requeueReturnedDelivery(delivery);
+    if (!fresh) return;
+    const shop = fresh.shop_id ? await getShop(fresh.shop_id) : null;
+    if (shop) await notifyNearbyDrivers(fresh, shop).catch(() => {});
+    return;
+  }
+  await requeueWarehouseDispatchIfReturned(delivery);
 }
 
 // PATCH: смена статуса / назначение водителя / правка полей.

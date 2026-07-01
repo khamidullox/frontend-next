@@ -925,6 +925,36 @@ export async function requeueReturnedDelivery(d: Delivery): Promise<Delivery | n
   return delivery;
 }
 
+// После возврата накладной/заказа/перемещения (kind ≠ shop_to_client, т.е. привязано
+// к реальному документу Smartup) — водителя взяли по ошибке. В отличие от заявки
+// магазина здесь НЕ создаём новый документ (doc_id/doc_number должны остаться теми же,
+// это тот же самый накладная/заказ), а снимаем водителя/машину/маршрут прямо с этой
+// доставки и возвращаем статус «Новый» — она снова попадёт в «Собранные, без
+// водителя» (флаг «Собрано» НЕ сбрасываем: товар физически остаётся подготовлен,
+// ошибка была только в водителе).
+export async function requeueWarehouseDispatchIfReturned(d: Delivery): Promise<Delivery | null> {
+  if (d.kind === 'shop_to_client') return null;
+  if (!d.driver_username && !d.driver_name) return null; // уже без водителя — нечего сбрасывать
+  const now = new Date().toISOString();
+  const ref = getDb().collection(COLLECTION).doc(d.id);
+  const delivery: Delivery = {
+    ...d,
+    updated_at: now,
+    driver_username: null,
+    driver_name: null,
+    car_number: null,
+    transport: null,
+    route_id: null,
+    external: false,
+    external_cost: 0,
+    external_note: '',
+    status: 'new' as const,
+    history: [...(d.history || []), { at: now, status: 'new' as const, by: 'system: авто-возврат в очередь после ошибочного назначения' }].slice(-50),
+  };
+  await ref.set(delivery);
+  return delivery;
+}
+
 // Правка текстовых полей (адрес/клиент/примечание) — для менеджера.
 export async function updateDeliveryFields(
   id: string,
