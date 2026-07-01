@@ -11,11 +11,21 @@ export async function GET(request: NextRequest) {
   const envSecret = process.env.CRON_SECRET;
   if (envSecret && sp.get('secret') !== envSecret) return Response.json({ error: 'forbidden' }, { status: 403 });
   const q = (sp.get('q') || '').toLowerCase();
+  const username = sp.get('username');
+  const routeId = sp.get('route');
 
-  const snap = await getDb().collection('deliveries').orderBy('created_at', 'desc').limit(500).get();
-  const rows = snap.docs
+  let docs;
+  if (routeId) {
+    docs = (await getDb().collection('deliveries').where('route_id', '==', routeId).get()).docs;
+  } else if (username) {
+    docs = (await getDb().collection('deliveries').where('driver_username', '==', username).get()).docs;
+  } else {
+    docs = (await getDb().collection('deliveries').orderBy('created_at', 'desc').limit(500).get()).docs;
+  }
+  const rows = docs
     .map((d) => d.data() as Record<string, unknown>)
     .filter((d) => {
+      if (routeId || username) return true;
       const hay = `${d.driver_name || ''} ${d.driver_username || ''} ${d.car_number || ''}`.toLowerCase();
       return !q || hay.includes(q);
     })
