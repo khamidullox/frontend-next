@@ -22,10 +22,18 @@ import { useAuth } from '@/components/AuthProvider';
 import { canAccess } from '@/lib/features';
 import SplitDeliveryModal from '@/components/SplitDeliveryModal';
 
-function fmtTime(iso?: string | null) {
+// Время начала захода с датой, если это не сегодня (напр. «29.06 05:41»); если сегодня —
+// только время, как раньше.
+function fmtTripStart(iso?: string | null) {
   if (!iso) return '';
-  try { return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); }
-  catch { return ''; }
+  try {
+    const d = new Date(iso);
+    const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    const isToday = d.toDateString() === new Date().toDateString();
+    if (isToday) return time;
+    const date = d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+    return `${date} ${time}`;
+  } catch { return ''; }
 }
 
 const STATUSES: DeliveryStatus[] = ['new', 'assigned', 'on_way', 'delivered', 'returned'];
@@ -976,7 +984,7 @@ function DriverCard({
             {driver.name}
             {activeRoute && (
               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 whitespace-nowrap">
-                🧭 в заходе с {fmtTime(activeRoute.started_at)}
+                🧭 в заходе с {fmtTripStart(activeRoute.started_at)}
               </span>
             )}
           </div>
