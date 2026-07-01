@@ -133,10 +133,16 @@ function ShopsContent() {
         if (cancelled) return;
         const counts = new Map<string, { name: string; count: number; lat?: number; lng?: number }>();
         for (const d of all) {
-          if (d.kind !== 'warehouse_dispatch' || d.shop_id || !d.to_name) continue;
-          const norm = normalizeName(d.to_name);
+          if (d.kind !== 'warehouse_dispatch' || d.shop_id) continue;
+          // Для заказов (doc_type='order') to_name в Smartup — это room_name, техническая
+          // «рабочая зона» склада (общая для десятков разных клиентов), а НЕ реальный
+          // получатель. Настоящий клиент — client_name (person_name). Без этой развилки
+          // сюда попадали не клиенты, а коды зон вроде «505 TexnoClimat Farg'ona».
+          const destName = d.doc_type === 'order' ? (d.client_name || d.to_name) : d.to_name;
+          if (!destName) continue;
+          const norm = normalizeName(destName);
           if (!norm || known.has(norm)) continue;
-          const cur = counts.get(norm) || { name: d.to_name, count: 0 };
+          const cur = counts.get(norm) || { name: destName, count: 0 };
           cur.count += 1;
           // Если у этой доставки уже есть GPS-координаты (водитель отметил «Доставлено»
           // и сохранились координаты) — подтягиваем, чтобы при добавлении точки сразу
@@ -636,7 +642,12 @@ function ShopDeliveries({ shop }: { shop: Shop }) {
       .then((all) => {
         if (cancelled) return;
         const matched = all
-          .filter((d) => d.kind === 'warehouse_dispatch' && (d.shop_id === shop.id || (d.to_name && normalizeName(d.to_name) === norm)))
+          .filter((d) => {
+            if (d.kind !== 'warehouse_dispatch') return false;
+            if (d.shop_id === shop.id) return true;
+            const destName = d.doc_type === 'order' ? (d.client_name || d.to_name) : d.to_name;
+            return !!destName && normalizeName(destName) === norm;
+          })
           .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
           .slice(0, 15);
         setItems(matched);
