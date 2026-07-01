@@ -103,30 +103,48 @@ export function computeRouteKm(deliveries: Delivery[], shops: Shop[]): Map<strin
 // То же, что computeRouteKm, но плечи между остановками считаются по РЕАЛЬНЫМ ДОРОГАМ
 // (lib/roadDistance.ts, с кэшем и фолбэком на прямую×1.3), а не по прямой. Это и есть
 // км, который сохраняется в доставку и идёт в оплату «за км».
+//
+// Дедупликация «та же точка — второй раз бесплатно» считается ОТДЕЛЬНО НА КАЖДЫЙ
+// КАЛЕНДАРНЫЙ ДЕНЬ (по created_at), а не на весь заход целиком. Заход (route) может
+// не закрываться много дней подряд (менеджер/водитель забыли нажать «Закончить») —
+// без этого разбиения повторный визит в ту же точку через несколько дней получал бы
+// 0 км (якобы «уже посчитано»), хотя машина туда реально ехала заново в другой день;
+// отчёт «за сегодня» тогда показывал бы 0 км, даже если пробег в этот день был.
 async function computeRouteKmRoad(deliveries: Delivery[], shops: Shop[]): Promise<Map<string, number>> {
   const result = new Map<string, number>();
   const sorted = [...deliveries].sort((a, b) => a.created_at.localeCompare(b.created_at));
-  const seen = new Set<string>();
-  let current: [number, number] | null = null;
+
+  const byDay = new Map<string, Delivery[]>();
   for (const d of sorted) {
-    const dest = resolveDestPoint(d, shops);
-    if (!dest) continue;
-    const destKey = d.kind !== 'shop_to_client' && d.shop_id
-      ? d.shop_id
-      : `${dest[0].toFixed(3)},${dest[1].toFixed(3)}`;
-    const manual = d.km_auto === false;
-    if (seen.has(destKey)) {
-      if (!manual) result.set(d.id, 0); // та же точка уже посещалась — путь учтён
-      continue;
+    const day = d.created_at.slice(0, 10); // YYYY-MM-DD
+    const arr = byDay.get(day) || [];
+    arr.push(d);
+    byDay.set(day, arr);
+  }
+
+  for (const dayDeliveries of byDay.values()) {
+    const seen = new Set<string>();
+    let current: [number, number] | null = null;
+    for (const d of dayDeliveries) {
+      const dest = resolveDestPoint(d, shops);
+      if (!dest) continue;
+      const destKey = d.kind !== 'shop_to_client' && d.shop_id
+        ? d.shop_id
+        : `${dest[0].toFixed(3)},${dest[1].toFixed(3)}`;
+      const manual = d.km_auto === false;
+      if (seen.has(destKey)) {
+        if (!manual) result.set(d.id, 0); // та же точка уже посещалась СЕГОДНЯ — путь учтён
+        continue;
+      }
+      seen.add(destKey);
+      if (manual) { current = dest; continue; }
+      const src = current || resolveSourcePoint(d, shops);
+      if (src) {
+        const km = await roadKm(src[0], src[1], dest[0], dest[1]);
+        result.set(d.id, Math.round(km));
+      }
+      current = dest;
     }
-    seen.add(destKey);
-    if (manual) { current = dest; continue; }
-    const src = current || resolveSourcePoint(d, shops);
-    if (src) {
-      const km = await roadKm(src[0], src[1], dest[0], dest[1]);
-      result.set(d.id, Math.round(km));
-    }
-    current = dest;
   }
   return result;
 }
