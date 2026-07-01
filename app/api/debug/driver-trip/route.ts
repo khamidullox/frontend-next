@@ -8,8 +8,8 @@ export const dynamic = 'force-dynamic';
 // разбора расхождения «точки»/«км» в отчётах. Удалить после использования.
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
-  const secret = sp.get('secret');
-  if (secret !== process.env.CRON_SECRET) return Response.json({ error: 'forbidden' }, { status: 403 });
+  const envSecret = process.env.CRON_SECRET;
+  if (envSecret && sp.get('secret') !== envSecret) return Response.json({ error: 'forbidden' }, { status: 403 });
   const q = (sp.get('q') || '').toLowerCase();
 
   const snap = await getDb().collection('deliveries').orderBy('created_at', 'desc').limit(500).get();
