@@ -741,6 +741,13 @@ function ReportsContent() {
                                       </div>
                                     )}
                                     {d.shop_name && <div className="text-xs text-gray-400 truncate">🏪 откуда: {d.shop_name}</div>}
+                                    {d.external && (
+                                      <div className="text-xs text-orange-700 bg-orange-50 rounded px-1.5 py-0.5 mt-0.5 inline-block">
+                                        🚖 Со стороны: <b>{d.driver_name || '—'}</b>{d.car_number ? ` · 🚗 ${d.car_number}` : ''}
+                                        {d.external_cost ? ` · 💸 ${Math.round(d.external_cost).toLocaleString('ru-RU')} сум` : ''}
+                                        {d.external_note ? ` · 📝 ${d.external_note}` : ''}
+                                      </div>
+                                    )}
                                     {d.status === 'returned' && d.return_note && (
                                       <div className="text-xs text-red-600 mt-0.5">↩️ Причина возврата: {d.return_note}</div>
                                     )}
