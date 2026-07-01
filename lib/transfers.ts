@@ -1,7 +1,12 @@
 import { smartupRequest } from './smartup';
-import { getProductInfos } from './products';
+import { getProductInfos, getWarehouseCodeMap } from './products';
 import { CheckDocument, DocItem } from './document';
 import { cached } from './cache';
+
+function whName(code: string | null, map: Map<string, string>): string | null {
+  if (!code) return null;
+  return map.get(String(code).trim()) || String(code);
+}
 
 // Межфилиальные перемещения (между складами/филиалами).
 // В отличие от внутренних накладных, тут заполнены филиалы «откуда → куда».
@@ -70,7 +75,7 @@ export interface TransferListItem {
 
 // Статусы межфилиального перемещения: C-завершено (показываем остальные)
 export async function listTransfers(): Promise<TransferListItem[]> {
-  const all = await getAllTransfers();
+  const [all, whMap] = await Promise.all([getAllTransfers(), getWarehouseCodeMap()]);
   return all
     .filter((t) => t.status !== 'C')
     .map((t) => {
@@ -79,8 +84,10 @@ export async function listTransfers(): Promise<TransferListItem[]> {
         transfer_id: String(t.movement_id),
         number: String(t.delivery_number || t.movement_id),
         date: t.from_time,
-        from_filial: t.from_filial_code,
-        to_filial: t.to_filial_code,
+        // Реальные склады «откуда → куда» (а не код филиала/организации — тот
+        // почти нечитаем, напр. «Tegma → Tegilmasin1»).
+        from_filial: whName(t.from_warehouse_code, whMap) || t.from_filial_code,
+        to_filial: whName(t.to_warehouse_code, whMap) || t.to_filial_code,
         status: t.status,
         items_count: items.length,
         total_quantity: items.reduce((s, it) => s + toNumber(it.quantity), 0),
@@ -98,7 +105,10 @@ export async function getTransferDocument(transferId: string): Promise<CheckDocu
   if (!t) return null;
 
   const rawItems = t.movement_items || [];
-  const infos = await getProductInfos(rawItems.map((i) => i.product_code));
+  const [infos, whMap] = await Promise.all([
+    getProductInfos(rawItems.map((i) => i.product_code)),
+    getWarehouseCodeMap(),
+  ]);
 
   const items: DocItem[] = rawItems.map((item, index) => {
     const info = infos.get(String(item.product_code).trim());
@@ -114,16 +124,22 @@ export async function getTransferDocument(transferId: string): Promise<CheckDocu
     };
   });
 
-  const route =
-    [t.from_filial_code, t.to_filial_code].filter(Boolean).join(' → ') || null;
+  // «Откуда → куда» названиями складов (не кодом филиала/организации — тот почти
+  // нечитаем, напр. «Tegma → Tegilmasin1»); коды складов передаём настоящие
+  // (from_warehouse_code/to_warehouse_code), а не филиала — иначе доставка,
+  // созданная из этого документа, не смогла бы верно определить магазин/название
+  // склада дальше по цепочке (см. createDelivery в lib/deliveries.ts).
+  const fromName = whName(t.from_warehouse_code, whMap);
+  const toName = whName(t.to_warehouse_code, whMap);
+  const route = [fromName, toName].filter(Boolean).join(' → ') || null;
 
   return {
     doc_type: 'transfer',
     doc_id: String(t.movement_id),
     doc_number: String(t.delivery_number || t.movement_id),
     date: t.from_time,
-    from_warehouse_code: t.from_filial_code,
-    to_warehouse_code: t.to_filial_code,
+    from_warehouse_code: t.from_warehouse_code,
+    to_warehouse_code: t.to_warehouse_code,
     client_name: route,
     note: t.note,
     items,

@@ -463,30 +463,41 @@ export default function MyDeliveriesPage() {
 
       {/* Заказы из рассылки рядом — водитель берёт сам */}
       {view === 'free' && nearbyOffers.length > 0 && (
-        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3">
+        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-2.5">
           <div className="text-xs font-bold text-amber-700 mb-2">📢 Свободные заказы ({nearbyOffers.length})</div>
-          <div className="flex flex-col gap-2">
-            {nearbyOffers.map(({ o, dist }) => (
-              <div key={o.id} className="bg-white rounded-lg p-3 flex items-start gap-3">
+          <div className="flex flex-col gap-1.5">
+            {nearbyOffers.map(({ o, dist }) => {
+              const mapText = o.address || o.client_name || o.shop_name || '';
+              return (
+              <div key={o.id} className="bg-white rounded-lg p-2 pl-2.5 border-l-4 border-amber-400 flex items-start gap-2">
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold break-words">🏪 {o.shop_name || 'Магазин'} → {o.client_name || 'клиент'}</div>
-                  {o.address && <div className="text-xs text-gray-400 mt-0.5 break-words">📍 {o.address}</div>}
+                  {o.address && <div className="text-[11px] text-gray-400 mt-0.5 break-words">📍 {o.address}</div>}
+                  {mapText && (
+                    <div className="flex gap-2 mt-0.5">
+                      <a href={`https://yandex.ru/maps/?text=${encodeURIComponent(mapText)}`} target="_blank" rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()} className="text-[11px] text-red-500 hover:underline">🗺️ Яндекс</a>
+                      <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapText)}`} target="_blank" rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()} className="text-[11px] text-blue-500 hover:underline">Google</a>
+                    </div>
+                  )}
                   {o.items.length > 0 && (
-                    <div className="text-xs text-gray-400 mt-0.5 truncate">📦 {o.items.map((it) => `${it.name} ×${it.qty}`).join(', ')}</div>
+                    <div className="text-[11px] text-gray-400 mt-0.5 truncate">📦 {o.items.map((it) => `${it.name} ×${it.qty}`).join(', ')}</div>
                   )}
                   {(o.total_weight || o.total_volume_l) ? (
-                    <div className="text-xs text-gray-500 mt-0.5">
+                    <div className="text-[11px] text-gray-500 mt-0.5">
                       ⚖️ {o.total_weight ? `${Math.round(o.total_weight)} кг` : ''}{o.total_weight && o.total_volume_l ? ' · ' : ''}{o.total_volume_l ? `${(o.total_volume_l / 1000).toFixed(2)} м³` : ''}
                     </div>
                   ) : null}
-                  {dist != null && <div className="text-xs text-amber-600 mt-0.5">~{Math.round(dist)} км до места выдачи</div>}
+                  {dist != null && <div className="text-[11px] text-amber-600 mt-0.5">~{Math.round(dist)} км до места выдачи</div>}
                 </div>
                 <button onClick={() => claim(o.id)} disabled={claimingId === o.id}
-                  className="shrink-0 px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white text-xs font-semibold rounded-lg whitespace-nowrap">
+                  className="shrink-0 px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white text-xs font-semibold rounded-lg whitespace-nowrap">
                   {claimingId === o.id ? '⏳…' : '✋ Взять'}
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -494,35 +505,46 @@ export default function MyDeliveriesPage() {
       {/* Собранные накладные/заказы/перемещения без водителя — без геопривязки (в
           отличие от заявок магазина выше), поэтому без расстояния, просто список. */}
       {view === 'free' && availableDocs.length > 0 && (
-        <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+        <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl p-2.5">
           <div className="text-xs font-bold text-emerald-700 mb-2">📦 Собранные, ждут водителя ({availableDocs.length})</div>
-          <div className="flex flex-col gap-2">
-            {availableDocs.map((d) => (
-              <div key={d.id} className="bg-white rounded-lg p-3 flex items-start gap-3">
+          <div className="flex flex-col gap-1.5">
+            {availableDocs.map((d) => {
+              const destLabel = d.from_name && d.to_name
+                ? `${d.from_name} → ${d.to_name}`           /* накладная/перемещение: склад → склад */
+                : (d.client_name || d.to_name || d.from_name || '—'); /* заказ: клиент (person_name) */
+              const mapText = d.address || destLabel;
+              return (
+              <div key={d.id} className="bg-white rounded-lg p-2 pl-2.5 border-l-4 border-emerald-400 flex items-start gap-2">
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold break-words">
                     {(d.doc_type && DOC_TYPE_LABEL[d.doc_type as DocType]) || d.doc_type || 'Документ'} {d.doc_number ? `№${d.doc_number}` : ''}
                   </div>
-                  <div className="text-xs text-gray-400 mt-0.5 break-words">
-                    {d.from_name && d.to_name
-                      ? `${d.from_name} → ${d.to_name}`           /* накладная/перемещение: склад → склад */
-                      : (d.client_name || d.to_name || d.from_name || '—') /* заказ: клиент (person_name) */}
-                  </div>
+                  <div className="text-[11px] text-gray-400 mt-0.5 break-words">{destLabel}</div>
+                  {d.address && <div className="text-[11px] text-gray-400 mt-0.5 break-words">📍 {d.address}</div>}
+                  {mapText && mapText !== '—' && (
+                    <div className="flex gap-2 mt-0.5">
+                      <a href={`https://yandex.ru/maps/?text=${encodeURIComponent(mapText)}`} target="_blank" rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()} className="text-[11px] text-red-500 hover:underline">🗺️ Яндекс</a>
+                      <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapText)}`} target="_blank" rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()} className="text-[11px] text-blue-500 hover:underline">Google</a>
+                    </div>
+                  )}
                   {d.items.length > 0 && (
-                    <div className="text-xs text-gray-400 mt-0.5 truncate">📦 {d.items.map((it) => `${it.name} ×${it.qty}`).join(', ')}</div>
+                    <div className="text-[11px] text-gray-400 mt-0.5 truncate">📦 {d.items.map((it) => `${it.name} ×${it.qty}`).join(', ')}</div>
                   )}
                   {(d.total_weight || d.total_volume_l) ? (
-                    <div className="text-xs text-gray-500 mt-0.5">
+                    <div className="text-[11px] text-gray-500 mt-0.5">
                       ⚖️ {d.total_weight ? `${Math.round(d.total_weight)} кг` : ''}{d.total_weight && d.total_volume_l ? ' · ' : ''}{d.total_volume_l ? `${(d.total_volume_l / 1000).toFixed(2)} м³` : ''}
                     </div>
                   ) : null}
                 </div>
                 <button onClick={() => claim(d.id)} disabled={claimingId === d.id}
-                  className="shrink-0 px-3 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white text-xs font-semibold rounded-lg whitespace-nowrap">
+                  className="shrink-0 px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white text-xs font-semibold rounded-lg whitespace-nowrap">
                   {claimingId === d.id ? '⏳…' : '✋ Взять'}
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
