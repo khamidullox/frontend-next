@@ -97,7 +97,7 @@ function ShopsContent() {
   // Точки назначения накладных база → клиент (warehouse_dispatch), у которых нет
   // соответствия в справочнике (ни по shop_id, ни по нормализованному названию) —
   // одним кликом добавляем как точку типа «клиент» (👤, см. addFromUnlinked).
-  const [unlinked, setUnlinked] = useState<{ name: string; count: number; lat?: number; lng?: number }[]>([]);
+  const [unlinked, setUnlinked] = useState<{ name: string; count: number; lat?: number; lng?: number; isOrder: boolean }[]>([]);
   const [addingUnlinked, setAddingUnlinked] = useState<string | null>(null); // имя точки в процессе создания
 
   useEffect(() => {
@@ -131,18 +131,22 @@ function ShopsContent() {
     listDeliveries()
       .then((all) => {
         if (cancelled) return;
-        const counts = new Map<string, { name: string; count: number; lat?: number; lng?: number }>();
+        const counts = new Map<string, { name: string; count: number; lat?: number; lng?: number; isOrder: boolean }>();
         for (const d of all) {
           if (d.kind !== 'warehouse_dispatch' || d.shop_id) continue;
           // Для заказов (doc_type='order') to_name в Smartup — это room_name, техническая
           // «рабочая зона» склада (общая для десятков разных клиентов), а НЕ реальный
           // получатель. Настоящий клиент — client_name (person_name). Без этой развилки
           // сюда попадали не клиенты, а коды зон вроде «505 TexnoClimat Farg'ona».
-          const destName = d.doc_type === 'order' ? (d.client_name || d.to_name) : d.to_name;
+          // Если у самого заказа client_name почему-то пуст — показываем to_name как
+          // и раньше (в этом случае это тоже единственная зацепка), но помечаем isOrder,
+          // чтобы в списке было видно, что имя может быть не настоящим клиентом.
+          const isOrder = d.doc_type === 'order';
+          const destName = isOrder ? (d.client_name || d.to_name) : d.to_name;
           if (!destName) continue;
           const norm = normalizeName(destName);
           if (!norm || known.has(norm)) continue;
-          const cur = counts.get(norm) || { name: destName, count: 0 };
+          const cur = counts.get(norm) || { name: destName, count: 0, isOrder };
           cur.count += 1;
           // Если у этой доставки уже есть GPS-координаты (водитель отметил «Доставлено»
           // и сохранились координаты) — подтягиваем, чтобы при добавлении точки сразу
@@ -408,12 +412,20 @@ function ShopsContent() {
               <button key={u.name}
                 onClick={() => addFromUnlinked(u.name)}
                 disabled={!!addingUnlinked}
-                title="Добавить эту точку в справочник"
+                title={u.isOrder
+                  ? 'Заказ — имя клиента (person_name), не название склада'
+                  : 'Накладная/перемещение — название склада/магазина назначения'}
                 className="text-xs px-2.5 py-1 rounded-full bg-white border border-amber-300 text-amber-700 hover:bg-amber-100 disabled:opacity-50 whitespace-nowrap">
-                {addingUnlinked === u.name ? '⏳…' : <>+ {u.name} {u.count > 1 && <span className="text-amber-400">×{u.count}</span>}</>}
+                {addingUnlinked === u.name ? '⏳…' : (
+                  <>
+                    <span className={`mr-1 ${u.isOrder ? 'text-purple-500' : 'text-blue-500'}`}>{u.isOrder ? '🧾' : '🏬'}</span>
+                    + {u.name} {u.count > 1 && <span className="text-amber-400">×{u.count}</span>}
+                  </>
+                )}
               </button>
             ))}
           </div>
+          <p className="text-[10px] text-amber-500 mt-2">🧾 — заказ (имя клиента) · 🏬 — накладная/перемещение (название склада/магазина назначения)</p>
         </div>
       )}
 
