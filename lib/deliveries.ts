@@ -296,6 +296,11 @@ export interface Delivery {
   // независимо от цепочки маршрута (km выше может быть короче/0, если эта точка не
   // первая в цепочке после такой же остановки). Справочное — не используется в КПИ.
   shop_distance_km?: number | null;
+  // Насколько GPS-позиция водителя в момент «Доставлено» разошлась с уже сохранённой
+  // точкой этого места (карточка магазина/клиента) — заполняется автоматически, если
+  // расхождение больше 1 км (см. setDeliveryStatus). Сигнал «точку в базе стоит
+  // пересмотреть» — сама сохранённая точка не трогается автоматически.
+  point_mismatch_km?: number | null;
   // Причина возврата — комментарий водителя при статусе «returned» (обязателен,
   // см. setDeliveryStatus). Показывается менеджеру в отчётах/списке заявок.
   return_note?: string | null;
@@ -869,13 +874,26 @@ export async function setDeliveryStatus(
   if (status === 'returned') delivery.return_note = str(returnNote);
   delivery.history = [...(delivery.history || []), { at: now, status, by: str(by), role: role ? str(role) : undefined }].slice(-50);
 
-  if (
-    status === 'delivered' &&
-    delivery.lat == null && delivery.lng == null &&
-    typeof driverLat === 'number' && typeof driverLng === 'number'
-  ) {
-    delivery.lat = driverLat;
-    delivery.lng = driverLng;
+  if (status === 'delivered' && typeof driverLat === 'number' && typeof driverLng === 'number') {
+    // Сверяем факт (GPS водителя) с уже сохранённой точкой этого места — ДО того как
+    // ниже перезапишем delivery.lat/lng позицией водителя, иначе сравнивать было бы
+    // не с чем (сравнение вышло бы «само с собой»).
+    const shops = await listShops();
+    const saved = delivery.kind !== 'shop_to_client' && delivery.shop_id
+      ? (() => {
+          const sh = shops.find((s) => s.id === delivery.shop_id);
+          return sh?.lat && sh?.lng ? ([sh.lat, sh.lng] as [number, number]) : null;
+        })()
+      : shopCoordsByName(delivery.to_name, shops);
+    if (saved) {
+      const distKm = haversineKm(saved[0], saved[1], driverLat, driverLng);
+      delivery.point_mismatch_km = distKm > 1 ? Math.round(distKm * 10) / 10 : null;
+    }
+
+    if (delivery.lat == null && delivery.lng == null) {
+      delivery.lat = driverLat;
+      delivery.lng = driverLng;
+    }
   }
 
   // Считаем км по координатам при выезде/доставке, если ещё не заполнен. Доставка без

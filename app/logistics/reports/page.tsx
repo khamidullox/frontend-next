@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import Link from 'next/link';
 import AdminGate from '@/components/AdminGate';
+import { useAuth } from '@/components/AuthProvider';
 import {
-  listRoutes, listDrivers, listDeliveries, deleteRouteApi,
+  listRoutes, listDrivers, listDeliveries, deleteRouteApi, updateDelivery,
   fetchLogisticsSettings, saveLogisticsSettings, LogisticsSettings, LoadRateTier, CAP_DEFAULT_KEY, vehicleFamily, defaultCapacity,
   Route, UserInfo, Delivery, DeliveryStatus,
 } from '@/lib/api';
@@ -121,7 +122,52 @@ function tripStopKey(d: Delivery): string {
   return `${tripKey(d)}::${destKey(d)}`;
 }
 
+// Ручная правка км — только для админа, и только когда у доставки нет точки (пина)
+// на карте: без координат автоматический расчёт по маршруту невозможен (км остаётся
+// 0), а водитель мог банально забыть нажать «Доставлено» на месте — заметили это уже
+// на базе, когда восстановить точку постфактум нечем. km_auto=false после правки —
+// автопересчёт маршрута (computeRouteKmRoad) больше не тронет это значение.
+function AdminKmEditor({ d, onSaved }: { d: Delivery; onSaved: (id: string, km: number) => void }) {
+  const [val, setVal] = useState(String(d.km || ''));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setVal(String(d.km || ''));
+  }, [d.km]);
+
+  async function save() {
+    const km = Math.max(0, Number(val) || 0);
+    if (km === (d.km || 0)) return;
+    setSaving(true);
+    try {
+      await updateDelivery(d.id, { km });
+      onSaved(d.id, km);
+    } catch (e) {
+      alert((e as Error).message || 'Ошибка сохранения км');
+      setVal(String(d.km || ''));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input type="number" min={0} value={val} disabled={saving}
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={save}
+        title="У доставки нет точки на карте — авторасчёт км невозможен, км установлен вручную"
+        className="w-14 border border-amber-300 rounded px-1 py-0.5 text-xs text-right outline-none focus:border-amber-500 bg-amber-50"
+      />
+      <span className="text-[11px] text-amber-600">км ✏️</span>
+    </span>
+  );
+}
+
 function ReportsContent() {
+  const { session } = useAuth();
+  const isAdmin = session?.role === 'admin';
+
   const [routes, setRoutes] = useState<Route[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [drivers, setDrivers] = useState<UserInfo[]>([]);
@@ -442,6 +488,10 @@ function ReportsContent() {
     setRoutes(prev => prev.filter(r => !ids.includes(r.id)));
   }
 
+  function onKmSaved(id: string, km: number) {
+    setDeliveries((prev) => prev.map((d) => (d.id === id ? { ...d, km } : d)));
+  }
+
   const periodLabel = quick === 'today' ? 'сегодня' : quick === 'week' ? 'за 7 дней' : quick === 'month' ? 'за 30 дней' : 'за всё время';
 
   return (
@@ -694,13 +744,22 @@ function ReportsContent() {
                                     {d.status === 'returned' && d.return_note && (
                                       <div className="text-xs text-red-600 mt-0.5">↩️ Причина возврата: {d.return_note}</div>
                                     )}
+                                    {d.point_mismatch_km != null && (
+                                      <div className="text-xs text-amber-600 mt-0.5" title="GPS водителя в момент «Доставлено» разошёлся с сохранённой точкой этого места больше чем на 1 км — возможно, сохранённая точка устарела или неверна">
+                                        ⚠️ Водитель был в {d.point_mismatch_km} км от сохранённой точки — проверьте адрес
+                                      </div>
+                                    )}
                                     {d.client_phone && (
                                       <div className="text-xs text-gray-400 truncate">
                                         📞 <a href={`tel:${d.client_phone}`} className="text-sky-600">{d.client_phone}</a>
                                       </div>
                                     )}
-                                    <div className="flex flex-wrap gap-2 mt-0.5">
-                                      {d.km > 0 && <span className="text-xs text-emerald-600">🛣️ {d.km} км</span>}
+                                    <div className="flex flex-wrap gap-2 mt-0.5 items-center">
+                                      {isAdmin && (d.lat == null || d.lng == null) ? (
+                                        <AdminKmEditor d={d} onSaved={onKmSaved} />
+                                      ) : (
+                                        d.km > 0 && <span className="text-xs text-emerald-600">🛣️ {d.km} км</span>
+                                      )}
                                       {d.shop_distance_km != null && d.shop_distance_km !== d.km && (
                                         <span className="text-xs text-gray-400" title="Прямое расстояние от магазина до клиента, без учёта цепочки маршрута">
                                           🏪→📍 {d.shop_distance_km} км

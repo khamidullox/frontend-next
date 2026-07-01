@@ -614,6 +614,7 @@ export interface Delivery {
   direction: string;
   km: number;
   shop_distance_km?: number | null;
+  point_mismatch_km?: number | null;
   return_note?: string | null;
   driver_username: string | null;
   driver_name: string | null;
