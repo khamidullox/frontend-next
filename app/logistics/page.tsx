@@ -395,23 +395,21 @@ function LogisticsContent() {
     }
   }
 
-  // Группировка доставок: штатные водители (по username), внешние (по имени), без водителя.
-  const { byDriver, external, unassigned } = useMemo(() => {
+  // Группировка доставок: штатные водители (по username), без водителя. Водители «со
+  // стороны» (driver_name без username) видны прямо внутри карточки каждой доставки
+  // (см. «🚖 Со стороны» в DeliveryRow) — отдельный блок-сводка по ним убран со страницы.
+  const { byDriver, unassigned } = useMemo(() => {
     const map = new Map<string, Delivery[]>();
-    const ext = new Map<string, Delivery[]>();
     const none: Delivery[] = [];
     for (const d of items) {
       if (d.driver_username) {
         const arr = map.get(d.driver_username) || [];
         arr.push(d); map.set(d.driver_username, arr);
-      } else if (d.driver_name) {
-        const arr = ext.get(d.driver_name) || [];
-        arr.push(d); ext.set(d.driver_name, arr);
-      } else {
+      } else if (!d.driver_name) {
         none.push(d);
       }
     }
-    return { byDriver: map, external: ext, unassigned: none };
+    return { byDriver: map, unassigned: none };
   }, [items]);
 
   // Направления, в которых у водителя уже есть активный груз — чтобы при ручном
@@ -818,35 +816,6 @@ function LogisticsContent() {
                   ))}
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Внешние водители (со стороны, без аккаунта) */}
-          {external.size > 0 && (
-            <div className="mb-5">
-              <div className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-2">
-                Внешние водители ({external.size})
-              </div>
-              <div className="flex flex-col gap-2">
-                {[...external.entries()].map(([name, ds]) => {
-                  const shown = (hideDone ? ds.filter((d) => !isDone(d.status)) : ds).filter((d) => !onlyPicked || d.picked);
-                  if (!shown.length) return null;
-                  const car = ds.find((d) => d.car_number)?.car_number;
-                  return (
-                    <div key={name} className="bg-white rounded-xl shadow-sm p-3">
-                      <div className="font-semibold text-sm mb-2">
-                        🧑‍✈️ {name}
-                        {car && <span className="text-xs text-gray-400 font-normal"> · 🚗 {car}</span>}
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        {shown.map((d) => (
-                          <DeliveryRow key={d.id} d={d} drivers={drivers} onPatch={patch} onRemove={remove} compact capSettings={capSettings} directionsByDriver={directionsByDriver} onReload={load} />
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
           )}
 
