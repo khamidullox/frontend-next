@@ -11,7 +11,8 @@ function whName(code: string | null, map: Map<string, string>): string | null {
 // Межфилиальные перемещения (между складами/филиалами).
 // В отличие от внутренних накладных, тут заполнены филиалы «откуда → куда».
 const TRANSFER_EXPORT_ENDPOINT = '/b/anor/mxsx/mfm/movement$export';
-const LIST_TTL_MS = 90 * 1000;
+// 300 запросов/день (редкие документы) = не чаще 1 раза в ~5 мин.
+const LIST_TTL_MS = 5 * 60 * 1000;
 
 interface TransferItem {
   product_code: string;

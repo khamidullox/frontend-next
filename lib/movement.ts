@@ -5,9 +5,10 @@ import { cached } from './cache';
 import { shopForWarehouseCode } from './shopWarehouseMap';
 
 const MOVEMENT_EXPORT_ENDPOINT = '/b/anor/mxsx/mkw/movement$export';
-const LIST_TTL_MS = 90 * 1000;
+// 300 запросов/день (редкие документы) = не чаще 1 раза в ~5 мин.
+const LIST_TTL_MS = 5 * 60 * 1000;
 
-// Полная выгрузка накладных, кэш на 90с. Используется списком и поиском
+// Полная выгрузка накладных, кэш 5 мин. Используется списком и поиском
 // по movement_number (Smartup по номеру не фильтрует).
 function getAllMovements(): Promise<Movement[]> {
   return cached('movements:all', LIST_TTL_MS, () => exportMovements({}));

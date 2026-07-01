@@ -5,7 +5,8 @@ import { cached } from './cache';
 
 // Приёмка / поступления товара на склад (Receipts to warehouse).
 const INPUT_EXPORT_ENDPOINT = '/b/anor/mxsx/mkw/input$export';
-const LIST_TTL_MS = 90 * 1000;
+// 300 запросов/день (редкие документы) = не чаще 1 раза в ~5 мин.
+const LIST_TTL_MS = 5 * 60 * 1000;
 
 interface InputItem {
   product_code: string;

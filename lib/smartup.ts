@@ -1,3 +1,5 @@
+import { getDb } from './firebase';
+
 const SMARTUP_URL = process.env.SMARTUP_URL || 'https://smartup.online';
 const SMARTUP_USERNAME = process.env.SMARTUP_USERNAME || '';
 const SMARTUP_PASSWORD = process.env.SMARTUP_PASSWORD || '';
@@ -7,13 +9,24 @@ const SMARTUP_FILIAL_ID = process.env.SMARTUP_FILIAL_ID || '';
 export const getSmartupProject = () => SMARTUP_PROJECT;
 
 // ─── Учёт лимитов Smartup ────────────────────────────────────────────────
-// Каждый ответ Smartup содержит объект limits со счётчиком по типу документа.
-// Запоминаем последнее виденное значение по endpoint — без лишних запросов.
+// Официальные лимиты Smartup:
+//   Справочники (inventory, warehouse, price, product_group): 100 запросов/день
+//   Редкие документы (movement, input): 300 запросов/день
+//   Частые документы (order, balance): 500 запросов/день
+//   Период данных: не старше 7 дней (per endpoint — см. day_range в ответе)
+//   Макс. объектов в запросе: 5000
+//
+// Данные сохраняются в Firestore (meta/smartup_limits), чтобы пережить
+// перезапуск Vercel serverless instances.
 export interface SmartupLimit {
   endpoint: string;
-  left: number | null;       // left_limit_quant — сколько осталось
-  total: number | null;      // limit_quant — суточный лимит
-  seen_at: string;           // когда последний раз видели
+  has_limit: boolean;           // has_limit === 'Y'
+  total: number | null;         // limit_quant — суточный лимит
+  used: number | null;          // request_quant — сколько уже использовано
+  left: number | null;          // left_limit_quant — сколько осталось
+  object_count: number | null;  // макс. объектов в одном запросе
+  day_range: number | null;     // day_range_limit — макс. дней в запросе
+  seen_at: string;
 }
 
 const limitStore = new Map<string, SmartupLimit>();
@@ -22,17 +35,47 @@ export function getSmartupLimits(): SmartupLimit[] {
   return Array.from(limitStore.values()).sort((a, b) => a.endpoint.localeCompare(b.endpoint));
 }
 
+export async function getSmartupLimitsFromFirestore(): Promise<SmartupLimit[]> {
+  try {
+    const db = getDb();
+    const doc = await db.collection('meta').doc('smartup_limits').get();
+    const fsData = doc.exists ? doc.data() || {} : {};
+    const fsItems = Object.values(fsData)
+      .filter((v): v is SmartupLimit => !!v && typeof v === 'object' && 'endpoint' in (v as object));
+    // Слияние: in-memory приоритетнее (он свежее если instance только что стрелял)
+    const merged = new Map<string, SmartupLimit>();
+    for (const item of fsItems) merged.set(item.endpoint, item);
+    for (const item of limitStore.values()) merged.set(item.endpoint, item);
+    return [...merged.values()].sort((a, b) => a.endpoint.localeCompare(b.endpoint));
+  } catch {
+    return getSmartupLimits();
+  }
+}
+
 function recordLimit(endpoint: string, parsed: unknown) {
   if (!parsed || typeof parsed !== 'object') return;
-  const limits = (parsed as Record<string, unknown>).limits as Record<string, unknown> | undefined;
-  if (!limits || typeof limits !== 'object') return;
-  const num = (v: unknown) => (typeof v === 'number' ? v : null);
-  limitStore.set(endpoint, {
+  const l = (parsed as Record<string, unknown>).limits as Record<string, unknown> | undefined;
+  if (!l || typeof l !== 'object') return;
+  const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+  const entry: SmartupLimit = {
     endpoint,
-    left: num(limits.left_limit_quant),
-    total: num(limits.limit_quant),
+    has_limit: l.has_limit === 'Y',
+    total: num(l.limit_quant),
+    used: num(l.request_quant),
+    left: num(l.left_limit_quant),
+    object_count: num(l.object_count),
+    day_range: num(l.day_range_limit),
     seen_at: new Date().toISOString(),
-  });
+  };
+  limitStore.set(endpoint, entry);
+  // Сохраняем в Firestore асинхронно (fire-and-forget) — переживает cold start
+  try {
+    const db = getDb();
+    const key = endpoint.replace(/[^a-zA-Z0-9_$]/g, '_');
+    db.collection('meta').doc('smartup_limits')
+      .set({ [key]: entry, updated_at: entry.seen_at }, { merge: true })
+      .catch(() => {});
+  } catch {}
 }
 
 export async function smartupRequest<T = Record<string, unknown>>(
