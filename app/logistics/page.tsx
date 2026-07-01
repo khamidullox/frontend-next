@@ -1136,9 +1136,9 @@ function DeliveryRow({
               </span>
             )}
             {d.from_name && d.to_name ? (
-              <span className="truncate">🏬 {d.from_name} <span className="text-gray-400">→</span> {d.to_name}</span>
+              <span className="break-words">🏬 {d.from_name} <span className="text-gray-400">→</span> {d.to_name}</span>
             ) : (
-              <span className="truncate">🚚 {d.client_name || 'Без названия'}</span>
+              <span className="break-words">🚚 {d.client_name || 'Без названия'}</span>
             )}
           </div>
           {/* Если есть и маршрут, и клиент — клиента покажем отдельной строкой */}

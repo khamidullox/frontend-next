@@ -87,6 +87,12 @@ export default function MyDeliveriesPage() {
   const [offers, setOffers] = useState<ShopOffer[]>([]);
   const [availableDocs, setAvailableDocs] = useState<Delivery[]>([]);
   const [claimingId, setClaimingId] = useState<string | null>(null);
+  // Раскрытый состав «Собранных, ждут водителя» — состав уже загружен вместе со
+  // списком (d.items), просто показываем/скрываем полностью, без запроса к Smartup.
+  const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
+  function toggleExpanded(id: string) {
+    setExpandedDocs((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  }
   const [myCap, setMyCap] = useState<MyCapacity | null>(null);
   // Вкладка: «мои» (взятые заказы) или «свободные» (можно взять). Переключается
   // кнопками и свайпом — водителю по умолчанию видны его взятые заказы.
@@ -513,11 +519,13 @@ export default function MyDeliveriesPage() {
                 ? `${d.from_name} → ${d.to_name}`           /* накладная/перемещение: склад → склад */
                 : (d.client_name || d.to_name || d.from_name || '—'); /* заказ: клиент (person_name) */
               const mapText = d.address || destLabel;
+              const expanded = expandedDocs.has(d.id);
               return (
               <div key={d.id} className="bg-white rounded-lg p-2 pl-2.5 border-l-4 border-emerald-400 flex items-start gap-2">
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold break-words">
                     {(d.doc_type && DOC_TYPE_LABEL[d.doc_type as DocType]) || d.doc_type || 'Документ'} {d.doc_number ? `№${d.doc_number}` : ''}
+                    {d.doc_id && d.doc_id !== d.doc_number && <span className="text-gray-400 font-normal"> (ID {d.doc_id})</span>}
                   </div>
                   <div className="text-[11px] text-gray-400 mt-0.5 break-words">{destLabel}</div>
                   {d.address && <div className="text-[11px] text-gray-400 mt-0.5 break-words">📍 {d.address}</div>}
@@ -530,7 +538,17 @@ export default function MyDeliveriesPage() {
                     </div>
                   )}
                   {d.items.length > 0 && (
-                    <div className="text-[11px] text-gray-400 mt-0.5 truncate">📦 {d.items.map((it) => `${it.name} ×${it.qty}`).join(', ')}</div>
+                    <>
+                      <button type="button" onClick={() => toggleExpanded(d.id)}
+                        className="text-[11px] text-emerald-700 mt-0.5 underline decoration-dotted">
+                        📦 {d.items.length} товар{d.items.length === 1 ? '' : d.items.length < 5 ? 'а' : 'ов'} — {expanded ? 'скрыть состав ▲' : 'что внутри? ▼'}
+                      </button>
+                      {expanded && (
+                        <ul className="text-[11px] text-gray-500 mt-1 pl-3 list-disc space-y-0.5">
+                          {d.items.map((it) => <li key={it.code}>{it.name} × {it.qty}</li>)}
+                        </ul>
+                      )}
+                    </>
                   )}
                   {(d.total_weight || d.total_volume_l) ? (
                     <div className="text-[11px] text-gray-500 mt-0.5">
