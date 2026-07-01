@@ -506,6 +506,14 @@ export async function createDelivery(
 async function applyDriver(delivery: Delivery, username: string): Promise<void> {
   const u = await getUserRaw(username);
   if (!u || u.role !== 'driver') return;
+  // Переназначение ДРУГОМУ водителю — старый route_id (заход прежнего водителя)
+  // к этой доставке больше не относится. Если его не сбросить, доставка продолжает
+  // числиться в km/точках/оплате прежнего водителя в отчётах (см. tripKey в
+  // app/logistics/reports/page.tsx — группирует по route_id, не проверяя водителя),
+  // а её реальный (новый) водитель эти km/точки в своей карточке не увидит.
+  if (delivery.driver_username && delivery.driver_username !== u.username) {
+    delivery.route_id = null;
+  }
   delivery.driver_username = u.username;
   delivery.driver_name = u.name;
   delivery.car_number = u.car_number ?? null;
@@ -660,6 +668,9 @@ export async function assignDriver(
     delivery.driver_name = null;
     delivery.car_number = null;
     delivery.transport = null;
+    // Доставку сняли с водителя — она больше не часть его захода (иначе продолжила
+    // бы числиться в km/точках его route_id, см. applyDriver).
+    delivery.route_id = null;
     if (delivery.status === 'assigned') delivery.status = 'new';
   }
   delivery.updated_at = new Date().toISOString();
