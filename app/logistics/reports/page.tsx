@@ -104,6 +104,15 @@ function destKey(d: Delivery): string {
     // идентификатор получателя, поэтому в приоритете перед текстом адреса.
     return normalizeName(d.client_phone || d.client_name || d.address || '') || 'no-dest';
   }
+  // Заказы (doc_type='order'): to_name у нас = room_name Smartup — техническая
+  // «рабочая зона» (может быть общей для десятков РАЗНЫХ клиентов), а НЕ реальная
+  // точка доставки. client_name = person_name — настоящий клиент. Без этой развилки
+  // разные клиенты одной рабочей зоны считались бы одной точкой — платили бы только
+  // за первую из них, остальные доставки той же рабочей зоны оставались бы без оплаты
+  // «за точку», хотя это разные адреса/получатели.
+  if (d.doc_type === 'order') {
+    return normalizeName(d.client_name || d.to_name || d.address || '') || 'no-dest';
+  }
   return d.shop_id || normalizeName(d.to_name || d.client_name || d.address || '') || 'no-dest';
 }
 
