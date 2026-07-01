@@ -106,6 +106,8 @@ function LogisticsContent() {
   const [autoAssigning, setAutoAssigning] = useState(false);
   const [autoMsg, setAutoMsg] = useState('');
   const [driverSearch, setDriverSearch] = useState('');
+  // Сортировка списка водителей: по умолчанию — те, кто сейчас «в заходе», наверху.
+  const [driverSort, setDriverSort] = useState<'trip' | 'load' | 'name'>('trip');
   const [assignTo, setAssignTo] = useState<UserInfo | null>(null);
   // null = режим по умолчанию (только доставочные: LABO + Газель).
   const [vehSel, setVehSel] = useState<string[] | null>(null);
@@ -447,14 +449,49 @@ function LogisticsContent() {
     setVehSel(base.includes(c) ? base.filter((x) => x !== c) : [...base, c]);
   }
 
+  // Загрузка каждого водителя (макс. доля веса/объёма/штук от вместимости, по активным
+  // доставкам) — нужна только для сортировки списка; сама карточка считает то же самое
+  // заново для отображения (см. DriverCard).
+  const driverLoadPct = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const dr of drivers) {
+      const active = (byDriver.get(dr.username) || []).filter((d) => !isDone(d.status));
+      const weightKg = active.reduce((s, d) => s + (d.total_weight || 0), 0);
+      const volL = active.reduce((s, d) => s + (d.total_volume_l || 0), 0);
+      const qty = active.reduce((s, d) => s + (d.total_qty || 0), 0);
+      const defCap = defaultCapacity(dr.transport, capSettings);
+      const capKg = dr.capacity_kg > 0 ? dr.capacity_kg : defCap.kg;
+      const capM3 = dr.capacity_m3 > 0 ? dr.capacity_m3 : defCap.m3;
+      const pctKg = capKg > 0 ? (weightKg / capKg) * 100 : 0;
+      const pctM3 = capM3 > 0 ? (volL / (capM3 * 1000)) * 100 : 0;
+      const pctPcs = weightKg === 0 && volL === 0 && defCap.pcs > 0 ? (qty / defCap.pcs) * 100 : 0;
+      m.set(dr.username, Math.max(pctKg, pctM3, pctPcs));
+    }
+    return m;
+  }, [drivers, byDriver, capSettings]);
+
   const shownDrivers = useMemo(() => {
     const needle = driverSearch.trim().toLowerCase();
     const cats = selCats.length ? selCats : allCats; // пустой выбор = показать всех
-    return drivers.filter((d) =>
+    const filtered = drivers.filter((d) =>
       cats.includes(vehicleCategory(d.transport)) &&
       (!needle || d.name.toLowerCase().includes(needle) || (d.car_number || '').toLowerCase().includes(needle))
     );
-  }, [drivers, driverSearch, selCats, allCats]);
+    const hasTrip = (username: string) => activeRoutes.some((r) => r.driver_username === username);
+    return [...filtered].sort((a, b) => {
+      if (driverSort === 'trip') {
+        const ta = hasTrip(a.username) ? 1 : 0;
+        const tb = hasTrip(b.username) ? 1 : 0;
+        if (ta !== tb) return tb - ta;
+        return a.name.localeCompare(b.name, 'ru');
+      }
+      if (driverSort === 'load') {
+        const diff = (driverLoadPct.get(b.username) || 0) - (driverLoadPct.get(a.username) || 0);
+        return diff !== 0 ? diff : a.name.localeCompare(b.name, 'ru');
+      }
+      return a.name.localeCompare(b.name, 'ru');
+    });
+  }, [drivers, driverSearch, selCats, allCats, driverSort, activeRoutes, driverLoadPct]);
 
   const visibleUnassignedAll = (hideDone ? unassigned.filter((d) => !isDone(d.status)) : unassigned)
     .filter((d) => !onlyPicked || d.picked);
@@ -824,11 +861,25 @@ function LogisticsContent() {
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
               Водители ({shownDrivers.length}{shownDrivers.length !== drivers.length ? ` из ${drivers.length}` : ''})
             </div>
-            {drivers.length > 6 && (
-              <input value={driverSearch} onChange={(e) => setDriverSearch(e.target.value)}
-                placeholder="🔍 водитель / машина"
-                className="border border-gray-200 rounded-lg px-2.5 py-1 text-xs outline-none focus:border-blue-400" />
-            )}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {([
+                ['trip', '🧭 по заходу'],
+                ['load', '📶 по загрузке'],
+                ['name', '🔤 по имени'],
+              ] as const).map(([key, label]) => (
+                <button key={key} onClick={() => setDriverSort(key)}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors whitespace-nowrap ${
+                    driverSort === key ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-gray-500 border-gray-200 hover:border-slate-300'
+                  }`}>
+                  {label}
+                </button>
+              ))}
+              {drivers.length > 6 && (
+                <input value={driverSearch} onChange={(e) => setDriverSearch(e.target.value)}
+                  placeholder="🔍 водитель / машина"
+                  className="border border-gray-200 rounded-lg px-2.5 py-1 text-xs outline-none focus:border-blue-400" />
+              )}
+            </div>
           </div>
 
           {/* Фильтр по типу машины (по умолчанию — только доставочные: LABO, Газель) */}
