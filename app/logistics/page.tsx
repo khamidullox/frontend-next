@@ -439,8 +439,9 @@ function LogisticsContent() {
   }, [drivers]);
 
   const allCats = categories.map(([c]) => c);
-  // По умолчанию открыты все виды транспорта семейства LABO/Газель (по подстроке в названии модели).
-  const defaultCats = allCats.filter((c) => vehicleFamily(c) !== null);
+  // По умолчанию открыты доставочные виды транспорта: семейства LABO/Газель, а также
+  // ChanGan (по подстроке в названии модели).
+  const defaultCats = allCats.filter((c) => vehicleFamily(c) !== null || /chang.?an/i.test(c));
   // Активные категории фильтра: явный выбор пользователя, иначе доставочные по умолчанию.
   const selCats = vehSel ?? (defaultCats.length ? defaultCats : allCats);
 
