@@ -836,6 +836,16 @@ export async function createOrMarkPickedFromSession(
     // (ниже) ТОЛЬКО если среди них нет ни одной без водителя — иначе товар просто
     // числился бы дважды. Если все назначены — он уже «взят», отдельная не нужна.
     if (!snap.empty) {
+      const deliveries = snap.docs.map((d) => normalizeDelivery(d.data() as Delivery));
+      const DONE: DeliveryStatus[] = ['delivered', 'returned'];
+      const allDone = deliveries.every((d) => DONE.includes(d.status));
+      // Если все предыдущие доставки уже завершены (доставлено/возврат) — это
+      // повторная сборка того же документа: создаём НОВУЮ доставку, а не помечаем старые.
+      if (allDone) {
+        const res = await createDelivery({ session_id: sessionId, created_by: createdBy });
+        if ('error' in res) return { action: 'none', error: res.error };
+        return { action: 'created' };
+      }
       const now = new Date().toISOString();
       const batch = getDb().batch();
       let changed = false;
@@ -847,7 +857,6 @@ export async function createOrMarkPickedFromSession(
       }
       if (changed) await batch.commit();
       if (hasUnassigned) return { action: 'marked' };
-      // все существующие — назначены водителю: новую «собранную без водителя» не плодим
       return { action: 'marked' };
     }
   }
