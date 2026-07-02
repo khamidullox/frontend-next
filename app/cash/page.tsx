@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import AdminGate from '@/components/AdminGate';
 import { useAuth } from '@/components/AuthProvider';
 import {
-  ROLE_RANK, listDriverCash, settleDriverCash, getMyCash, DriverCashBalance,
+  ROLE_RANK, listDriverCash, settleDriverCash, getMyCash, DriverCashBalance, CashSettlement,
 } from '@/lib/api';
 import { fmtDateTime } from '@/lib/format';
 
@@ -30,17 +30,20 @@ function CashContent() {
 function ManagerCash() {
   const [rows, setRows] = useState<DriverCashBalance[]>([]);
   const [total, setTotal] = useState(0);
+  const [history, setHistory] = useState<CashSettlement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<DriverCashBalance | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const { data, total } = await listDriverCash();
+      const { data, total, history } = await listDriverCash();
       setRows(data);
       setTotal(total);
+      setHistory(history);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -118,6 +121,35 @@ function ManagerCash() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* История сдач наличных */}
+      {history.length > 0 && (
+        <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <button
+            onClick={() => setHistoryOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50"
+          >
+            <span>🧾 История сдач ({history.length})</span>
+            <span className="text-gray-400 text-xs">{historyOpen ? '▲' : '▼'}</span>
+          </button>
+          {historyOpen && (
+            <div className="divide-y divide-gray-100">
+              {history.map((h, i) => (
+                <div key={`${h.driver_username}-${h.settled_at}-${i}`} className="flex items-center justify-between px-4 py-2.5">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">👤 {h.driver_name}</div>
+                    <div className="text-xs text-gray-400">
+                      {fmtDateTime(h.settled_at)} · {h.count} доставок
+                      {h.settled_by ? ` · принял ${h.settled_by}` : ''}
+                    </div>
+                  </div>
+                  <div className="text-sm font-bold text-gray-600 whitespace-nowrap ml-2">{money(h.total)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       )}
 
       {confirm && (

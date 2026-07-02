@@ -1060,12 +1060,21 @@ export interface DriverCashBalance {
   deliveries: { id: string; client_name: string; doc_number: string | null; cash_amount: number; delivered_at: string }[];
 }
 
-// Касса → Логистика (менеджер/админ): балансы наличных по водителям.
-export async function listDriverCash(): Promise<{ data: DriverCashBalance[]; total: number }> {
+export interface CashSettlement {
+  driver_username: string;
+  driver_name: string;
+  settled_at: string;
+  settled_by: string | null;
+  total: number;
+  count: number;
+}
+
+// Касса → Логистика (менеджер/админ): балансы наличных по водителям + история сдач.
+export async function listDriverCash(): Promise<{ data: DriverCashBalance[]; total: number; history: CashSettlement[] }> {
   const res = await fetch('/api/cash/logistics', { cache: 'no-store' });
   if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
   const j = await res.json();
-  return { data: j.data || [], total: j.total || 0 };
+  return { data: j.data || [], total: j.total || 0, history: j.history || [] };
 }
 
 // Менеджер принял наличные у водителя (обнуляет его баланс).

@@ -1235,6 +1235,44 @@ export async function settleDriverCash(username: string, by: string): Promise<{ 
   return { count, total };
 }
 
+export interface CashSettlement {
+  driver_username: string;
+  driver_name: string;
+  settled_at: string;            // когда менеджер принял (одна кнопка = один момент)
+  settled_by: string | null;     // кто принял
+  total: number;
+  count: number;
+}
+
+// История сдач наличных: каждая нажатая «Принял» проставляет всем доставкам водителя
+// одинаковый cash_settled_at — группируем по (водитель + этот момент), получаем список
+// сдач «когда, кто, сколько». Читаем только доставки с cash_amount>0 (авто-индекс).
+export async function listCashSettlements(limit = 100): Promise<CashSettlement[]> {
+  const snap = await getDb().collection(COLLECTION).where('cash_amount', '>', 0).get();
+  const byEvent = new Map<string, CashSettlement>();
+  for (const doc of snap.docs) {
+    const d = normalizeDelivery(doc.data() as Delivery);
+    if (!d.cash_settled_at || !d.driver_username) continue;
+    const key = `${d.driver_username}|${d.cash_settled_at}`;
+    let ev = byEvent.get(key);
+    if (!ev) {
+      ev = {
+        driver_username: d.driver_username,
+        driver_name: d.driver_name || d.driver_username,
+        settled_at: d.cash_settled_at,
+        settled_by: d.cash_settled_by ?? null,
+        total: 0, count: 0,
+      };
+      byEvent.set(key, ev);
+    }
+    ev.total += Number(d.cash_amount) || 0;
+    ev.count += 1;
+  }
+  return [...byEvent.values()]
+    .sort((a, z) => z.settled_at.localeCompare(a.settled_at))
+    .slice(0, limit);
+}
+
 // Состав доставки с весом/объёмом ЕДИНИЦЫ товара — для разделения по вместимости
 // машины (клиент сам подбирает, сколько влезает).
 // Состав доставки: сохранённый d.items, а если пусто (старые накладные до сохранения
