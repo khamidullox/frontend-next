@@ -15,9 +15,18 @@ export async function GET(req: Request) {
       const forParam = new URL(req.url).searchParams.get('for');
       let data;
       if (forParam === 'tags') {
-        data = ROLE_RANK[user.role] >= ROLE_RANK.manager
-          ? await listWarehouseStock(undefined, { all: true })
-          : await listWarehouseStock(user.warehouses, { excludeMain: true });
+        if (ROLE_RANK[user.role] >= ROLE_RANK.manager) {
+          data = await listWarehouseStock(undefined, { all: true });
+        } else {
+          // home_warehouse (свой склад магазина) хранится отдельно от user.warehouses
+          // и не попадает в allowed автоматически — добавляем его явно, иначе
+          // excludeMain уберёт все основные и список окажется пустым.
+          const allowed = [...(user.warehouses || [])];
+          if (user.home_warehouse && !allowed.includes(user.home_warehouse)) {
+            allowed.push(user.home_warehouse);
+          }
+          data = await listWarehouseStock(allowed.length ? allowed : undefined, { excludeMain: true });
+        }
       } else if (forParam === 'all') {
         // Все склады (для выбора при настройке пользователя) — менеджер/админ.
         data = ROLE_RANK[user.role] >= ROLE_RANK.manager
