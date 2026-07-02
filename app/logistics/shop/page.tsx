@@ -116,15 +116,19 @@ function ShopRequestContent() {
     d.status !== 'returned' &&
     isToday(d.created_at)
   );
-  // «Входящие в пути» — склад едет к магазину
+  // «Входящие в пути» — только те, что ещё не доставлены
   const incomingOnWay = incoming.filter((d) => d.status === 'on_way' || d.status === 'assigned');
-  const incomingOther = incoming.filter((d) => d.status !== 'on_way' && d.status !== 'assigned');
-  // Архив — завершённые и старые
-  const archive = items.filter((d) =>
-    d.status === 'delivered' ||
-    d.status === 'returned' ||
-    (!isToday(d.created_at) && d.status !== 'on_way')
-  );
+  // «Доставлено» у входящих → сразу в архив
+  const incomingDelivered = incoming.filter((d) => d.status === 'delivered' || d.status === 'returned');
+  // Архив — завершённые заявки клиентам + доставленные входящие
+  const archive = [
+    ...items.filter((d) =>
+      d.status === 'delivered' ||
+      d.status === 'returned' ||
+      (!isToday(d.created_at) && d.status !== 'on_way')
+    ),
+    ...incomingDelivered,
+  ].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 
   if (loading) {
     return <div className="text-gray-400 text-sm p-4">Загрузка…</div>;
@@ -134,82 +138,7 @@ function ShopRequestContent() {
     <div className="flex flex-col gap-3 pb-6">
       {error && <p className="text-red-500 text-sm">{error}</p>}
 
-      {/* ── 1. В ПУТИ: водитель уже везёт заказ ── */}
-      {(onWay.length > 0 || incomingOnWay.length > 0) && (
-        <section className="bg-blue-50 border border-blue-200 rounded-2xl p-3">
-          <h2 className="text-sm font-bold text-blue-700 mb-2">🚗 В пути</h2>
-          <div className="flex flex-col gap-2">
-            {incomingOnWay.map((d) => (
-              <IncomingCard key={d.id} d={d} label="со склада" />
-            ))}
-            {onWay.map((d) => (
-              <ShopCard key={d.id} d={d} onTogglePicked={togglePicked} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* ── 2. СЕГОДНЯ: активные заявки без завершения ── */}
-      {todayActive.length > 0 && (
-        <section>
-          <h2 className="text-sm font-bold text-gray-600 mb-2">
-            📋 Сегодня · активные ({todayActive.length})
-          </h2>
-          <div className="flex flex-col gap-2">
-            {todayActive.map((d) => (
-              <ShopCard key={d.id} d={d} onTogglePicked={togglePicked} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* ── 3. ВХОДЯЩИЕ со склада (коллапс) ── */}
-      {incoming.length > 0 && (
-        <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <button
-            onClick={() => setIncomingOpen((v) => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50"
-          >
-            <span>📦 Едет к нам со склада ({incoming.length})</span>
-            <span className="text-gray-400 text-xs">{incomingOpen ? '▲' : '▼'}</span>
-          </button>
-          {incomingOpen && (
-            <div className="flex flex-col gap-1.5 px-3 pb-3">
-              {/* Уже завершённые/другие входящие — мелко */}
-              {incomingOther.map((d) => (
-                <IncomingCard key={d.id} d={d} />
-              ))}
-              {incomingOther.length === 0 && incomingOnWay.length > 0 && (
-                <div className="text-xs text-gray-400 text-center py-2">
-                  Все входящие показаны в блоке «В пути» выше
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* ── 4. АРХИВ (коллапс) ── */}
-      {archive.length > 0 && (
-        <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <button
-            onClick={() => setArchiveOpen((v) => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50"
-          >
-            <span>🗂 Архив ({archive.length})</span>
-            <span className="text-gray-400 text-xs">{archiveOpen ? '▲' : '▼'}</span>
-          </button>
-          {archiveOpen && (
-            <div className="flex flex-col gap-2 px-3 pb-3">
-              {archive.map((d) => (
-                <ShopCard key={d.id} d={d} onTogglePicked={togglePicked} compact />
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* ── 5. ФОРМА создания заявки (коллапс) ── */}
+      {/* ── 1. ФОРМА создания заявки — СВЕРХУ (коллапс) ── */}
       <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
         <button
           onClick={() => setFormOpen((v) => !v)}
@@ -243,6 +172,77 @@ function ShopRequestContent() {
           </form>
         )}
       </section>
+
+      {/* ── 2. В ПУТИ: водитель уже везёт заказ ── */}
+      {(onWay.length > 0 || incomingOnWay.length > 0) && (
+        <section className="bg-blue-50 border border-blue-200 rounded-2xl p-3">
+          <h2 className="text-sm font-bold text-blue-700 mb-2">🚗 В пути</h2>
+          <div className="flex flex-col gap-2">
+            {incomingOnWay.map((d) => (
+              <IncomingCard key={d.id} d={d} label="со склада" />
+            ))}
+            {onWay.map((d) => (
+              <ShopCard key={d.id} d={d} onTogglePicked={togglePicked} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── 3. СЕГОДНЯ: активные заявки без завершения ── */}
+      {todayActive.length > 0 && (
+        <section>
+          <h2 className="text-sm font-bold text-gray-600 mb-2">
+            📋 Сегодня · активные ({todayActive.length})
+          </h2>
+          <div className="flex flex-col gap-2">
+            {todayActive.map((d) => (
+              <ShopCard key={d.id} d={d} onTogglePicked={togglePicked} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── 4. ВХОДЯЩИЕ со склада — только активные (коллапс) ── */}
+      {incomingOnWay.length === 0 && incoming.length > incomingDelivered.length && (
+        <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <button
+            onClick={() => setIncomingOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50"
+          >
+            <span>📦 Едет к нам со склада ({incoming.length - incomingDelivered.length})</span>
+            <span className="text-gray-400 text-xs">{incomingOpen ? '▲' : '▼'}</span>
+          </button>
+          {incomingOpen && (
+            <div className="flex flex-col gap-1.5 px-3 pb-3">
+              {incoming
+                .filter((d) => d.status !== 'delivered' && d.status !== 'returned')
+                .map((d) => <IncomingCard key={d.id} d={d} />)}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ── 5. АРХИВ (коллапс): завершённые заявки + доставленные входящие ── */}
+      {archive.length > 0 && (
+        <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <button
+            onClick={() => setArchiveOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50"
+          >
+            <span>🗂 Архив ({archive.length})</span>
+            <span className="text-gray-400 text-xs">{archiveOpen ? '▲' : '▼'}</span>
+          </button>
+          {archiveOpen && (
+            <div className="flex flex-col gap-2 px-3 pb-3">
+              {archive.map((d) =>
+                d.kind === 'shop_to_client'
+                  ? <ShopCard key={d.id} d={d} onTogglePicked={togglePicked} compact />
+                  : <IncomingCard key={d.id} d={d} />
+              )}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }
