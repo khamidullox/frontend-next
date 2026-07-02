@@ -18,6 +18,15 @@ const PATH_FEATURE: { prefix: string; feature: FeatureKey }[] = [
   { prefix: '/orders', feature: 'orders' },
   { prefix: '/transfers', feature: 'transfers' },
   { prefix: '/receipts', feature: 'receipts' },
+  { prefix: '/products', feature: 'catalog' },
+  { prefix: '/warehouses', feature: 'stock' },
+  { prefix: '/price-tags', feature: 'pricetags' },
+  { prefix: '/wms', feature: 'wms' },
+  { prefix: '/history', feature: 'history' },
+  { prefix: '/cash', feature: 'cash' },
+  // '/logistics' и '/' (Проверка) намеренно НЕ здесь: '/logistics' пересёкся бы с
+  // /logistics/my (водитель) и /logistics/shop (магазин), а '/' — со всеми путями.
+  // Их доступ ограничивается скрытием пункта в меню (feature в AppShell).
 ];
 
 interface AuthCtx {
@@ -68,7 +77,9 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       router.replace('/logistics/my');
     }
     // Раздел скрыт у этого пользователя (права) — не пускаем по прямой ссылке.
-    if (session && session.role !== 'admin') {
+    // Водитель уже ограничен белым списком выше — его тут не трогаем (иначе его
+    // разрешённые /cash и /logistics/my попали бы под общий фильтр разделов).
+    if (session && session.role !== 'admin' && session.role !== 'driver') {
       const match = PATH_FEATURE.find((p) => pathname.startsWith(p.prefix));
       if (match && !canAccess(match.feature, session.role, session.features)) {
         router.replace('/');

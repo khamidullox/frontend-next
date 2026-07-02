@@ -8,7 +8,9 @@
 // работают как раньше. Файл не зависит ни от сервера, ни от клиента — импортируется и там, и там.
 
 export type FeatureKey =
-  | 'orders' | 'movements' | 'analytics' | 'transfers' | 'receipts'
+  | 'check' | 'catalog' | 'stock' | 'pricetags' | 'wms'
+  | 'orders' | 'movements' | 'history' | 'logistics' | 'cash' | 'analytics'
+  | 'transfers' | 'receipts'
   | 'log_reports' | 'log_clients' | 'log_capacity'
   | 'log_addresses' | 'log_mileage' | 'log_shop_requests';
 
@@ -19,8 +21,16 @@ export interface FeatureDef { key: FeatureKey; label: string; minRole: Role }
 
 // Порядок = порядок вывода галочек в карточке пользователя.
 export const FEATURES: FeatureDef[] = [
+  { key: 'check',            label: '🔍 Проверка',                  minRole: 'worker'  },
+  { key: 'catalog',          label: '📚 Справочник',                minRole: 'worker'  },
+  { key: 'stock',            label: '📊 Остатки',                   minRole: 'worker'  },
+  { key: 'pricetags',        label: '🏷️ Ценники',                   minRole: 'worker'  },
+  { key: 'wms',              label: '📦 WMS склад',                 minRole: 'worker'  },
   { key: 'orders',           label: '🧾 Заказы',                    minRole: 'manager' },
   { key: 'movements',        label: '🗂️ Накладные',                 minRole: 'manager' },
+  { key: 'history',          label: '📋 История',                   minRole: 'manager' },
+  { key: 'logistics',        label: '🚚 Логистика',                 minRole: 'manager' },
+  { key: 'cash',             label: '💰 Касса',                     minRole: 'manager' },
   { key: 'analytics',        label: '📊 Аналитика',                 minRole: 'manager' },
   { key: 'transfers',        label: '🔄 Перемещения',               minRole: 'admin'   },
   { key: 'receipts',         label: '📥 Приёмка',                   minRole: 'admin'   },
