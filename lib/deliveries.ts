@@ -573,14 +573,20 @@ export async function listDeliveriesRange(sinceIso: string, limit = 500): Promis
   return snap.docs.map((d) => normalizeDelivery(d.data() as Delivery));
 }
 
-// Доставки конкретного водителя (без orderBy — сортируем в памяти, чтобы не
-// требовать составной индекс Firestore).
+// Доставки конкретного водителя. Опрашивается со страницы водителя каждые ~60 сек,
+// поэтому НЕ читаем всю историю (она копится годами) — только активные (их всегда
+// немного) + последние завершённые. Иначе каждый опрос перечитывал весь архив
+// водителя и это была основная причина огромного числа чтений Firestore днём.
+// Равенство + status in [...] индексируется автоматически (index-merge), как в
+// listShopRequestsForAdmin — отдельный составной индекс не нужен, orderBy не ставим.
 export async function listDeliveriesForDriver(username: string): Promise<Delivery[]> {
-  const snap = await getDb()
-    .collection(COLLECTION)
-    .where('driver_username', '==', str(username))
-    .get();
-  return snap.docs
+  const col = getDb().collection(COLLECTION);
+  const u = str(username);
+  const [activeSnap, doneSnap] = await Promise.all([
+    col.where('driver_username', '==', u).where('status', 'in', ['new', 'assigned', 'on_way']).get(),
+    col.where('driver_username', '==', u).where('status', 'in', ['delivered', 'returned']).limit(80).get(),
+  ]);
+  return [...activeSnap.docs, ...doneSnap.docs]
     .map((d) => normalizeDelivery(d.data() as Delivery))
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
@@ -662,12 +668,16 @@ export async function listIncomingForShop(shopId: string): Promise<Delivery[]> {
   if (!shop) return [];
   const norm = normalizeName(shop.name);
 
-  const snap = await getDb()
-    .collection(COLLECTION)
-    .where('kind', '==', 'warehouse_dispatch')
-    .get();
+  // НЕ читаем всю историю накладных склад→магазин (она копится годами). Активные
+  // «едет к нам» — небольшой хвост; завершённые (архив) ограничиваем. Равенство +
+  // status in [...] индексируется автоматически (index-merge), составной индекс не нужен.
+  const col = getDb().collection(COLLECTION);
+  const [activeSnap, doneSnap] = await Promise.all([
+    col.where('kind', '==', 'warehouse_dispatch').where('status', 'in', ['new', 'assigned', 'on_way']).get(),
+    col.where('kind', '==', 'warehouse_dispatch').where('status', 'in', ['delivered', 'returned']).limit(300).get(),
+  ]);
 
-  return snap.docs
+  return [...activeSnap.docs, ...doneSnap.docs]
     .map((d) => normalizeDelivery(d.data() as Delivery))
     .filter((d) => d.shop_id === shopId || (d.to_name && normalizeName(d.to_name) === norm))
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
