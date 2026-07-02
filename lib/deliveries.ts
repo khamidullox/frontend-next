@@ -557,6 +557,17 @@ export async function listDeliveries(limit = 200, sinceIso?: string): Promise<De
   return snap.docs.map((d) => normalizeDelivery(d.data() as Delivery));
 }
 
+// История: доставки созданные начиная с sinceIso (для страницы аудита/журнала).
+// Фильтр по created_at на одном поле — индекс не нужен.
+export async function listDeliveriesRange(sinceIso: string, limit = 500): Promise<Delivery[]> {
+  const snap = await getDb().collection(COLLECTION)
+    .where('created_at', '>=', sinceIso)
+    .orderBy('created_at', 'desc')
+    .limit(limit)
+    .get();
+  return snap.docs.map((d) => normalizeDelivery(d.data() as Delivery));
+}
+
 // Доставки конкретного водителя (без orderBy — сортируем в памяти, чтобы не
 // требовать составной индекс Firestore).
 export async function listDeliveriesForDriver(username: string): Promise<Delivery[]> {

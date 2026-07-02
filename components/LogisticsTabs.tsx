@@ -11,6 +11,7 @@ const TABS: { href: string; label: string; feature?: FeatureKey }[] = [
   { href: '/logistics/map', label: '3️⃣ Карта' },
   { href: '/logistics/client-addresses', label: '4️⃣ Адреса клиентов', feature: 'log_addresses' },
   { href: '/logistics/mileage', label: '5️⃣ Пробег GPS', feature: 'log_mileage' },
+  { href: '/logistics/history', label: '📋 История заявок' },
 ];
 
 // Навигация между разделами логистики (для менеджера/админа).

@@ -1175,7 +1175,10 @@ function DeliveryRow({
             </div>
           )}
           {d.note && <div className="text-xs text-gray-400 mt-0.5">📝 {d.note}</div>}
-          <div className="text-xs text-gray-400 mt-0.5">создано {fmt(d.created_at)}{d.created_by ? ` · ${d.created_by}` : ''}</div>
+          <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap">
+            <span>создано {fmt(d.created_at)}{d.created_by ? ` · ${d.created_by}` : ''}</span>
+            <span className="font-mono text-[10px] text-gray-300 bg-gray-100 px-1.5 py-0.5 rounded select-all">#{d.id.slice(-6).toUpperCase()}</span>
+          </div>
         </div>
         <div className="flex flex-col items-end gap-1.5 shrink-0">
           <span className={`text-xs font-semibold px-2 py-1 rounded-full ${statusClass(d.status)}`}>
