@@ -866,6 +866,14 @@ export async function createOrMarkPickedFromSession(
   const s = await getCheckSession(str(sessionId));
   if (!s) return { action: 'none', error: 'Сессия не найдена' };
   const docId = str(s.document.doc_id);
+  // «Собрать второй раз» (forced) — это осознанная повторная сборка того же документа:
+  // ВСЕГДА создаём новую доставку, не смотрим на прежние (иначе повторная сборка лишь
+  // повторно помечала бы «собрано» уже существующую и в списке ничего нового не появлялось).
+  if (s.forced) {
+    const res = await createDelivery({ session_id: sessionId, created_by: createdBy });
+    if ('error' in res) return { action: 'none', error: res.error };
+    return { action: 'created' };
+  }
   if (docId) {
     const snap = await getDb().collection(COLLECTION).where('doc_id', '==', docId).get();
     // Помечаем «собрано» уже существующие доставки этого документа. Создаём новую

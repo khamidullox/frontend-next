@@ -56,6 +56,9 @@ interface StoredSession {
   // Сумма к получению с клиента (наличные) — необязательно, ставит менеджер.
   // Пробрасывается в доставку при её создании из этой сессии.
   cash_amount?: number | null;
+  // Сессия создана кнопкой «Собрать второй раз» (повторная сборка того же документа).
+  // При завершении такой сессии доставка создаётся ВСЕГДА новая, а не помечается старая.
+  forced?: boolean;
 }
 
 export interface SessionListItem {
@@ -166,6 +169,7 @@ export async function createSession(input: ResolveInput & { checker_name?: strin
     document: pickDocument(doc),
     items,
     scans: [],
+    forced: !!input.force,
   };
 
   await getDb().collection(SESSIONS_COLLECTION).doc(session.id).set(session);
