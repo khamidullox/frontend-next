@@ -5,7 +5,7 @@ import { getUserRaw, listDrivers } from './users';
 import { getSession as getCheckSession } from './sessions';
 import { getWarehouseCodeMap, getCachedCatalog } from './products';
 import { DocType } from './document';
-import { listShops, Shop } from './shops';
+import { listShops, updateShop, Shop } from './shops';
 import { notifyDriverAssigned } from './push';
 import { haversineKm } from './geo';
 import { roadKm } from './roadDistance';
@@ -968,11 +968,17 @@ export async function setDeliveryStatus(
     // ниже перезапишем delivery.lat/lng позицией водителя, иначе сравнивать было бы
     // не с чем (сравнение вышло бы «само с собой»).
     const shops = await listShops();
-    const saved = delivery.kind !== 'shop_to_client' && delivery.shop_id
-      ? (() => {
-          const sh = shops.find((s) => s.id === delivery.shop_id);
-          return sh?.lat && sh?.lng ? ([sh.lat, sh.lng] as [number, number]) : null;
-        })()
+    // Точка справочника, соответствующая этой доставке (по shop_id или названию).
+    let matchedShop: Shop | null = null;
+    if (delivery.kind !== 'shop_to_client') {
+      if (delivery.shop_id) matchedShop = shops.find((s) => s.id === delivery.shop_id) ?? null;
+      if (!matchedShop && delivery.to_name) {
+        const n = normalizeName(delivery.to_name);
+        matchedShop = shops.find((s) => normalizeName(s.name) === n) ?? null;
+      }
+    }
+    const saved = matchedShop?.lat != null && matchedShop?.lng != null
+      ? ([matchedShop.lat, matchedShop.lng] as [number, number])
       : shopCoordsByName(delivery.to_name, shops);
     if (saved) {
       const distKm = haversineKm(saved[0], saved[1], driverLat, driverLng);
@@ -982,6 +988,13 @@ export async function setDeliveryStatus(
     if (delivery.lat == null && delivery.lng == null) {
       delivery.lat = driverLat;
       delivery.lng = driverLng;
+    }
+
+    // До-заполняем координаты точки справочника, если у неё их ещё нет — тогда GPS
+    // с кнопки «Доставлено» станет виден в «Точках доставки», а следующие доставки
+    // сразу посчитают км от этой точки (не дожидаясь ручного ввода координат).
+    if (matchedShop && (matchedShop.lat == null || matchedShop.lng == null)) {
+      await updateShop(matchedShop.id, { lat: driverLat, lng: driverLng }).catch(() => {});
     }
   }
 
