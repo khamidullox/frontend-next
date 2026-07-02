@@ -1126,6 +1126,8 @@ function DeliveryRow({
 }) {
   const [editAddr, setEditAddr] = useState(false);
   const [addr, setAddr] = useState(d.address);
+  const [editCash, setEditCash] = useState(false);
+  const [cash, setCash] = useState(d.cash_amount ? String(d.cash_amount) : '');
   const [km, setKm] = useState(String(d.km || ''));
   const [manualKg, setManualKg] = useState('');
   const [splitOpen, setSplitOpen] = useState(false);
@@ -1176,6 +1178,12 @@ function DeliveryRow({
             </div>
           )}
           {d.note && <div className="text-xs text-gray-400 mt-0.5">📝 {d.note}</div>}
+          {d.cash_amount != null && d.cash_amount > 0 && (
+            <div className="text-xs font-semibold text-emerald-700 mt-0.5">
+              💵 К получению: {d.cash_amount.toLocaleString('ru-RU')} сум
+              {d.cash_settled_at && <span className="ml-1 text-gray-400 font-normal">· сдано</span>}
+            </div>
+          )}
           <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap">
             <span>создано {fmt(d.created_at)}{d.created_by ? ` · ${d.created_by}` : ''}</span>
             <span className="font-mono text-[10px] text-gray-300 bg-gray-100 px-1.5 py-0.5 rounded select-all">#{d.id.slice(-6).toUpperCase()}</span>
@@ -1297,6 +1305,11 @@ function DeliveryRow({
           className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg ${d.external ? 'bg-orange-200 text-orange-800' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
           🚖 Со стороны
         </button>
+        <button onClick={() => setEditCash((v) => !v)}
+          title="Сумма к получению с клиента (наличные) — попадёт в кассу водителя"
+          className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg ${d.cash_amount && d.cash_amount > 0 ? 'bg-emerald-200 text-emerald-800' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}>
+          💵 Деньги
+        </button>
         <button onClick={() => onRemove(d.id)}
           className="ml-auto text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 hover:bg-red-200">
           🗑️
@@ -1321,6 +1334,22 @@ function DeliveryRow({
             className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-blue-400" />
           <button onClick={() => { onPatch(d.id, { address: addr.trim() }); setEditAddr(false); }}
             className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-500 hover:bg-blue-600 text-white">
+            OK
+          </button>
+        </div>
+      )}
+
+      {editCash && (
+        <div className="flex items-center gap-2">
+          <input value={cash} onChange={(e) => setCash(e.target.value)} autoComplete="off"
+            type="number" inputMode="decimal" min={0} placeholder="Сумма к получению (сум), пусто — не нужно"
+            className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-emerald-400" />
+          <button onClick={() => {
+              const n = cash.trim() === '' ? null : Math.max(0, Number(cash) || 0);
+              onPatch(d.id, { cash_amount: n && n > 0 ? n : null });
+              setEditCash(false);
+            }}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white">
             OK
           </button>
         </div>
