@@ -107,7 +107,7 @@ export async function getOrderDocument(dealId: string): Promise<CheckDocument | 
     doc_id: String(order.deal_id),
     doc_number: String(order.delivery_number || order.invoice_number || order.deal_id),
     date: order.delivery_date || order.deal_time || '',
-    from_warehouse_code: null,
+    from_warehouse_code: rawItems[0]?.warehouse_code || null,
     to_warehouse_code: order.room_name || null,
     client_name: order.person_name || null,
     note: order.deal_note || order.note || null,
