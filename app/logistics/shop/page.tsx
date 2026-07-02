@@ -43,7 +43,6 @@ function ShopRequestContent() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Раскрытые секции
   const [incomingOpen, setIncomingOpen] = useState(true);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
@@ -79,6 +78,10 @@ function ShopRequestContent() {
     }
   }
 
+  function onSaved(updated: Delivery) {
+    setItems((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+  }
+
   if (session && session.role === 'worker' && !session.shop_id) {
     return (
       <div className="bg-white rounded-xl p-8 text-center text-gray-400">
@@ -108,7 +111,6 @@ function ShopRequestContent() {
     }
   }
 
-  // Группировка заявок магазина (shop_to_client)
   const onWay = items.filter((d) => d.status === 'on_way');
   const todayActive = items.filter((d) =>
     d.status !== 'on_way' &&
@@ -116,11 +118,8 @@ function ShopRequestContent() {
     d.status !== 'returned' &&
     isToday(d.created_at)
   );
-  // «Входящие в пути» — только те, что ещё не доставлены
   const incomingOnWay = incoming.filter((d) => d.status === 'on_way' || d.status === 'assigned');
-  // «Доставлено» у входящих → сразу в архив
   const incomingDelivered = incoming.filter((d) => d.status === 'delivered' || d.status === 'returned');
-  // Архив — завершённые заявки клиентам + доставленные входящие
   const archive = [
     ...items.filter((d) =>
       d.status === 'delivered' ||
@@ -173,7 +172,7 @@ function ShopRequestContent() {
         )}
       </section>
 
-      {/* ── 2. В ПУТИ: водитель уже везёт заказ ── */}
+      {/* ── 2. В ПУТИ ── */}
       {(onWay.length > 0 || incomingOnWay.length > 0) && (
         <section className="bg-blue-50 border border-blue-200 rounded-2xl p-3">
           <h2 className="text-sm font-bold text-blue-700 mb-2">🚗 В пути</h2>
@@ -182,13 +181,13 @@ function ShopRequestContent() {
               <IncomingCard key={d.id} d={d} label="со склада" />
             ))}
             {onWay.map((d) => (
-              <ShopCard key={d.id} d={d} onTogglePicked={togglePicked} />
+              <ShopCard key={d.id} d={d} onTogglePicked={togglePicked} onSaved={onSaved} />
             ))}
           </div>
         </section>
       )}
 
-      {/* ── 3. СЕГОДНЯ: активные заявки без завершения ── */}
+      {/* ── 3. СЕГОДНЯ: активные ── */}
       {todayActive.length > 0 && (
         <section>
           <h2 className="text-sm font-bold text-gray-600 mb-2">
@@ -196,13 +195,13 @@ function ShopRequestContent() {
           </h2>
           <div className="flex flex-col gap-2">
             {todayActive.map((d) => (
-              <ShopCard key={d.id} d={d} onTogglePicked={togglePicked} />
+              <ShopCard key={d.id} d={d} onTogglePicked={togglePicked} onSaved={onSaved} />
             ))}
           </div>
         </section>
       )}
 
-      {/* ── 4. ВХОДЯЩИЕ со склада — только активные (коллапс) ── */}
+      {/* ── 4. ВХОДЯЩИЕ со склада (коллапс) ── */}
       {incomingOnWay.length === 0 && incoming.length > incomingDelivered.length && (
         <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <button
@@ -222,7 +221,7 @@ function ShopRequestContent() {
         </section>
       )}
 
-      {/* ── 5. АРХИВ (коллапс): завершённые заявки + доставленные входящие ── */}
+      {/* ── 5. АРХИВ (коллапс) ── */}
       {archive.length > 0 && (
         <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <button
@@ -236,7 +235,7 @@ function ShopRequestContent() {
             <div className="flex flex-col gap-2 px-3 pb-3">
               {archive.map((d) =>
                 d.kind === 'shop_to_client'
-                  ? <ShopCard key={d.id} d={d} onTogglePicked={togglePicked} compact />
+                  ? <ShopCard key={d.id} d={d} onTogglePicked={togglePicked} onSaved={onSaved} compact />
                   : <IncomingCard key={d.id} d={d} />
               )}
             </div>
@@ -271,12 +270,104 @@ function IncomingCard({ d, label }: { d: Delivery; label?: string }) {
 
 // ─── Карточка заявки клиенту (shop_to_client) ─────────────────────────────
 function ShopCard({
-  d, onTogglePicked, compact,
+  d, onTogglePicked, onSaved, compact,
 }: {
   d: Delivery;
   onTogglePicked: (d: Delivery) => void;
+  onSaved: (d: Delivery) => void;
   compact?: boolean;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [editClient, setEditClient] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [editNote, setEditNote] = useState('');
+  const [editItems, setEditItems] = useState<DeliveryItem[]>([]);
+  const [editLat, setEditLat] = useState<number | undefined>(undefined);
+  const [editLng, setEditLng] = useState<number | undefined>(undefined);
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  const canEdit = d.status === 'new';
+
+  function openEdit() {
+    setEditClient(d.client_name || '');
+    setEditPhone(d.client_phone || '');
+    setEditAddress(d.address || '');
+    setEditNote(d.note || '');
+    setEditItems(d.items || []);
+    setEditLat(d.lat ?? undefined);
+    setEditLng(d.lng ?? undefined);
+    setEditError('');
+    setEditing(true);
+  }
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    setEditBusy(true);
+    setEditError('');
+    try {
+      const updated = await updateDelivery(d.id, {
+        client_name: editClient.trim(),
+        client_phone: editPhone.trim(),
+        address: editAddress.trim(),
+        note: editNote.trim(),
+        items: editItems,
+        lat: editLat ?? null,
+        lng: editLng ?? null,
+      });
+      onSaved(updated);
+      setEditing(false);
+    } catch (err) {
+      setEditError((err as Error).message);
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border-2 border-blue-300 p-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-bold text-blue-700">✏️ Редактировать заявку</span>
+          <button onClick={() => setEditing(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+        </div>
+        <form onSubmit={saveEdit} className="flex flex-col gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input value={editClient} onChange={(e) => setEditClient(e.target.value)} autoComplete="off"
+              placeholder="Имя клиента"
+              className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            <input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} autoComplete="off" type="tel"
+              placeholder="Телефон"
+              className="flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          </div>
+          <input value={editAddress} onChange={(e) => setEditAddress(e.target.value)} autoComplete="off"
+            placeholder="Адрес доставки"
+            className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <input value={editNote} onChange={(e) => setEditNote(e.target.value)} autoComplete="off"
+            placeholder="Примечание"
+            className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <ProductPicker items={editItems} onChange={setEditItems} />
+          <LocationPicker
+            lat={editLat} lng={editLng}
+            onChange={(la, ln) => { setEditLat(la); setEditLng(ln); }}
+          />
+          {editError && <p className="text-red-500 text-xs">{editError}</p>}
+          <div className="flex gap-2 mt-1">
+            <button type="submit" disabled={editBusy || !editClient.trim() || !editAddress.trim()}
+              className="flex-1 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg">
+              {editBusy ? '⏳…' : '💾 Сохранить'}
+            </button>
+            <button type="button" onClick={() => setEditing(false)}
+              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm font-semibold rounded-lg">
+              Отмена
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className={`bg-white rounded-xl shadow-sm px-3 py-2.5 flex items-start gap-3 ${compact ? 'opacity-70' : ''}`}>
       <div className="flex-1 min-w-0">
@@ -314,6 +405,12 @@ function ShopCard({
         <span className={`text-xs font-semibold px-2 py-1 rounded-full ${statusClass(d.status)}`}>
           {DELIVERY_STATUS_LABEL[d.status]}
         </span>
+        {!compact && canEdit && (
+          <button onClick={openEdit}
+            className="text-[11px] font-semibold px-2 py-1 rounded-full bg-gray-100 text-gray-500 hover:bg-blue-50 hover:text-blue-600 whitespace-nowrap">
+            ✏️ Изменить
+          </button>
+        )}
         {!compact && (
           <button onClick={() => onTogglePicked(d)}
             className={`text-[11px] font-semibold px-2 py-1 rounded-full whitespace-nowrap ${
