@@ -53,6 +53,9 @@ interface StoredSession {
   document: SessionDocument;
   items: SessionItem[];
   scans: ScanRecord[];
+  // Сумма к получению с клиента (наличные) — необязательно, ставит менеджер.
+  // Пробрасывается в доставку при её создании из этой сессии.
+  cash_amount?: number | null;
 }
 
 export interface SessionListItem {
@@ -205,6 +208,21 @@ export async function setSessionStatus(sessionId: string, status: SessionStatus)
     session.status = status;
     session.finished_at = status === 'finished' ? (session.finished_at || new Date().toISOString()) : null;
 
+    tx.set(ref, session);
+    return serialize(session);
+  });
+}
+
+// Менеджер задаёт/меняет сумму к получению (наличные) на сессии проверки.
+export async function setSessionCash(sessionId: string, amount: number | null) {
+  const db = getDb();
+  const ref = db.collection(SESSIONS_COLLECTION).doc(sessionId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return null;
+    const session = snap.data() as StoredSession;
+    const amt = amount == null ? null : Math.max(0, Number(amount) || 0);
+    session.cash_amount = amt && amt > 0 ? amt : null;
     tx.set(ref, session);
     return serialize(session);
   });

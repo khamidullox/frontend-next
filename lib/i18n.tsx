@@ -17,6 +17,8 @@ const DICT = {
   nav_orders: { ru: '🧾 Заказы', uz: '🧾 Buyurtmalar' },
   nav_history: { ru: '📋 История', uz: '📋 Tarix' },
   nav_logistics: { ru: '🚚 Логистика', uz: '🚚 Logistika' },
+  nav_cash: { ru: '💰 Касса', uz: '💰 Kassa' },
+  nav_my_cash: { ru: '💰 Моя касса', uz: '💰 Mening kassam' },
   nav_analytics: { ru: '📊 Аналитика', uz: '📊 Analitika' },
   nav_transfers: { ru: '🔄 Перемещения', uz: '🔄 Koʻchirishlar' },
   nav_receipts: { ru: '📥 Приёмка', uz: '📥 Qabul qilish' },

@@ -110,7 +110,7 @@ export async function PATCH(
   if (body.client_name !== undefined || body.client_phone !== undefined || body.address !== undefined ||
       body.note !== undefined || body.direction !== undefined || body.km !== undefined ||
       body.total_weight !== undefined || body.total_volume_l !== undefined || body.items !== undefined || body.lat !== undefined || body.lng !== undefined ||
-      body.defer_until !== undefined ||
+      body.defer_until !== undefined || body.cash_amount !== undefined ||
       body.external_driver !== undefined || body.external_cost !== undefined || body.external_note !== undefined) {
     const items = Array.isArray(body.items)
       ? body.items.map((it: { code?: unknown; name?: unknown; qty?: unknown }) => ({
@@ -134,6 +134,8 @@ export async function PATCH(
       lat: body.lat != null ? Number(body.lat) : (body.lat === null ? null : undefined),
       lng: body.lng != null ? Number(body.lng) : (body.lng === null ? null : undefined),
       defer_until: body.defer_until !== undefined ? (body.defer_until || null) : undefined,
+      cash_amount: body.cash_amount !== undefined ? (body.cash_amount === null ? null : Number(body.cash_amount)) : undefined,
+      cash_set_by: s.name || s.username,
     });
     if ('error' in res) return Response.json({ error: res.error }, { status: 400 });
   }

@@ -14,6 +14,9 @@ import {
   ScanStatus,
   DOC_TYPE_LABEL,
 } from '@/lib/api';
+import { setSessionCash } from '@/lib/api';
+import { ROLE_RANK } from '@/lib/api';
+import { useAuth } from '@/components/AuthProvider';
 import { feedbackForScan } from '@/lib/feedback';
 import CameraScanner, { isCameraScanSupported } from '@/components/CameraScanner';
 import ConfirmModal from '@/components/ConfirmModal';
@@ -258,6 +261,63 @@ function ManualQuantityDialog({
   );
 }
 
+// Модал ввода суммы к получению (наличные) — только для менеджеров.
+function CashDialog({
+  initial, onConfirm, onCancel, busy,
+}: {
+  initial: number | null;
+  onConfirm: (amount: number | null) => void;
+  onCancel: () => void;
+  busy: boolean;
+}) {
+  const [value, setValue] = useState(initial != null && initial > 0 ? String(initial) : '');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setTimeout(() => { inputRef.current?.focus(); inputRef.current?.select(); }, 50);
+  }, []);
+
+  const num = value.trim() === '' ? null : Number(value);
+  const valid = num === null || (Number.isFinite(num) && num >= 0);
+
+  function confirm() {
+    if (!valid) return;
+    onConfirm(num && num > 0 ? num : null);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onCancel}>
+      <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold mb-1">💵 Деньги к получению</h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Сколько наличных водитель должен забрать у клиента за эту доставку. Необязательно — оставьте пустым, если платить не нужно.
+        </p>
+        <input
+          ref={inputRef}
+          type="number"
+          inputMode="decimal"
+          min={0}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') onCancel(); }}
+          placeholder="Сумма (сум)"
+          className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-2xl font-bold text-center outline-none focus:border-emerald-400 transition-colors mb-2"
+        />
+        <div className="flex gap-2 mt-4">
+          <button onClick={onCancel} disabled={busy}
+            className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl font-semibold text-gray-600 transition-colors">
+            Отмена
+          </button>
+          <button onClick={confirm} disabled={!valid || busy}
+            className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white rounded-xl font-semibold transition-colors">
+            {busy ? '⏳…' : 'Сохранить'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Статусы, которые считаем «проблемными» (что-то пошло не так)
 const PROBLEM_STATUSES: ScanStatus[] = ['not_found', 'over_scanned'];
 
@@ -373,6 +433,11 @@ export default function SessionPage() {
   const [exporting, setExporting]       = useState(false);
   const [camera, setCamera]             = useState(false);
   const [confirmState, setConfirmState] = useState<{ msg: string; onOk: () => void } | null>(null);
+  const [cashOpen, setCashOpen]         = useState(false);
+  const [cashBusy, setCashBusy]         = useState(false);
+
+  const { session: auth } = useAuth();
+  const isManager = auth ? ROLE_RANK[auth.role] >= ROLE_RANK['manager'] : false;
 
   const scanInputRef = useRef<HTMLInputElement>(null);
 
@@ -479,6 +544,20 @@ export default function SessionPage() {
       setScanError((err as Error).message || 'Ошибка экспорта');
     } finally {
       setExporting(false);
+    }
+  }
+
+  async function saveCash(amount: number | null) {
+    setCashBusy(true);
+    setScanError('');
+    try {
+      const updated = await setSessionCash(id, amount);
+      setSession(updated);
+      setCashOpen(false);
+    } catch (err) {
+      setScanError((err as Error).message || 'Ошибка сохранения суммы');
+    } finally {
+      setCashBusy(false);
     }
   }
 
@@ -660,6 +739,22 @@ export default function SessionPage() {
           </div>
         )}
 
+        {/* Деньги к получению (наличные) — только менеджер. Необязательное поле. */}
+        {isManager && (
+          <button
+            onClick={() => setCashOpen(true)}
+            className={`w-full mt-4 py-2.5 rounded-lg text-sm font-semibold transition-colors border-2 ${
+              session.cash_amount && session.cash_amount > 0
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                : 'bg-white border-dashed border-gray-300 text-gray-500 hover:border-emerald-300 hover:text-emerald-600'
+            }`}
+          >
+            {session.cash_amount && session.cash_amount > 0
+              ? `💵 К получению: ${session.cash_amount.toLocaleString('ru-RU')} сум — изменить`
+              : '💵 Добавить деньги к получению'}
+          </button>
+        )}
+
         {/* Действия */}
         <div className="flex flex-wrap gap-2 mt-4 mb-8">
           <button
@@ -696,6 +791,16 @@ export default function SessionPage() {
           item={manualItem}
           onConfirm={handleManualConfirm}
           onCancel={() => { setManualItem(null); refocusScan(); }}
+        />
+      )}
+
+      {/* Деньги к получению */}
+      {cashOpen && (
+        <CashDialog
+          initial={session.cash_amount ?? null}
+          busy={cashBusy}
+          onConfirm={saveCash}
+          onCancel={() => setCashOpen(false)}
         />
       )}
 

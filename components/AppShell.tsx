@@ -22,6 +22,7 @@ const LINKS: NavLink[] = [
   { href: '/orders', key: 'nav_orders', min: 'manager', feature: 'orders' },
   { href: '/history', key: 'nav_history', min: 'manager' },
   { href: '/logistics', key: 'nav_logistics', min: 'manager' },
+  { href: '/cash', key: 'nav_cash', min: 'manager' },
   { href: '/analytics', key: 'nav_analytics', min: 'manager', feature: 'analytics' },
   { href: '/transfers', key: 'nav_transfers', min: 'admin', feature: 'transfers' },
   { href: '/receipts', key: 'nav_receipts', min: 'admin', feature: 'receipts' },
@@ -31,6 +32,7 @@ const LINKS: NavLink[] = [
 // Водитель — особая роль: видит только свои доставки.
 const DRIVER_LINKS: NavLink[] = [
   { href: '/logistics/my', key: 'nav_my_deliveries', min: 'driver' },
+  { href: '/cash', key: 'nav_my_cash', min: 'driver' },
   { href: '/logistics/my-stats', key: 'nav_my_stats', min: 'driver' },
 ];
 

@@ -308,6 +308,17 @@ export interface Delivery {
   // Привязка к маршруту водителя (заход за один раз, см. lib/routes.ts).
   route_id: string | null;
 
+  // Деньги к получению с клиента за эту доставку (наличные). Ставит менеджер —
+  // необязательно. Водитель видит «взять деньги», сумма попадает в кассу водителя.
+  // null/0 — деньги брать не нужно.
+  cash_amount?: number | null;
+  // Кто выставил сумму (менеджер) и когда — для истории.
+  cash_set_by?: string | null;
+  // Водитель сдал эти деньги менеджеру: когда и кто принял. null — деньги ещё у водителя
+  // (числятся в его кассе). Заполняется при «Принял» в разделе Касса → обнуляет баланс.
+  cash_settled_at?: string | null;
+  cash_settled_by?: string | null;
+
   status: DeliveryStatus;
   history: StatusEvent[];
 }
@@ -328,6 +339,8 @@ function normalizeDelivery(d: Delivery): Delivery {
     items: d.items ?? [],
     // Старые доставки созданы до появления «Собрано» — не блокируем их задним числом.
     picked: d.picked ?? true,
+    cash_amount: d.cash_amount ?? null,
+    cash_settled_at: d.cash_settled_at ?? null,
   };
 }
 
@@ -386,6 +399,7 @@ interface CreateInput {
   km?: number;
   weight_kg?: number;   // ручной ввод кг (переопределяет авто-расчёт)
   volume_m3?: number;   // ручной ввод м³ (переопределяет авто-расчёт)
+  cash_amount?: number; // сумма к получению с клиента (наличные) — необязательно
   created_by?: string;
 }
 
@@ -411,6 +425,8 @@ export async function createDelivery(
   // если есть точные, используем их, не дожидаясь GPS водителя при доставке.
   let docLat: number | null = null;
   let docLng: number | null = null;
+  // Сумма к получению (наличные): из явного ввода или из сессии (менеджер указал при проверке).
+  let cashAmount: number | null = input.cash_amount != null ? Math.max(0, Number(input.cash_amount) || 0) : null;
 
   // Из проверки (сессии сканирования).
   if (input.session_id) {
@@ -426,6 +442,7 @@ export async function createDelivery(
     fromCode = s.document.from_warehouse_code;
     toCode = s.document.to_warehouse_code;
     docItems = (s.items || []).map((it) => ({ product_code: it.product_code, quantity: it.quantity }));
+    if (cashAmount == null && s.cash_amount != null) cashAmount = Math.max(0, Number(s.cash_amount) || 0);
   } else if (input.query || input.movement_id || input.deal_id || input.transfer_id || input.receipt_id) {
     // Из документа Smartup (накладная/заказ/перемещение/приёмка).
     const doc = await resolveDocument({
@@ -506,6 +523,10 @@ export async function createDelivery(
     car_number: null,
     transport: null,
     route_id: null,
+    cash_amount: cashAmount,
+    cash_set_by: cashAmount != null ? str(input.created_by) || null : null,
+    cash_settled_at: null,
+    cash_settled_by: null,
     status: 'new',
     history: [{ at: now, status: 'new', by: str(input.created_by) }],
   };
@@ -1016,6 +1037,7 @@ export async function updateDeliveryFields(
     km?: number; total_weight?: number; total_volume_l?: number; items?: DeliveryItem[]; lat?: number | null; lng?: number | null;
     defer_until?: string | null;
     external_driver?: string; external_car?: string; external_cost?: number; external_note?: string;
+    cash_amount?: number | null; cash_set_by?: string;
   }
 ): Promise<{ delivery: Delivery } | { error: string }> {
   const db = getDb();
@@ -1040,6 +1062,11 @@ export async function updateDeliveryFields(
   if (fields.km !== undefined) {
     delivery.km = Math.max(0, Number(fields.km) || 0);
     delivery.km_auto = false; // ручная правка — больше не пересчитывать автоматически.
+  }
+  if (fields.cash_amount !== undefined) {
+    const amt = fields.cash_amount == null ? null : Math.max(0, Number(fields.cash_amount) || 0);
+    delivery.cash_amount = amt && amt > 0 ? amt : null;
+    delivery.cash_set_by = delivery.cash_amount != null ? (fields.cash_set_by ?? delivery.cash_set_by ?? null) : null;
   }
   // Назначение водителю «со стороны» (улица): имя/машина вручную, без аккаунта,
   // плюс сумма расхода и комментарий. Снимаем штатного водителя.
@@ -1075,6 +1102,99 @@ export async function updateDeliveryFields(
   delivery.updated_at = new Date().toISOString();
   await ref.set(delivery);
   return { delivery };
+}
+
+// ─── Касса (наличные с клиента) ──────────────────────────────────────────────
+
+// Проставить сумму к получению всем доставкам этого документа (для проброса из
+// сессии проверки, когда доставка уже создана). Возвращает число обновлённых.
+export async function setCashByDocId(docId: string, amount: number | null, by?: string): Promise<number> {
+  const id = str(docId);
+  if (!id) return 0;
+  const snap = await getDb().collection(COLLECTION).where('doc_id', '==', id).get();
+  if (snap.empty) return 0;
+  const amt = amount == null ? null : Math.max(0, Number(amount) || 0);
+  const value = amt && amt > 0 ? amt : null;
+  const now = new Date().toISOString();
+  const batch = getDb().batch();
+  for (const doc of snap.docs) {
+    batch.update(doc.ref, {
+      cash_amount: value,
+      cash_set_by: value != null ? (str(by) || null) : null,
+      updated_at: now,
+    });
+  }
+  await batch.commit();
+  return snap.size;
+}
+
+export interface DriverCashBalance {
+  driver_username: string;
+  driver_name: string;
+  total: number;                 // сколько наличных сейчас на руках у водителя (не сдано)
+  count: number;                 // по скольким доставкам
+  deliveries: {
+    id: string; client_name: string; doc_number: string | null;
+    cash_amount: number; delivered_at: string;
+  }[];
+}
+
+// Все несданные наличные, сгруппированные по водителю. Читаем только доставки
+// с cash_amount > 0 (единичный индекс по полю создаётся автоматически) — не сканируем
+// всю коллекцию. Фильтр «доставлено и не сдано» — в памяти.
+export async function listDriverCashBalances(): Promise<DriverCashBalance[]> {
+  const snap = await getDb().collection(COLLECTION).where('cash_amount', '>', 0).get();
+  const byDriver = new Map<string, DriverCashBalance>();
+  for (const doc of snap.docs) {
+    const d = normalizeDelivery(doc.data() as Delivery);
+    if (d.status !== 'delivered') continue;      // деньги считаются собранными только по доставленным
+    if (d.cash_settled_at) continue;              // уже сдано
+    if (!d.driver_username) continue;             // «со стороны» — вне кассы водителей
+    const amt = Number(d.cash_amount) || 0;
+    if (amt <= 0) continue;
+    let bal = byDriver.get(d.driver_username);
+    if (!bal) {
+      bal = { driver_username: d.driver_username, driver_name: d.driver_name || d.driver_username, total: 0, count: 0, deliveries: [] };
+      byDriver.set(d.driver_username, bal);
+    }
+    bal.total += amt;
+    bal.count += 1;
+    const deliveredAt = [...(d.history || [])].reverse().find((h) => h.status === 'delivered')?.at || d.updated_at;
+    bal.deliveries.push({ id: d.id, client_name: d.client_name || d.to_name || '—', doc_number: d.doc_number, cash_amount: amt, delivered_at: deliveredAt });
+  }
+  return [...byDriver.values()]
+    .map((b) => ({ ...b, deliveries: b.deliveries.sort((a, z) => z.delivered_at.localeCompare(a.delivered_at)) }))
+    .sort((a, z) => z.total - a.total);
+}
+
+// Баланс одного водителя (для его личной кассы).
+export async function getDriverCashBalance(username: string): Promise<DriverCashBalance> {
+  const all = await listDriverCashBalances();
+  return all.find((b) => b.driver_username === str(username))
+    ?? { driver_username: str(username), driver_name: '', total: 0, count: 0, deliveries: [] };
+}
+
+// Менеджер принял все наличные у водителя → помечаем их сданными (архивируем),
+// баланс водителя обнуляется. Возвращает сколько доставок и на какую сумму.
+export async function settleDriverCash(username: string, by: string): Promise<{ count: number; total: number }> {
+  const u = str(username);
+  if (!u) return { count: 0, total: 0 };
+  // Только по cash_amount (единичный авто-индекс) + фильтр водителя в памяти —
+  // иначе range+equality на разных полях потребовал бы составной индекс.
+  const snap = await getDb().collection(COLLECTION).where('cash_amount', '>', 0).get();
+  const now = new Date().toISOString();
+  const batch = getDb().batch();
+  let count = 0, total = 0;
+  for (const doc of snap.docs) {
+    const d = normalizeDelivery(doc.data() as Delivery);
+    if (d.driver_username !== u) continue;
+    if (d.status !== 'delivered' || d.cash_settled_at) continue;
+    batch.update(doc.ref, { cash_settled_at: now, cash_settled_by: str(by) || null, updated_at: now });
+    count += 1;
+    total += Number(d.cash_amount) || 0;
+  }
+  if (count) await batch.commit();
+  return { count, total };
 }
 
 // Состав доставки с весом/объёмом ЕДИНИЦЫ товара — для разделения по вместимости

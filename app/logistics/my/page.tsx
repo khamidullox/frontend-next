@@ -737,6 +737,11 @@ function DeliveryCard({
           )}
           {d.note && <div className="text-xs text-gray-400 mt-0.5">📝 {d.note}</div>}
           {d.km > 0 && <div className="text-xs text-emerald-600 font-medium mt-0.5">🛣️ {d.km} км</div>}
+          {d.cash_amount != null && d.cash_amount > 0 && (
+            <div className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-800 text-sm font-bold">
+              💵 Взять деньги: {Math.round(d.cash_amount).toLocaleString('ru-RU')} сум
+            </div>
+          )}
           {pickup && (
             <a href={buildYandexSinglePointUrl(pickup.lat, pickup.lng)} target="_blank" rel="noopener noreferrer"
               className="mt-2 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-amber-50 text-amber-700 text-xs font-semibold hover:bg-amber-100">

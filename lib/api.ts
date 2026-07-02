@@ -198,6 +198,7 @@ export interface Session {
   items: SessionItem[];
   summary: SessionSummary;
   scans: ScanRecord[];
+  cash_amount?: number | null;
 }
 
 export interface SessionListItem {
@@ -624,6 +625,10 @@ export interface Delivery {
   external_cost?: number;
   external_note?: string;
   route_id: string | null;
+  cash_amount?: number | null;
+  cash_set_by?: string | null;
+  cash_settled_at?: string | null;
+  cash_settled_by?: string | null;
   status: DeliveryStatus;
   history: { at: string; status: DeliveryStatus; by: string; role?: string }[];
 }
@@ -707,7 +712,7 @@ export async function updateDelivery(
     status?: DeliveryStatus; driver_username?: string | null; client_name?: string; client_phone?: string;
     address?: string; note?: string; direction?: string; km?: number; total_weight?: number; total_volume_l?: number; picked?: boolean;
     items?: DeliveryItem[]; lat?: number | null; lng?: number | null; defer_until?: string | null;
-    return_note?: string;
+    return_note?: string; cash_amount?: number | null;
     external_driver?: string; external_car?: string; external_cost?: number; external_note?: string;
   }
 ): Promise<Delivery> {
@@ -1032,6 +1037,54 @@ export async function listIncomingDeliveries(): Promise<Delivery[]> {
   if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
   const data = await res.json();
   return data.data || [];
+}
+
+// ─── Касса (наличные с клиента) ──────────────────────────────────────────────
+
+// Менеджер задаёт сумму к получению на сессии проверки (пробрасывается в доставку).
+export async function setSessionCash(sessionId: string, amount: number | null): Promise<Session> {
+  const res = await fetch(`/api/invoice-check/sessions/${encodeURIComponent(sessionId)}/cash`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка сохранения суммы');
+  return data.data as Session;
+}
+
+export interface DriverCashBalance {
+  driver_username: string;
+  driver_name: string;
+  total: number;
+  count: number;
+  deliveries: { id: string; client_name: string; doc_number: string | null; cash_amount: number; delivered_at: string }[];
+}
+
+// Касса → Логистика (менеджер/админ): балансы наличных по водителям.
+export async function listDriverCash(): Promise<{ data: DriverCashBalance[]; total: number }> {
+  const res = await fetch('/api/cash/logistics', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const j = await res.json();
+  return { data: j.data || [], total: j.total || 0 };
+}
+
+// Менеджер принял наличные у водителя (обнуляет его баланс).
+export async function settleDriverCash(username: string): Promise<{ count: number; total: number }> {
+  const res = await fetch('/api/cash/logistics/settle', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || 'Ошибка');
+  return data.data as { count: number; total: number };
+}
+
+// Личная касса водителя.
+export async function getMyCash(): Promise<DriverCashBalance> {
+  const res = await fetch('/api/cash/my', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
+  const j = await res.json();
+  return j.data as DriverCashBalance;
 }
 
 export type ShopOffer = Delivery & { pickup_lat: number | null; pickup_lng: number | null };
