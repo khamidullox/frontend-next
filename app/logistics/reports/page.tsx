@@ -762,7 +762,7 @@ function ReportsContent() {
                                       </div>
                                     )}
                                     <div className="flex flex-wrap gap-2 mt-0.5 items-center">
-                                      {isAdmin && (d.lat == null || d.lng == null) ? (
+                                      {isAdmin && (d.lat == null || d.lng == null || !(d.km > 0)) ? (
                                         <AdminKmEditor d={d} onSaved={onKmSaved} />
                                       ) : (
                                         d.km > 0 && <span className="text-xs text-emerald-600">🛣️ {d.km} км</span>
