@@ -57,6 +57,16 @@ export function computeDeliveryKm(d: Delivery, shops: Shop[]): number | null {
   return Math.round(haversineKm(src[0], src[1], dest[0], dest[1]));
 }
 
+// То же одиночное плечо склад→точка, но по РЕАЛЬНЫМ ДОРОГАМ (ORS с фолбэком прямая×1.3) —
+// как и для доставок в маршруте. По прямой (haversine) выходило заметно меньше реального
+// пробега (напр. 5 км по прямой против 8-9 по дорогам).
+export async function computeDeliveryKmRoad(d: Delivery, shops: Shop[]): Promise<number | null> {
+  const dest = resolveDestPoint(d, shops);
+  const src = resolveSourcePoint(d, shops);
+  if (!src || !dest) return null;
+  return Math.round(await roadKm(src[0], src[1], dest[0], dest[1]));
+}
+
 // Км по всему маршруту: если несколько накладных едут в одну и ту же точку — км считается
 // один раз для этой точки (остальным ставится 0, т.к. путь туда уже учтён); для следующей
 // отличающейся точки расстояние считается от предыдущей пройденной остановки, а не от склада
@@ -967,9 +977,14 @@ export async function setDeliveryStatus(
   if (!delivery.route_id && (status === 'on_way' || status === 'delivered') && (!delivery.km || delivery.km <= 0)) {
     try {
       const shops = await listShops();
-      const km = computeDeliveryKm(delivery, shops);
+      // Пробег в оплату — по дорогам (как для маршрутов), а не по прямой.
+      const km = await computeDeliveryKmRoad(delivery, shops);
       if (km && km > 0) { delivery.km = km; delivery.km_auto = true; }
-      if (delivery.kind === 'shop_to_client') delivery.shop_distance_km = km && km > 0 ? km : delivery.shop_distance_km;
+      // shop_distance_km — справочное «по прямой», оставляем haversine.
+      if (delivery.kind === 'shop_to_client') {
+        const straight = computeDeliveryKm(delivery, shops);
+        delivery.shop_distance_km = straight && straight > 0 ? straight : delivery.shop_distance_km;
+      }
     } catch { /* ignore */ }
   }
 
