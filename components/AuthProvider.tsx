@@ -56,9 +56,15 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     if (loading) return;
     if (!session && pathname !== '/login') router.replace('/login');
     if (session && pathname === '/login') router.replace('/');
-    // Водитель работает только в своём разделе (плюс свой профиль) — уводим его
-    // со всех остальных страниц.
-    if (session?.role === 'driver' && pathname !== '/login' && pathname !== '/profile' && !pathname.startsWith('/logistics/my')) {
+    // Водитель работает только в своих разделах (свои доставки, своя касса, профиль) —
+    // уводим его со всех остальных страниц.
+    if (
+      session?.role === 'driver' &&
+      pathname !== '/login' &&
+      pathname !== '/profile' &&
+      pathname !== '/cash' &&
+      !pathname.startsWith('/logistics/my')
+    ) {
       router.replace('/logistics/my');
     }
     // Раздел скрыт у этого пользователя (права) — не пускаем по прямой ссылке.
