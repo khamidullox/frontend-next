@@ -1162,7 +1162,7 @@ function DeliveryRow({
             )}
           </div>
           {/* Если есть и маршрут, и клиент — клиента покажем отдельной строкой */}
-          {d.from_name && d.to_name && d.client_name && d.client_name !== `${d.from_name} → ${d.to_name}` && (
+          {d.from_name && d.to_name && d.client_name && d.client_name !== d.to_name && d.client_name !== `${d.from_name} → ${d.to_name}` && (
             <div className="text-xs text-gray-500 mt-0.5">🚚 {d.client_name}</div>
           )}
           {d.address && (

@@ -108,7 +108,10 @@ export async function getOrderDocument(dealId: string): Promise<CheckDocument | 
     doc_number: String(order.delivery_number || order.invoice_number || order.deal_id),
     date: order.delivery_date || order.deal_time || '',
     from_warehouse_code: rawItems[0]?.warehouse_code || null,
-    to_warehouse_code: order.room_name || null,
+    // room_name (505) — рабочая зона / агент, а НЕ точка доставки. Реальный адресат —
+    // клиент (person_name, напр. 409062). Точку назначения ставим по клиенту в deliveries.ts,
+    // поэтому склад назначения у заказа не задаём.
+    to_warehouse_code: null,
     client_name: order.person_name || null,
     note: order.deal_note || order.note || null,
     lat: Number.isFinite(lat) ? lat : null,

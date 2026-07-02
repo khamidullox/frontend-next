@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
   }
 
   const whMap = await getWarehouseCodeMap();
-  const results: { id: string; doc_id: string; from_name: string | null; ok: boolean }[] = [];
+  const results: { id: string; doc_id: string; from_name: string | null; to_name?: string | null; ok: boolean }[] = [];
 
   for (const docSnap of snap.docs) {
     const d = docSnap.data();
@@ -61,10 +61,15 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
+      // Точка назначения заказа — клиент (person), а не рабочая зона (room_name/505).
+      const clientName = (d.client_name as string) || null;
+      const patch: Record<string, unknown> = { from_name: fromName };
+      if (clientName && d.to_name !== clientName) patch.to_name = clientName;
+
       if (!dry) {
-        await docSnap.ref.update({ from_name: fromName });
+        await docSnap.ref.update(patch);
       }
-      results.push({ id: docSnap.id, doc_id: dealId, from_name: fromName, ok: true });
+      results.push({ id: docSnap.id, doc_id: dealId, from_name: fromName, to_name: patch.to_name as string ?? d.to_name, ok: true });
     } catch {
       results.push({ id: docSnap.id, doc_id: dealId, from_name: null, ok: false });
     }

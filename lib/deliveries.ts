@@ -466,6 +466,11 @@ export async function createDelivery(
     from_name = fromCode ? whMap.get(fromCode) || fromCode : from_name;
     to_name = toCode ? whMap.get(toCode) || toCode : null;
   }
+  // Заказы дистрибуции: точка назначения — сам клиент (person), а не склад/зона.
+  // Показываем маршрут «склад → клиент» и по этому же имени резолвим координаты доставки.
+  if (!to_name && base.doc_type === 'order' && base.client_name) {
+    to_name = str(base.client_name);
+  }
 
   const now = new Date().toISOString();
   const delivery: Delivery = {
