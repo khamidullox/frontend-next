@@ -428,6 +428,11 @@ export async function createDelivery(
   let fromCode: string | null = null;
   let toCode: string | null = null;
   let docItems: { product_code: string; quantity: number | string }[] = [];
+  // Состав доставки для хранения (код/название/кол-во) — нужен, чтобы у накладных, как и
+  // у заявок магазина, работала функция «разделить по частям» (см. getDeliveryItemDims/
+  // splitDelivery). Заявки магазина приносят его в input.items; накладные/заказы — из
+  // сессии/документа Smartup ниже.
+  let storedItems: DeliveryItem[] = input.items ?? [];
   // «Собрано» по умолчанию — нет, пока кто-то не подтвердит (проверкой или вручную).
   // Исключение — создаём из уже завершённой проверки: тогда сразу «собрано».
   let picked = false;
@@ -452,6 +457,11 @@ export async function createDelivery(
     fromCode = s.document.from_warehouse_code;
     toCode = s.document.to_warehouse_code;
     docItems = (s.items || []).map((it) => ({ product_code: it.product_code, quantity: it.quantity }));
+    if (!storedItems.length) {
+      storedItems = (s.items || [])
+        .map((it) => ({ code: str(it.product_code), name: it.product_name || '', qty: Number(it.quantity) || 0 }))
+        .filter((it) => it.code && it.qty > 0);
+    }
     if (cashAmount == null && s.cash_amount != null) cashAmount = Math.max(0, Number(s.cash_amount) || 0);
   } else if (input.query || input.movement_id || input.deal_id || input.transfer_id || input.receipt_id) {
     // Из документа Smartup (накладная/заказ/перемещение/приёмка).
@@ -472,6 +482,11 @@ export async function createDelivery(
     fromCode = doc.from_warehouse_code;
     toCode = doc.to_warehouse_code;
     docItems = doc.items.map((it) => ({ product_code: it.product_code, quantity: it.quantity }));
+    if (!storedItems.length) {
+      storedItems = doc.items
+        .map((it) => ({ code: str(it.product_code), name: it.product_name || '', qty: Number(it.quantity) || 0 }))
+        .filter((it) => it.code && it.qty > 0);
+    }
     docLat = doc.lat ?? null;
     docLng = doc.lng ?? null;
   }
@@ -515,7 +530,7 @@ export async function createDelivery(
     client_phone: input.client_phone ? str(input.client_phone) : null,
     address: base.address ?? '',
     note: base.note ?? '',
-    items: input.items ?? [],
+    items: storedItems,
     from_name,
     to_name,
     shop_id: input.shop_id ? str(input.shop_id) : null,
@@ -1222,6 +1237,24 @@ export async function settleDriverCash(username: string, by: string): Promise<{ 
 
 // Состав доставки с весом/объёмом ЕДИНИЦЫ товара — для разделения по вместимости
 // машины (клиент сам подбирает, сколько влезает).
+// Состав доставки: сохранённый d.items, а если пусто (старые накладные до сохранения
+// состава) — подтягиваем из документа Smartup по doc_id/doc_type. Нужно для «разделить
+// по частям» у любых накладных/заказов, а не только у заявок магазина.
+async function resolveDeliveryItems(d: Delivery): Promise<DeliveryItem[]> {
+  if (d.items && d.items.length) return d.items;
+  if (!d.doc_id || !d.doc_type) return [];
+  const doc = await resolveDocument({
+    movement_id: d.doc_type === 'movement' ? d.doc_id : undefined,
+    deal_id: d.doc_type === 'order' ? d.doc_id : undefined,
+    transfer_id: d.doc_type === 'transfer' ? d.doc_id : undefined,
+    receipt_id: d.doc_type === 'receipt' ? d.doc_id : undefined,
+  }).catch(() => null);
+  if (!doc) return [];
+  return doc.items
+    .map((it) => ({ code: str(it.product_code), name: it.product_name || '', qty: Number(it.quantity) || 0 }))
+    .filter((it) => it.code && it.qty > 0);
+}
+
 export async function getDeliveryItemDims(
   id: string
 ): Promise<{ items: { code: string; name: string; qty: number; unit_weight: number; unit_volume_l: number }[]; total_weight: number; total_volume_l: number } | { error: string }> {
@@ -1230,7 +1263,8 @@ export async function getDeliveryItemDims(
   const d = normalizeDelivery(snap.data() as Delivery);
   const catalog = await getCachedCatalog();
   const m = new Map(catalog.map((c) => [c.code, c]));
-  const items = (d.items || []).map((it) => {
+  const srcItems = await resolveDeliveryItems(d);
+  const items = srcItems.map((it) => {
     const c = m.get(str(it.code));
     return { code: it.code, name: it.name, qty: it.qty, unit_weight: c?.weight || 0, unit_volume_l: c?.volume_l || 0 };
   });
@@ -1251,6 +1285,8 @@ export async function splitDelivery(
   const snap = await ref.get();
   if (!snap.exists) return { error: 'Доставка не найдена' };
   const orig = normalizeDelivery(snap.data() as Delivery);
+  // Старые накладные без сохранённого состава — подтягиваем из документа Smartup.
+  if (!orig.items?.length) orig.items = await resolveDeliveryItems(orig);
 
   const takeMap = new Map<string, number>();
   for (const t of take) {
@@ -1294,6 +1330,9 @@ export async function splitDelivery(
     picked: true,            // часть уже собрана
     route_id: null,
     driver_username: null, driver_name: null, car_number: null, transport: null,
+    // Деньги к получению оставляем на исходной (остатке), чтобы не задваивать сумму;
+    // менеджер при необходимости переносит их кнопкой 💵 на нужную часть.
+    cash_amount: null, cash_set_by: null, cash_settled_at: null, cash_settled_by: null,
     status: 'new',
     history: [{ at: now, status: 'new', by: str(by) }],
   };

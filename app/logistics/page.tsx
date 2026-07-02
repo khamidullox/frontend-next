@@ -1290,28 +1290,30 @@ function DeliveryRow({
           ))}
         </select>
         <button onClick={() => setEditAddr((v) => !v)}
-          className="text-xs px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600">
-          📍 {d.address ? 'адрес' : '+ адрес'}
+          title={d.address ? 'Изменить адрес' : 'Добавить адрес'}
+          className="text-sm px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600">
+          📍
         </button>
-        {(d.items?.length ?? 0) > 0 && (
+        {(d.total_qty > 0 || (d.items?.length ?? 0) > 0) && (
           <button onClick={() => setSplitOpen(true)}
-            title="Назначить водителю только часть, что влезает в машину; остаток оставить"
-            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200">
-            ✂️ Часть
+            title="Разделить по частям: водителю уходит часть, что влезает в машину; остаток остаётся"
+            className="text-sm font-semibold px-2.5 py-1.5 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200">
+            ✂️
           </button>
         )}
         <button onClick={() => setExtOpen((v) => !v)}
-          title="Назначить водителю со стороны (улица) с указанием суммы оплаты"
-          className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg ${d.external ? 'bg-orange-200 text-orange-800' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
-          🚖 Со стороны
+          title="Со стороны (улица): назначить водителя вручную с суммой оплаты"
+          className={`text-sm font-semibold px-2.5 py-1.5 rounded-lg ${d.external ? 'bg-orange-200 text-orange-800' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
+          🚖
         </button>
         <button onClick={() => setEditCash((v) => !v)}
-          title="Сумма к получению с клиента (наличные) — попадёт в кассу водителя"
-          className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg ${d.cash_amount && d.cash_amount > 0 ? 'bg-emerald-200 text-emerald-800' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}>
-          💵 Деньги
+          title="Деньги к получению с клиента (наличные) — попадёт в кассу водителя"
+          className={`text-sm font-semibold px-2.5 py-1.5 rounded-lg ${d.cash_amount && d.cash_amount > 0 ? 'bg-emerald-200 text-emerald-800' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}>
+          💵
         </button>
         <button onClick={() => onRemove(d.id)}
-          className="ml-auto text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 hover:bg-red-200">
+          title="Удалить доставку"
+          className="ml-auto text-sm font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 hover:bg-red-200">
           🗑️
         </button>
       </div>
